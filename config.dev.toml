@@ -1,0 +1,6 @@
+# Development settings. Do not use in production.
+listen = "127.0.0.1:8080"
+data_dir = "./data"
+log_level = "debug"
+log_format = "text"
+secure_cookies = false   # the dev server is plain http

@@ -1,0 +1,69 @@
+/*
+ * Global stylesheet entry. Order matters:
+ *   1. font     (bundled, so the app works fully offline)
+ *   2. Tailwind (utilities + reset)
+ *   3. tokens   (colors, radii, sizes: the single source of truth)
+ *   4. base     (element defaults)
+ *
+ * Component styling lives in the components themselves (src/shared/ui) as
+ * Tailwind utilities, and each variant is defined once there. Only things
+ * utilities cannot express well (the layout grid) get their own CSS file.
+ */
+@import '@fontsource-variable/inter';
+@import 'tailwindcss';
+@import './tokens.css';
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    /* Inter options: cv11 = single-storey "a", ss01 = open digits (clearer 4, 6, 9). */
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-text-size-adjust: 100%;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.011em;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 25%, transparent);
+  }
+
+  /* One focus style for every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  /* Switching theme should not animate every element on the page. */
+  :root[data-theme-switching] * {
+    transition: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

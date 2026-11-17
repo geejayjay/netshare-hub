@@ -1,0 +1,14 @@
+{
+  "name": "netshare-hub",
+  "private": true,
+  "description": "Task runner for the whole repo. Run with: pnpm <script>",
+  "scripts": {
+    "dev:api": "go run ./cmd/netshare-hub serve --config config.dev.toml",
+    "dev:web": "pnpm --dir web dev",
+    "gen:api": "go run ./cmd/netshare-hub openapi --out web/src/shared/api/openapi.json && pnpm --dir web gen:api",
+    "build:web": "pnpm --dir web build",
+    "build": "pnpm build:web && go build -o bin/ ./cmd/netshare-hub",
+    "test": "go test ./internal/... && pnpm --dir web typecheck && pnpm --dir web lint",
+    "check:api": "pnpm gen:api && git diff --exit-code -- web/src/shared/api"
+  }
+}

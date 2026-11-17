@@ -1,0 +1,10 @@
+# NetShare Hub bootstrap settings.
+# Only the values the server needs before it can open its database live here.
+# Everything else is edited in the web UI.
+# Every key can also be set with an environment variable (shown on the right).
+
+listen = "0.0.0.0:8080"              # NSH_LISTEN
+data_dir = "/var/lib/netshare-hub"   # NSH_DATA_DIR
+log_level = "info"                   # NSH_LOG_LEVEL   debug | info | warn | error
+log_format = "json"                  # NSH_LOG_FORMAT  json | text
+secure_cookies = true                # NSH_SECURE_COOKIES  keep true behind HTTPS

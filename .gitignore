@@ -1,0 +1,53 @@
+# build output
+/bin/
+/web/dist/*
+!/web/dist/.gitkeep
+
+# local state
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# dependencies
+node_modules/
+
+# editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# local docs
+/docs/
+
+# AI / coding agents
+.claude/
+.gemini/
+.agent/
+.agents/
+.cursor/
+.codex/
+.windsurf/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+
+
+
+# local docs
+/docs/
+
+# AI / coding agents
+.claude/
+.gemini/
+.agent/
+.agents/
+.cursor/
+.codex/
+.windsurf/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+
+
