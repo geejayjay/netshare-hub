@@ -72,6 +72,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/my/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List shares the signed-in user can access */
+        get: operations["listMyShares"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -105,6 +122,43 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List shares */
+        get: operations["listShares"];
+        put?: never;
+        /** Create a share */
+        post: operations["createShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shares/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a share */
+        get: operations["getShare"];
+        put?: never;
+        post?: never;
+        /** Stop sharing a folder (files are kept) */
+        delete: operations["deleteShare"];
+        options?: never;
+        head?: never;
+        /** Update a share's comment or access list */
+        patch: operations["updateShare"];
         trace?: never;
     };
     "/users": {
@@ -148,12 +202,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CreateShareRequest: {
+            /** @description Users who may use the share. Without any, nobody can connect. */
+            access?: components["schemas"]["ShareAccessInput"][] | null;
+            comment?: string;
+            /** @description Create the folder if it does not exist. Its parent must exist. */
+            createDirectory?: boolean;
+            /** @example media */
+            name: string;
+            /**
+             * @description Full path of the folder on the server.
+             * @example /srv/media
+             */
+            path: string;
+        };
         CreateUserRequest: {
             /** @example Jay */
             displayName?: string;
             password: string;
             /** @example user */
             role: string;
+            /** @description Give the user a Samba account so they can be added to shares. Defaults to true. */
+            smbAccess?: boolean;
             /** @example jay */
             username: string;
         };
@@ -171,8 +241,18 @@ export interface components {
             /** @example 0.1.0 */
             version: string;
         };
+        ListMyShare: {
+            items: components["schemas"]["MyShare"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
         ListRoleInfo: {
             items: components["schemas"]["RoleInfo"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListShare: {
+            items: components["schemas"]["Share"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
@@ -198,6 +278,14 @@ export interface components {
             total: number;
             /** Format: int64 */
             totalPages: number;
+        };
+        MyShare: {
+            comment: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            level: "read" | "write";
+            name: string;
         };
         /** @enum {string} */
         Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read";
@@ -245,11 +333,52 @@ export interface components {
             /** @description True until the first admin account has been created. */
             needsSetup: boolean;
         };
+        Share: {
+            /** @description Users who may use the share. Nobody else can connect to it. */
+            access: components["schemas"]["ShareAccess"][];
+            comment: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            /** @description The name clients connect to: \\server\name. */
+            name: string;
+            /** @description The folder on the server, with symbolic links resolved. */
+            path: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ShareAccess: {
+            /**
+             * @description "read" = read only, "write" = read and write.
+             * @enum {string}
+             */
+            level: "read" | "write";
+            /** Format: int64 */
+            userId: number;
+            username: string;
+        };
+        ShareAccessInput: {
+            /**
+             * @description "read" = read only, "write" = read and write.
+             * @enum {string}
+             */
+            level: "read" | "write";
+            /** Format: int64 */
+            userId: number;
+        };
+        UpdateShareRequest: {
+            /** @description Replaces the whole access list. */
+            access?: components["schemas"]["ShareAccessInput"][];
+            comment?: string;
+        };
         UpdateUserRequest: {
             disabled?: boolean;
             displayName?: string;
             password?: string;
             role?: string;
+            /** @description Turning this on needs "password" in the same request. Turning it off removes the user from every share. */
+            smbAccess?: boolean;
         };
         User: {
             /** Format: date-time */
@@ -259,6 +388,8 @@ export interface components {
             /** Format: int64 */
             id: number;
             role: components["schemas"]["Role"];
+            /** @description True when the user has a Linux + Samba account and can be given access to shares. False means web login only. */
+            smbAccess: boolean;
             /** Format: date-time */
             updatedAt: string;
             username: string;
@@ -392,6 +523,35 @@ export interface operations {
             };
         };
     };
+    listMyShares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListMyShare"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listRoles: {
         parameters: {
             query?: never;
@@ -471,6 +631,172 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listShares: {
+        parameters: {
+            query?: {
+                /** @description Page number, starting at 1. */
+                page?: number;
+                /** @description Items per page. Each endpoint has its own default and maximum. */
+                pageSize?: number;
+                /** @description Field to sort by. Prefix with - for descending, e.g. -createdAt. */
+                sort?: string;
+                /** @description Free-text search. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListShare"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateShareRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Share"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Share"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateShareRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Share"];
                 };
             };
             /** @description Error */

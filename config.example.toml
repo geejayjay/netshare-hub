@@ -8,3 +8,13 @@ data_dir = "/var/lib/netshare-hub"   # NSH_DATA_DIR
 log_level = "info"                   # NSH_LOG_LEVEL   debug | info | warn | error
 log_format = "json"                  # NSH_LOG_FORMAT  json | text
 secure_cookies = true                # NSH_SECURE_COOKIES  keep true behind HTTPS
+
+# How the server reaches the operating system (NSH_SYS):
+#   "agent"  recommended. The web server runs as an unprivileged user and asks
+#            the root agent (`netshare-hub agent`, same config file) over a
+#            local socket. Start the agent first.
+#   "real"   everything in one process, which must then run as root.
+#   "fake"   development only: nothing on the system is touched.
+sys = "agent"
+agent_socket = "/run/netshare-hub/agent.sock"   # NSH_AGENT_SOCKET
+agent_user = "netshare"                         # NSH_AGENT_USER  the user the web server runs as

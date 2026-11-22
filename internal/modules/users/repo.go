@@ -19,14 +19,14 @@ type Repo struct {
 
 func NewRepo(d *db.DB) *Repo { return &Repo{db: d} }
 
-const columns = "id, username, display_name, role, disabled, created_at, updated_at"
+const columns = "id, username, display_name, role, disabled, smb_access, created_at, updated_at"
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(s scanner) (User, error) {
 	var u User
 	var created, updated int64
-	err := s.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Disabled, &created, &updated)
+	err := s.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Disabled, &u.SMBAccess, &created, &updated)
 	u.CreatedAt = time.Unix(created, 0).UTC()
 	u.UpdatedAt = time.Unix(updated, 0).UTC()
 	return u, err
@@ -70,6 +70,34 @@ func (r *Repo) Get(ctx context.Context, id int64) (User, bool, error) {
 	return found(scan(r.db.Read.QueryRowContext(ctx, "SELECT "+columns+" FROM users WHERE id = ?", id)))
 }
 
+// GetMany returns the users with the given ids, keyed by id. Unknown ids are
+// simply absent from the result.
+func (r *Repo) GetMany(ctx context.Context, ids []int64) (map[int64]User, error) {
+	out := make(map[int64]User, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	rows, err := r.db.Read.QueryContext(ctx,
+		"SELECT "+columns+" FROM users WHERE id IN ("+placeholders+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		u, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[u.ID] = u
+	}
+	return out, rows.Err()
+}
+
 // GetByUsername also returns the password hash, for login only.
 func (r *Repo) GetByUsername(ctx context.Context, username string) (User, string, bool, error) {
 	var hash string
@@ -77,6 +105,13 @@ func (r *Repo) GetByUsername(ctx context.Context, username string) (User, string
 		"SELECT "+columns+", password_hash FROM users WHERE username = ?", username)
 	u, ok, err := found(scan(scanWith{row, &hash}))
 	return u, hash, ok, err
+}
+
+// PasswordHash returns the stored hash, so a failed change can be undone.
+func (r *Repo) PasswordHash(ctx context.Context, id int64) (string, error) {
+	var hash string
+	err := r.db.Read.QueryRowContext(ctx, "SELECT password_hash FROM users WHERE id = ?", id).Scan(&hash)
+	return hash, err
 }
 
 func (r *Repo) Count(ctx context.Context) (int, error) {
@@ -95,9 +130,9 @@ func (r *Repo) CountActiveAdmins(ctx context.Context) (int, error) {
 
 func (r *Repo) Create(ctx context.Context, in CreateInput, passwordHash string, now time.Time) (int64, error) {
 	res, err := r.db.Write.ExecContext(ctx,
-		`INSERT INTO users (username, display_name, role, password_hash, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		in.Username, in.DisplayName, in.Role, passwordHash, now.Unix(), now.Unix())
+		`INSERT INTO users (username, display_name, role, password_hash, smb_access, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		in.Username, in.DisplayName, in.Role, passwordHash, in.SMBAccess, now.Unix(), now.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -107,10 +142,10 @@ func (r *Repo) Create(ctx context.Context, in CreateInput, passwordHash string, 
 // Update writes the full new state of a user. passwordHash "" keeps the old one.
 func (r *Repo) Update(ctx context.Context, u User, passwordHash string, now time.Time) error {
 	_, err := r.db.Write.ExecContext(ctx,
-		`UPDATE users SET display_name = ?, role = ?, disabled = ?, updated_at = ?,
+		`UPDATE users SET display_name = ?, role = ?, disabled = ?, smb_access = ?, updated_at = ?,
 		        password_hash = CASE WHEN ? = '' THEN password_hash ELSE ? END
 		 WHERE id = ?`,
-		u.DisplayName, u.Role, u.Disabled, now.Unix(), passwordHash, passwordHash, u.ID)
+		u.DisplayName, u.Role, u.Disabled, u.SMBAccess, now.Unix(), passwordHash, passwordHash, u.ID)
 	return err
 }
 

@@ -1,0 +1,138 @@
+package agent
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"time"
+
+	"netshare-hub/internal/sys"
+)
+
+// Client is the web server's side of the agent. It implements the sys
+// interfaces by forwarding each call over the socket, so the rest of the
+// server does not know (or care) that the system work happens elsewhere.
+type Client struct {
+	http *http.Client
+	base string
+}
+
+// Dial returns a client for the agent listening on a unix socket.
+func Dial(socket string) *Client {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		},
+		MaxIdleConns:    4,
+		IdleConnTimeout: time.Minute,
+	}
+	// The host is ignored (the dialer always uses the socket); it only has
+	// to be a valid URL.
+	return NewClient(&http.Client{Transport: transport, Timeout: 2 * time.Minute}, "http://agent")
+}
+
+// NewClient returns a client that reaches the agent at base. Tests use it.
+func NewClient(hc *http.Client, base string) *Client {
+	return &Client{http: hc, base: base}
+}
+
+// System returns the client as a sys.System.
+func (c *Client) System() sys.System {
+	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c}
+}
+
+// Ping checks that the agent is reachable and accepts this process.
+func (c *Client) Ping(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return c.call(ctx, opPing, struct{}{}, nil)
+}
+
+func (c *Client) call(ctx context.Context, op string, req, res any) error {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+pathPrefix+op, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpRes, err := c.http.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("agent unreachable: %w", err)
+	}
+	defer httpRes.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(httpRes.Body, maxRequestBytes))
+	if err != nil {
+		return fmt.Errorf("agent: read response: %w", err)
+	}
+
+	if httpRes.StatusCode != http.StatusOK {
+		var failure errorResponse
+		if err := json.Unmarshal(raw, &failure); err != nil || failure.Code == "" {
+			return fmt.Errorf("agent: unexpected response (status %d)", httpRes.StatusCode)
+		}
+		return decodeError(failure)
+	}
+	if res != nil {
+		if err := json.Unmarshal(raw, res); err != nil {
+			return fmt.Errorf("agent: decode response: %w", err)
+		}
+	}
+	return nil
+}
+
+// --- sys.Accounts ---
+
+func (c *Client) CreateUser(ctx context.Context, name, password string) error {
+	return c.call(ctx, opCreateUser, createUserRequest{Name: name, Password: password}, nil)
+}
+
+func (c *Client) SetPassword(ctx context.Context, name, password string) error {
+	return c.call(ctx, opSetPassword, setPasswordRequest{Name: name, Password: password}, nil)
+}
+
+func (c *Client) SetEnabled(ctx context.Context, name string, enabled bool) error {
+	return c.call(ctx, opSetEnabled, setEnabledRequest{Name: name, Enabled: enabled}, nil)
+}
+
+func (c *Client) DeleteUser(ctx context.Context, name string) error {
+	return c.call(ctx, opDeleteUser, deleteUserRequest{Name: name}, nil)
+}
+
+// --- sys.Samba ---
+
+func (c *Client) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
+	if shares == nil {
+		shares = []sys.ShareSpec{}
+	}
+	return c.call(ctx, opApplyShares, applySharesRequest{Shares: shares}, nil)
+}
+
+// --- sys.Workers ---
+
+func (c *Client) Endpoint(ctx context.Context, account string) (sys.WorkerEndpoint, error) {
+	var res sys.WorkerEndpoint
+	err := c.call(ctx, opWorker, workerRequest{Name: account}, &res)
+	return res, err
+}
+
+// --- sys.Files ---
+
+func (c *Client) ResolveDir(ctx context.Context, path string) (string, error) {
+	var res pathResponse
+	err := c.call(ctx, opResolveDir, pathRequest{Path: path}, &res)
+	return res.Path, err
+}
+
+func (c *Client) CreateShareDir(ctx context.Context, path string) (string, error) {
+	var res pathResponse
+	err := c.call(ctx, opCreateShareDir, pathRequest{Path: path}, &res)
+	return res.Path, err
+}

@@ -10,6 +10,7 @@
 package users
 
 import (
+	"context"
 	"time"
 
 	"netshare-hub/internal/platform/rbac"
@@ -23,6 +24,7 @@ type User struct {
 	DisplayName string    `json:"displayName"`
 	Role        rbac.Role `json:"role"`
 	Disabled    bool      `json:"disabled"`
+	SMBAccess   bool      `json:"smbAccess" doc:"True when the user has a Linux + Samba account and can be given access to shares. False means web login only."`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
@@ -33,6 +35,7 @@ type CreateInput struct {
 	DisplayName string
 	Role        rbac.Role
 	Password    string
+	SMBAccess   bool
 }
 
 // UpdateInput changes only the fields that are set (non-nil).
@@ -41,4 +44,14 @@ type UpdateInput struct {
 	Role        *rbac.Role
 	Disabled    *bool
 	Password    *string
+	SMBAccess   *bool
+}
+
+// AccessRevoker removes a user from everything that grants them SMB access.
+// Users declares it and the shares module implements it, so users does not
+// depend on shares. It runs BEFORE a system account is removed: if it fails,
+// the account stays, and a stale config can never grant access to a deleted
+// (and possibly later re-created) username.
+type AccessRevoker interface {
+	RevokeUser(ctx context.Context, userID int64) error
 }

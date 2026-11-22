@@ -41,6 +41,7 @@ type CreateUserRequest struct {
 	DisplayName string `json:"displayName,omitempty" maxLength:"100" example:"Jay"`
 	Role        string `json:"role" minLength:"1" example:"user"`
 	Password    string `json:"password" minLength:"8" maxLength:"128"`
+	SMBAccess   *bool  `json:"smbAccess,omitempty" doc:"Give the user a Samba account so they can be added to shares. Defaults to true."`
 }
 
 // UpdateUserRequest changes only the fields that are present.
@@ -49,6 +50,7 @@ type UpdateUserRequest struct {
 	Role        *string `json:"role,omitempty" minLength:"1"`
 	Disabled    *bool   `json:"disabled,omitempty"`
 	Password    *string `json:"password,omitempty" minLength:"8" maxLength:"128"`
+	SMBAccess   *bool   `json:"smbAccess,omitempty" doc:"Turning this on needs \"password\" in the same request. Turning it off removes the user from every share."`
 }
 
 type createInput struct {
@@ -145,6 +147,7 @@ func (h *handler) create(ctx context.Context, in *createInput) (*userOutput, err
 		DisplayName: in.Body.DisplayName,
 		Role:        rbac.Role(in.Body.Role),
 		Password:    in.Body.Password,
+		SMBAccess:   in.Body.SMBAccess == nil || *in.Body.SMBAccess,
 	})
 	if err != nil {
 		return nil, err
@@ -157,6 +160,7 @@ func (h *handler) update(ctx context.Context, in *updateInput) (*userOutput, err
 		DisplayName: in.Body.DisplayName,
 		Disabled:    in.Body.Disabled,
 		Password:    in.Body.Password,
+		SMBAccess:   in.Body.SMBAccess,
 	}
 	if in.Body.Role != nil {
 		role := rbac.Role(*in.Body.Role)

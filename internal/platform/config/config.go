@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/BurntSushi/toml"
@@ -27,6 +28,31 @@ type Config struct {
 	// SecureCookies marks the session cookie HTTPS-only. Turn it off only for
 	// local development over plain http.
 	SecureCookies bool `toml:"secure_cookies"`
+	// Sys chooses how the server reaches the operating system:
+	//   "agent"  through the root agent over a local socket. The server
+	//            itself runs as an unprivileged user. Use this in production.
+	//   "real"   directly, in this process. The server must run as root.
+	//   "fake"   nothing real is touched; everything stays in memory. For
+	//            development and tests on any machine.
+	Sys string `toml:"sys"`
+	// AgentSocket is where the root agent listens (sys = "agent").
+	AgentSocket string `toml:"agent_socket"`
+	// AgentUser is the only user (besides root) the agent accepts calls
+	// from: the account the web server runs as.
+	AgentUser string `toml:"agent_user"`
+}
+
+// ProtectedDirs are folders a share must never expose: NetShare Hub's own
+// data directory, which holds the database with the password hashes.
+func (c Config) ProtectedDirs() []string {
+	abs, err := filepath.Abs(c.DataDir)
+	if err != nil {
+		return nil
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	return []string{filepath.ToSlash(abs)}
 }
 
 func Default() Config {
@@ -36,6 +62,9 @@ func Default() Config {
 		LogLevel:      "info",
 		LogFormat:     "json",
 		SecureCookies: true,
+		Sys:           "real",
+		AgentSocket:   "/run/netshare-hub/agent.sock",
+		AgentUser:     "netshare",
 	}
 }
 
@@ -57,12 +86,18 @@ func Load(path string) (Config, error) {
 	env(&cfg.DataDir, "NSH_DATA_DIR")
 	env(&cfg.LogLevel, "NSH_LOG_LEVEL")
 	env(&cfg.LogFormat, "NSH_LOG_FORMAT")
+	env(&cfg.Sys, "NSH_SYS")
+	env(&cfg.AgentSocket, "NSH_AGENT_SOCKET")
+	env(&cfg.AgentUser, "NSH_AGENT_USER")
 	if v, ok := os.LookupEnv("NSH_SECURE_COOKIES"); ok {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
 			return cfg, fmt.Errorf("NSH_SECURE_COOKIES must be true or false, got %q", v)
 		}
 		cfg.SecureCookies = b
+	}
+	if cfg.Sys != "agent" && cfg.Sys != "real" && cfg.Sys != "fake" {
+		return cfg, fmt.Errorf(`sys must be "agent", "real" or "fake", got %q`, cfg.Sys)
 	}
 	return cfg, nil
 }

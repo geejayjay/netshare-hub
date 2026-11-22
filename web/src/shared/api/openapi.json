@@ -1,6 +1,52 @@
 {
   "components": {
     "schemas": {
+      "CreateShareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "description": "Users who may use the share. Without any, nobody can connect.",
+            "items": {
+              "$ref": "#/components/schemas/ShareAccessInput"
+            },
+            "maxItems": 500,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "comment": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "createDirectory": {
+            "description": "Create the folder if it does not exist. Its parent must exist.",
+            "type": "boolean"
+          },
+          "name": {
+            "examples": [
+              "media"
+            ],
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "description": "Full path of the folder on the server.",
+            "examples": [
+              "/srv/media"
+            ],
+            "maxLength": 1024,
+            "minLength": 2,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
       "CreateUserRequest": {
         "additionalProperties": false,
         "properties": {
@@ -22,6 +68,10 @@
             ],
             "minLength": 1,
             "type": "string"
+          },
+          "smbAccess": {
+            "description": "Give the user a Samba account so they can be added to shares. Defaults to true.",
+            "type": "boolean"
           },
           "username": {
             "examples": [
@@ -84,12 +134,50 @@
         ],
         "type": "object"
       },
+      "ListMyShare": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MyShare"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ListRoleInfo": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
               "$ref": "#/components/schemas/RoleInfo"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ListShare": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Share"
             },
             "type": "array"
           },
@@ -172,6 +260,35 @@
           "total",
           "totalPages",
           "hasNext"
+        ],
+        "type": "object"
+      },
+      "MyShare": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "level": {
+            "enum": [
+              "read",
+              "write"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "comment",
+          "level"
         ],
         "type": "object"
       },
@@ -337,6 +454,118 @@
         ],
         "type": "object"
       },
+      "Share": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "description": "Users who may use the share. Nobody else can connect to it.",
+            "items": {
+              "$ref": "#/components/schemas/ShareAccess"
+            },
+            "type": "array"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The name clients connect to: \\\\server\\name.",
+            "type": "string"
+          },
+          "path": {
+            "description": "The folder on the server, with symbolic links resolved.",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "comment",
+          "access",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ShareAccess": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "description": "\"read\" = read only, \"write\" = read and write.",
+            "enum": [
+              "read",
+              "write"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "username",
+          "level"
+        ],
+        "type": "object"
+      },
+      "ShareAccessInput": {
+        "additionalProperties": false,
+        "properties": {
+          "level": {
+            "description": "\"read\" = read only, \"write\" = read and write.",
+            "enum": [
+              "read",
+              "write"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "userId",
+          "level"
+        ],
+        "type": "object"
+      },
+      "UpdateShareRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "description": "Replaces the whole access list.",
+            "items": {
+              "$ref": "#/components/schemas/ShareAccessInput"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
+          "comment": {
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateUserRequest": {
         "additionalProperties": false,
         "properties": {
@@ -355,6 +584,10 @@
           "role": {
             "minLength": 1,
             "type": "string"
+          },
+          "smbAccess": {
+            "description": "Turning this on needs \"password\" in the same request. Turning it off removes the user from every share.",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -379,6 +612,10 @@
           "role": {
             "$ref": "#/components/schemas/Role"
           },
+          "smbAccess": {
+            "description": "True when the user has a Linux + Samba account and can be given access to shares. False means web login only.",
+            "type": "boolean"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -393,6 +630,7 @@
           "displayName",
           "role",
           "disabled",
+          "smbAccess",
           "createdAt",
           "updatedAt"
         ],
@@ -565,6 +803,42 @@
         ]
       }
     },
+    "/my/shares": {
+      "get": {
+        "operationId": "listMyShares",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListMyShare"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List shares the signed-in user can access",
+        "tags": [
+          "Shares"
+        ]
+      }
+    },
     "/roles": {
       "get": {
         "operationId": "listRoles",
@@ -677,6 +951,284 @@
         "tags": [
           "Setup"
         ]
+      }
+    },
+    "/shares": {
+      "get": {
+        "operationId": "listShares",
+        "parameters": [
+          {
+            "description": "Page number, starting at 1.",
+            "explode": false,
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "description": "Page number, starting at 1.",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page. Each endpoint has its own default and maximum.",
+            "explode": false,
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "description": "Items per page. Each endpoint has its own default and maximum.",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text search.",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Free-text search.",
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListShare"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List shares",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:read"
+      },
+      "post": {
+        "operationId": "createShare",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Share"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a share",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:write"
+      }
+    },
+    "/shares/{id}": {
+      "delete": {
+        "operationId": "deleteShare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Stop sharing a folder (files are kept)",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:write"
+      },
+      "get": {
+        "operationId": "getShare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Share"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a share",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:read"
+      },
+      "patch": {
+        "operationId": "updateShare",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Share"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Update a share's comment or access list",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:write"
       }
     },
     "/users": {

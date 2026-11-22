@@ -3,6 +3,7 @@ export { ApiError, isApiError, errorMessage, errorReference, fieldErrors, isFiel
 export type { Problem, FieldError } from './problem'
 export { parseListParams } from './list'
 export type { ListResponse, ListParams, PageMeta } from './list'
+export { subscribeSSE, useSSE } from './sse'
 export type { components, paths } from './schema'
 
 import type { components } from './schema'

@@ -1,0 +1,338 @@
+// Package sysfake is an in-memory stand-in for the operating system. It is
+// used by tests and by development mode (sys = "fake"), so the whole app can
+// be built and clicked through on any machine without Linux, root or Samba.
+//
+// It enforces the same rules as the real implementation (name and password
+// validation, managed vs. system accounts), so behavior seen here matches
+// production.
+package sysfake
+
+import (
+	"context"
+	"fmt"
+	"io/fs"
+	"net"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"netshare-hub/internal/fileworker"
+	"netshare-hub/internal/sys"
+)
+
+// Account is one fake Linux + Samba account.
+type Account struct {
+	Password string
+	Enabled  bool
+}
+
+// Fake implements sys.Accounts, sys.Samba and sys.Files.
+type Fake struct {
+	mu sync.Mutex
+
+	accounts map[string]*Account
+	// system holds names that exist but are not managed, like real system accounts.
+	system map[string]bool
+	dirs   map[string]bool
+
+	// Config is the Samba config rendered from the last applied shares.
+	Config string
+	// Applied counts successful ApplyShares calls.
+	Applied int
+
+	// failures makes the next call of an operation fail. See FailNext.
+	failures map[string]error
+
+	// shares are the last applied shares; workers serve them from real
+	// folders under FilesDir, so the file manager works in development.
+	shares  []sys.ShareSpec
+	workers map[string]*fakeWorker
+	// FilesDir holds one folder per share. It is created on first use;
+	// tests may set it to a temporary directory.
+	FilesDir string
+}
+
+type fakeWorker struct {
+	server   *http.Server
+	endpoint sys.WorkerEndpoint
+	roots    []sys.WorkerRoot // as returned by RootsFor (share paths, not fake folders)
+}
+
+func sameRoots(a, b []sys.WorkerRoot) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// MissingPrefix exists, but nothing inside it does until it is created, so
+// "folder not found" and "create folder" can be tried out in development.
+const MissingPrefix = "/missing"
+
+// New returns a fake with a few system accounts already present.
+func New() *Fake {
+	return &Fake{
+		accounts: map[string]*Account{},
+		system:   map[string]bool{"root": true, "daemon": true, "nobody": true, "www-data": true, "sshd": true},
+		dirs:     map[string]bool{},
+		failures: map[string]error{},
+		workers:  map[string]*fakeWorker{},
+	}
+}
+
+// System returns the fake as a sys.System.
+func (f *Fake) System() sys.System {
+	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f}
+}
+
+// FailNext makes the next call of op fail with err. Operations:
+// "CreateUser", "SetPassword", "SetEnabled", "DeleteUser", "ApplyShares".
+func (f *Fake) FailNext(op string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failures[op] = err
+}
+
+// Account returns a copy of a managed account, or nil.
+func (f *Fake) Account(name string) *Account {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if a, ok := f.accounts[name]; ok {
+		c := *a
+		return &c
+	}
+	return nil
+}
+
+// AddDir marks a directory as existing.
+func (f *Fake) AddDir(dir string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dirs[dir] = true
+}
+
+// fail consumes an injected failure. Callers hold the lock.
+func (f *Fake) fail(op string) error {
+	err := f.failures[op]
+	delete(f.failures, op)
+	return err
+}
+
+// --- sys.Accounts ---
+
+func (f *Fake) CreateUser(_ context.Context, name, password string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !sys.ValidAccountName(name) {
+		return fmt.Errorf("%w: account name", sys.ErrInvalid)
+	}
+	if !sys.ValidPassword(password) {
+		return fmt.Errorf("%w: password", sys.ErrInvalid)
+	}
+	if f.system[name] {
+		return sys.ErrNameTaken
+	}
+	if err := f.fail("CreateUser"); err != nil {
+		return err
+	}
+	f.accounts[name] = &Account{Password: password, Enabled: true}
+	return nil
+}
+
+func (f *Fake) managed(name string) (*Account, error) {
+	if f.system[name] {
+		return nil, sys.ErrNotManaged
+	}
+	a, ok := f.accounts[name]
+	if !ok {
+		return nil, sys.ErrNotFound
+	}
+	return a, nil
+}
+
+func (f *Fake) SetPassword(_ context.Context, name, password string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !sys.ValidPassword(password) {
+		return fmt.Errorf("%w: password", sys.ErrInvalid)
+	}
+	a, err := f.managed(name)
+	if err != nil {
+		return err
+	}
+	if err := f.fail("SetPassword"); err != nil {
+		return err
+	}
+	a.Password = password
+	return nil
+}
+
+func (f *Fake) SetEnabled(_ context.Context, name string, enabled bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a, err := f.managed(name)
+	if err != nil {
+		return err
+	}
+	if err := f.fail("SetEnabled"); err != nil {
+		return err
+	}
+	a.Enabled = enabled
+	if !enabled {
+		f.stopWorkers(name)
+	}
+	return nil
+}
+
+func (f *Fake) DeleteUser(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.system[name] {
+		return sys.ErrNotManaged
+	}
+	if err := f.fail("DeleteUser"); err != nil {
+		return err
+	}
+	delete(f.accounts, name)
+	f.stopWorkers(name)
+	return nil
+}
+
+// --- sys.Samba ---
+
+func (f *Fake) ApplyShares(_ context.Context, shares []sys.ShareSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Same rules and same renderer as the real system.
+	config, err := sys.RenderShares(shares)
+	if err != nil {
+		return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
+	}
+	if err := f.fail("ApplyShares"); err != nil {
+		return err
+	}
+	f.Config = config
+	f.Applied++
+	f.shares = append([]sys.ShareSpec(nil), shares...)
+	// Like the real system: restart the workers whose access changed.
+	for name := range f.workers {
+		if !sameRoots(f.workers[name].roots, sys.RootsFor(name, f.shares)) {
+			f.stopWorkers(name)
+		}
+	}
+	return nil
+}
+
+// --- sys.Workers ---
+
+// Endpoint starts an in-process file worker for the account. It runs the
+// same handler as a real worker, but not as another user: the fake cannot
+// switch identity, so file ownership is not simulated.
+func (f *Fake) Endpoint(_ context.Context, account string) (sys.WorkerEndpoint, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !sys.ValidAccountName(account) {
+		return sys.WorkerEndpoint{}, fmt.Errorf("%w: account name", sys.ErrInvalid)
+	}
+	if _, err := f.managed(account); err != nil {
+		return sys.WorkerEndpoint{}, err
+	}
+	if w := f.workers[account]; w != nil {
+		return w.endpoint, nil
+	}
+
+	original := sys.RootsFor(account, f.shares)
+	roots := append([]sys.WorkerRoot(nil), original...)
+	if len(roots) == 0 {
+		return sys.WorkerEndpoint{}, fmt.Errorf("%w: account has no shares", sys.ErrNotFound)
+	}
+	for i := range roots {
+		dir, err := f.shareDir(roots[i].Share)
+		if err != nil {
+			return sys.WorkerEndpoint{}, err
+		}
+		roots[i].Path = dir
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return sys.WorkerEndpoint{}, err
+	}
+	w := &fakeWorker{
+		server:   &http.Server{Handler: fileworker.NewHandler(roots)},
+		endpoint: sys.WorkerEndpoint{Network: "tcp", Address: listener.Addr().String()},
+		roots:    original,
+	}
+	go w.server.Serve(listener)
+	f.workers[account] = w
+	return w.endpoint, nil
+}
+
+// ShareDir returns the real folder that stands in for a share's files.
+func (f *Fake) ShareDir(share string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dir, _ := f.shareDir(share)
+	return dir
+}
+
+// shareDir creates and returns the folder for a share. Callers hold the lock.
+func (f *Fake) shareDir(share string) (string, error) {
+	if !sys.ValidShareName(share) {
+		return "", fmt.Errorf("%w: share name", sys.ErrInvalid)
+	}
+	if f.FilesDir == "" {
+		dir, err := os.MkdirTemp("", "netshare-hub-fake-")
+		if err != nil {
+			return "", err
+		}
+		f.FilesDir = dir
+	}
+	dir := filepath.Join(f.FilesDir, share)
+	return dir, os.MkdirAll(dir, 0o755)
+}
+
+// stopWorkers stops one account's worker, or all of them for "". Callers
+// hold the lock.
+func (f *Fake) stopWorkers(account string) {
+	for name, w := range f.workers {
+		if account == "" || account == name {
+			w.server.Close()
+			delete(f.workers, name)
+		}
+	}
+}
+
+// --- sys.Files ---
+
+func (f *Fake) ResolveDir(_ context.Context, dir string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !path.IsAbs(dir) {
+		return "", fmt.Errorf("%w: path must be absolute", sys.ErrInvalid)
+	}
+	dir = path.Clean(dir)
+	if strings.HasPrefix(dir, MissingPrefix+"/") && !f.dirs[dir] {
+		return "", fs.ErrNotExist
+	}
+	return dir, nil
+}
+
+func (f *Fake) CreateShareDir(_ context.Context, dir string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dir = path.Clean(dir)
+	if f.dirs[dir] {
+		return "", fs.ErrExist
+	}
+	f.dirs[dir] = true
+	return dir, nil
+}

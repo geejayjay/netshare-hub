@@ -1,0 +1,15 @@
+services:
+  test:
+    build:
+      context: .
+      dockerfile: deploy/test/Dockerfile
+    volumes:
+      - .:/workspace
+      - go-mod-cache:/go/pkg/mod
+    ports:
+      - "445:445"
+      - "8080:8080"
+    working_dir: /workspace
+
+volumes:
+  go-mod-cache:

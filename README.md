@@ -2,7 +2,7 @@
 
 <h1 align="center">NetShare Hub</h1>
 
-Simple network file sharing for Proxmox LXC and any Linux. See [docs/PLAN.md](docs/PLAN.md) for the full design.
+Simple network file sharing for Proxmox LXC and any Linux. See [docs/PLAN.md](docs/PLAN.md) for the full design and [docs/implementation](docs/implementation/README.md) for the build order.
 
 This repo currently holds the **Phase 0 framework**: the API and UI foundations that every feature is built on, plus two reference features (auth and users) that show how to use them.
 
@@ -38,6 +38,18 @@ Other tasks:
 | `pnpm gen:api` | Regenerates the OpenAPI spec and the TypeScript API types from the Go code |
 
 On first start the app asks you to create the admin account.
+
+## Linux / Samba integration test environment
+
+Integration tests (`-tags integration`) require Linux user management tools (`useradd`, `smbpasswd`) and a running Samba (`smbd`) daemon. You can run them inside the Debian + Samba test container defined in [deploy/test/Dockerfile](deploy/test/Dockerfile) and [compose.test.yml](compose.test.yml):
+
+```bash
+# Run integration tests against real Samba
+docker compose -f compose.test.yml run --rm test
+
+# Or open an interactive shell with smbd running (exposes SMB on 445 and API on 8080)
+docker compose -f compose.test.yml run --rm --service-ports test bash
+```
 
 ## How the backend is organized
 

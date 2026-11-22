@@ -33,21 +33,6 @@ CLAUDE.md
 AGENTS.md
 GEMINI.md
 
-
-
-# local docs
-/docs/
-
-# AI / coding agents
-.claude/
-.gemini/
-.agent/
-.agents/
-.cursor/
-.codex/
-.windsurf/
-CLAUDE.md
-AGENTS.md
-GEMINI.md
-
-
+# test / coverage output
+*.test
+coverage.*

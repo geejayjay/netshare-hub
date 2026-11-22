@@ -4,3 +4,4 @@ data_dir = "./data"
 log_level = "debug"
 log_format = "text"
 secure_cookies = false   # the dev server is plain http
+sys = "fake"             # no real Linux users or Samba: everything stays in memory

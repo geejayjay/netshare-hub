@@ -40,8 +40,9 @@ func newServer(t *testing.T) string {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.SecureCookies = false // the test server is plain http
+	cfg.Sys = "fake"
 
-	application, err := app.New(context.Background(), cfg, nil)
+	application, err := app.New(context.Background(), cfg, app.Options{})
 	if err != nil {
 		t.Fatalf("build app: %v", err)
 	}
