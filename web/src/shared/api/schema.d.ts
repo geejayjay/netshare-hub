@@ -55,6 +55,176 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/files/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy files and folders (a background job) */
+        post: operations["copyFiles"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete files and folders (folders as a job). Permanent until the recycle bin exists. */
+        post: operations["deleteFiles"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move files and folders (at once within a share, as a job between shares) */
+        post: operations["moveFiles"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get a one-time link to download several files as a zip */
+        post: operations["prepareZip"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/zip/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download a zip prepared with POST /files/zip */
+        get: operations["downloadZip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{share}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download a file (supports Range, so downloads can resume) */
+        get: operations["downloadFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{share}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a folder (one page, sorted by name) */
+        get: operations["listFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{share}/entry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Describe one file or folder */
+        get: operations["getFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{share}/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a folder */
+        post: operations["createFolder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{share}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename a file or folder */
+        post: operations["renameFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -360,6 +530,20 @@ export interface components {
             others: "none" | "read";
             users: components["schemas"]["Effective"][];
         };
+        Entry: {
+            isDir: boolean;
+            isLink: boolean;
+            /** Format: date-time */
+            modTime: string;
+            /**
+             * Format: int32
+             * @description Unix permission bits, e.g. 0644.
+             */
+            mode: number;
+            name: string;
+            /** Format: int64 */
+            size: number;
+        };
         FieldError: {
             /** @description Machine-readable reason, e.g. "required" or "too_short". */
             code: string;
@@ -373,6 +557,18 @@ export interface components {
             status: string;
             /** @example 0.1.0 */
             version: string;
+        };
+        Item: {
+            /**
+             * @description Inside the share, with / between folders. "" is the share's top folder.
+             * @example Films/holiday.mp4
+             */
+            path: string;
+            /** @example media */
+            share: string;
+        };
+        ItemsInputBody: {
+            items: components["schemas"]["Item"][] | null;
         };
         Job: {
             /**
@@ -426,6 +622,10 @@ export interface components {
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
+        ListResult: {
+            entries: components["schemas"]["Entry"][] | null;
+            next?: string;
+        };
         ListRoleInfo: {
             items: components["schemas"]["RoleInfo"][];
             /** @description Present only when the list is paginated. */
@@ -458,6 +658,10 @@ export interface components {
             total: number;
             /** Format: int64 */
             totalPages: number;
+        };
+        MkdirInputBody: {
+            /** @description The new folder, inside the share. Its parent must exist. */
+            path: string;
         };
         MyShare: {
             comment: string;
@@ -512,6 +716,20 @@ export interface components {
             title: string;
             /** @description Always "about:blank"; use "code" to identify the error. */
             type: string;
+        };
+        RenameInputBody: {
+            /** @description The new name (no folders: use move for that). */
+            name: string;
+            path: string;
+        };
+        Result: {
+            /**
+             * Format: int64
+             * @description Items handled right away.
+             */
+            done: number;
+            /** @description Set when the rest runs as a background job; follow it in the jobs list. */
+            job?: components["schemas"]["Job"];
         };
         /** @enum {string} */
         Role: "admin" | "share_manager" | "user" | "auditor";
@@ -582,6 +800,16 @@ export interface components {
             /** Format: int64 */
             userId: number;
         };
+        TransferRequest: {
+            /**
+             * @description When a file with the same name is there already: "rename" keeps both (default), "replace" overwrites it, "skip" leaves it.
+             * @enum {string}
+             */
+            conflict?: "rename" | "replace" | "skip";
+            /** @description The folder to put them in. */
+            destination: components["schemas"]["Item"];
+            items: components["schemas"]["Item"][] | null;
+        };
         UpdateShareRequest: {
             /** @description Replaces the whole access list. */
             access?: components["schemas"]["ShareAccessInput"][];
@@ -614,6 +842,12 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             username: string;
+        };
+        ZipOutputBody: {
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Open it (GET) to download the zip. Works once, for a minute. */
+            url: string;
         };
     };
     responses: never;
@@ -702,6 +936,347 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    copyFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Result"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemsInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Result"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    moveFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Result"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    prepareZip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemsInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZipOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    downloadZip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file's content. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    downloadFile: {
+        parameters: {
+            query?: {
+                path?: string;
+                /** @description Show the file in the browser instead of saving it. Only for types that cannot run code there (images, audio, video, PDF, plain text); anything else is still downloaded. */
+                inline?: boolean;
+            };
+            header?: {
+                Range?: string;
+            };
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file's content. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Part of the file (a Range request). */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+        };
+    };
+    listFiles: {
+        parameters: {
+            query?: {
+                /** @description The folder, inside the share. Empty: the share's top folder. */
+                path?: string;
+                /** @description The "next" value of the previous page. */
+                after?: string;
+                /** @description Entries per page (default 500). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getFile: {
+        parameters: {
+            query?: {
+                path?: string;
+            };
+            header?: never;
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createFolder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MkdirInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    renameFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
                 };
             };
             /** @description Error */

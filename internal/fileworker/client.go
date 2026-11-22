@@ -178,6 +178,18 @@ func (c *Client) Rename(ctx context.Context, account, share, from, to string, ov
 	return finish(res, nil)
 }
 
+// Copy copies one file, within a share or between two shares the account
+// can reach. Without overwrite, an existing file is left alone (fs.ErrExist).
+func (c *Client) Copy(ctx context.Context, account, fromShare, from, toShare, to string, overwrite bool) (Entry, error) {
+	var out Entry
+	res, err := c.send(ctx, account, http.MethodPost, "copy", nil,
+		jsonBody(copyRequest{FromShare: fromShare, From: from, ToShare: toShare, To: to, Overwrite: overwrite}), nil)
+	if err != nil {
+		return out, err
+	}
+	return out, finish(res, &out)
+}
+
 // Remove deletes a file or an empty folder; with recursive, a whole folder.
 func (c *Client) Remove(ctx context.Context, account, share, path string, recursive bool) error {
 	res, err := c.send(ctx, account, http.MethodPost, "remove", nil,

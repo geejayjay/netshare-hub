@@ -113,6 +113,15 @@ func (r *Repo) Get(ctx context.Context, q querier, id int64) (Share, bool, error
 	return shares[0], true, nil
 }
 
+// GetByName returns a share by name (names are case-insensitive).
+func (r *Repo) GetByName(ctx context.Context, name string) (Share, bool, error) {
+	shares, err := r.query(ctx, r.db.Read, "SELECT "+columns+" FROM shares WHERE name = ?", name)
+	if err != nil || len(shares) == 0 {
+		return Share{}, false, err
+	}
+	return shares[0], true, nil
+}
+
 // NameTaken reports whether another share already uses the name.
 func (r *Repo) NameTaken(ctx context.Context, name string) (bool, error) {
 	var one int

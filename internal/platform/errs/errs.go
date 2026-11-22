@@ -13,14 +13,15 @@ import (
 type Kind int
 
 const (
-	KindInternal        Kind = iota // bug or unexpected failure (500)
-	KindInvalid                     // the request was understood but is not valid (422)
-	KindUnauthenticated             // not logged in (401)
-	KindForbidden                   // logged in, but not allowed (403)
-	KindNotFound                    // the thing does not exist (404)
-	KindConflict                    // clashes with current state (409)
-	KindRateLimited                 // too many attempts (429)
-	KindUnavailable                 // a dependency is down (503)
+	KindInternal            Kind = iota // bug or unexpected failure (500)
+	KindInvalid                         // the request was understood but is not valid (422)
+	KindUnauthenticated                 // not logged in (401)
+	KindForbidden                       // logged in, but not allowed (403)
+	KindNotFound                        // the thing does not exist (404)
+	KindConflict                        // clashes with current state (409)
+	KindRateLimited                     // too many attempts (429)
+	KindUnavailable                     // a dependency is down (503)
+	KindRangeNotSatisfiable             // a byte range outside the file (416)
 )
 
 // Code is a stable, machine-readable identifier such as "USER_NOT_FOUND".
@@ -88,6 +89,9 @@ func Forbidden(code Code, msg string) *E       { return newE(KindForbidden, code
 func NotFound(code Code, msg string) *E        { return newE(KindNotFound, code, msg) }
 func Conflict(code Code, msg string) *E        { return newE(KindConflict, code, msg) }
 func Unavailable(code Code, msg string) *E     { return newE(KindUnavailable, code, msg) }
+func RangeNotSatisfiable(code Code, msg string) *E {
+	return newE(KindRangeNotSatisfiable, code, msg)
+}
 
 func RateLimited(msg string, retryAfterSeconds int) *E {
 	e := newE(KindRateLimited, CodeRateLimited, msg)

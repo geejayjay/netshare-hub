@@ -50,6 +50,7 @@ func NewHandler(roots []sys.WorkerRoot) *Handler {
 	h.mux.HandleFunc("POST /v1/mkdir", h.mkdir)
 	h.mux.HandleFunc("POST /v1/rename", h.rename)
 	h.mux.HandleFunc("POST /v1/remove", h.remove)
+	h.mux.HandleFunc("POST /v1/copy", h.copy)
 	return h
 }
 
@@ -218,13 +219,27 @@ func (h *Handler) write(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tmp := path.Join(path.Dir(p), uploadPrefix+randomName())
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
+	if err := store(root, p, r.Body, overwrite); err != nil {
+		fail(w, err)
+		return
+	}
+	info, err := root.Lstat(p)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	_, err = io.Copy(f, r.Body)
+	writeJSON(w, http.StatusOK, entryOf(info))
+}
+
+// store writes data to a temporary file next to p and moves it into place
+// when complete, so a half-written file is never visible under its name.
+func store(root *os.Root, p string, data io.Reader, overwrite bool) error {
+	tmp := path.Join(path.Dir(p), uploadPrefix+randomName())
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, data)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -241,15 +256,74 @@ func (h *Handler) write(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		root.Remove(tmp)
-		fail(w, err)
+	}
+	return err
+}
+
+// copy copies one regular file, within a share or between two of this
+// worker's shares. The data never leaves the worker, and the user's own
+// permissions apply on both sides (the worker runs as the user).
+func (h *Handler) copy(w http.ResponseWriter, r *http.Request) {
+	var req copyRequest
+	if !decode(w, r, &req) {
 		return
 	}
-	info, err := root.Lstat(p)
+	from, err1 := cleanPath(req.From)
+	to, err2 := cleanPath(req.To)
+	if err1 != nil || err2 != nil || from == "." || to == "." {
+		fail(w, ErrInvalidPath)
+		return
+	}
+	src, err := h.open(req.FromShare, false)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, entryOf(info))
+	defer src.Close()
+	dst, err := h.open(req.ToShare, true)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer dst.Close()
+
+	f, err := src.Open(from)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	if !info.Mode().IsRegular() {
+		fail(w, ErrIsDir)
+		return
+	}
+	if existing, err := dst.Lstat(to); err == nil {
+		if existing.IsDir() {
+			fail(w, ErrIsDir)
+			return
+		}
+		if !req.Overwrite {
+			fail(w, fs.ErrExist)
+			return
+		}
+	}
+	if err := store(dst, to, f, req.Overwrite); err != nil {
+		fail(w, err)
+		return
+	}
+	// Keep the original's modification time, like a file manager does.
+	_ = dst.Chtimes(to, info.ModTime(), info.ModTime())
+	out, err := dst.Lstat(to)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entryOf(out))
 }
 
 func (h *Handler) mkdir(w http.ResponseWriter, r *http.Request) {

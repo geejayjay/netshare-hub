@@ -198,6 +198,43 @@
         ],
         "type": "object"
       },
+      "Entry": {
+        "additionalProperties": false,
+        "properties": {
+          "isDir": {
+            "type": "boolean"
+          },
+          "isLink": {
+            "type": "boolean"
+          },
+          "modTime": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mode": {
+            "description": "Unix permission bits, e.g. 0644.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "mode",
+          "modTime",
+          "isDir",
+          "isLink"
+        ],
+        "type": "object"
+      },
       "FieldError": {
         "additionalProperties": false,
         "properties": {
@@ -240,6 +277,52 @@
         "required": [
           "status",
           "version"
+        ],
+        "type": "object"
+      },
+      "Item": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Inside the share, with / between folders. \"\" is the share's top folder.",
+            "examples": [
+              "Films/holiday.mp4"
+            ],
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "share": {
+            "examples": [
+              "media"
+            ],
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "share",
+          "path"
+        ],
+        "type": "object"
+      },
+      "ItemsInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -384,6 +467,27 @@
         ],
         "type": "object"
       },
+      "ListResult": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "next": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
       "ListRoleInfo": {
         "additionalProperties": false,
         "properties": {
@@ -491,6 +595,21 @@
           "total",
           "totalPages",
           "hasNext"
+        ],
+        "type": "object"
+      },
+      "MkdirInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "The new folder, inside the share. Its parent must exist.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
         ],
         "type": "object"
       },
@@ -689,6 +808,45 @@
           "title",
           "status",
           "code"
+        ],
+        "type": "object"
+      },
+      "RenameInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "The new name (no folders: use move for that).",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "name"
+        ],
+        "type": "object"
+      },
+      "Result": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "description": "Items handled right away.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "job": {
+            "$ref": "#/components/schemas/Job",
+            "description": "Set when the rest runs as a background job; follow it in the jobs list."
+          }
+        },
+        "required": [
+          "done"
         ],
         "type": "object"
       },
@@ -917,6 +1075,40 @@
         ],
         "type": "object"
       },
+      "TransferRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "conflict": {
+            "description": "When a file with the same name is there already: \"rename\" keeps both (default), \"replace\" overwrites it, \"skip\" leaves it.",
+            "enum": [
+              "rename",
+              "replace",
+              "skip"
+            ],
+            "type": "string"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/Item",
+            "description": "The folder to put them in."
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "destination"
+        ],
+        "type": "object"
+      },
       "UpdateShareRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1023,6 +1215,24 @@
           "smbAccess",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ZipOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "description": "Open it (GET) to download the zip. Works once, for a minute.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expiresAt"
         ],
         "type": "object"
       }
@@ -1160,6 +1370,586 @@
         "tags": [
           "Auth"
         ]
+      }
+    },
+    "/files/copy": {
+      "post": {
+        "operationId": "copyFiles",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Result"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Copy files and folders (a background job)",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:write"
+      }
+    },
+    "/files/delete": {
+      "post": {
+        "operationId": "deleteFiles",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemsInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Result"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete files and folders (folders as a job). Permanent until the recycle bin exists.",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:write"
+      }
+    },
+    "/files/move": {
+      "post": {
+        "operationId": "moveFiles",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Result"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Move files and folders (at once within a share, as a job between shares)",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:write"
+      }
+    },
+    "/files/zip": {
+      "post": {
+        "operationId": "prepareZip",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ItemsInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZipOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a one-time link to download several files as a zip",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:read"
+      }
+    },
+    "/files/zip/{token}": {
+      "get": {
+        "operationId": "downloadZip",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "maxLength": 48,
+              "minLength": 48,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The file's content."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Download a zip prepared with POST /files/zip",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:read"
+      }
+    },
+    "/files/{share}/download": {
+      "get": {
+        "operationId": "downloadFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Show the file in the browser instead of saving it. Only for types that cannot run code there (images, audio, video, PDF, plain text); anything else is still downloaded.",
+            "explode": false,
+            "in": "query",
+            "name": "inline",
+            "schema": {
+              "description": "Show the file in the browser instead of saving it. Only for types that cannot run code there (images, audio, video, PDF, plain text); anything else is still downloaded.",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Range",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The file's content."
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Part of the file (a Range request)."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Download a file (supports Range, so downloads can resume)",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:read"
+      }
+    },
+    "/files/{share}/entries": {
+      "get": {
+        "operationId": "listFiles",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The folder, inside the share. Empty: the share's top folder.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "The folder, inside the share. Empty: the share's top folder.",
+              "maxLength": 4096,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The \"next\" value of the previous page.",
+            "explode": false,
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "description": "The \"next\" value of the previous page.",
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Entries per page (default 500).",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Entries per page (default 500).",
+              "format": "int64",
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a folder (one page, sorted by name)",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:read"
+      }
+    },
+    "/files/{share}/entry": {
+      "get": {
+        "operationId": "getFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Describe one file or folder",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:read"
+      }
+    },
+    "/files/{share}/folders": {
+      "post": {
+        "operationId": "createFolder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MkdirInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entry"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a folder",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:write"
+      }
+    },
+    "/files/{share}/rename": {
+      "post": {
+        "operationId": "renameFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Rename a file or folder",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:write"
       }
     },
     "/health": {

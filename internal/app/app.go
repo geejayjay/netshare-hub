@@ -19,6 +19,7 @@ import (
 	"netshare-hub/internal/db/migrations"
 	"netshare-hub/internal/fileworker"
 	"netshare-hub/internal/modules/auth"
+	"netshare-hub/internal/modules/files"
 	"netshare-hub/internal/modules/jobs"
 	"netshare-hub/internal/modules/shares"
 	"netshare-hub/internal/modules/system"
@@ -96,7 +97,10 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	for kind, h := range opts.JobKinds {
 		jobService.Register(kind, h)
 	}
-	files := fileworker.NewClient(osLayer.Workers)
+	fileClient := fileworker.NewClient(osLayer.Workers)
+	fileService := files.NewService(fileClient, userService, shareService, jobService)
+	jobService.Register(files.JobCopy, fileService.RunCopy)
+	jobService.Register(files.JobDelete, fileService.RunDelete)
 
 	router := chi.NewRouter()
 	router.Use(httpx.RequestID, httpx.RealIP, httpx.AccessLog, httpx.Recover, httpx.SecurityHeaders)
@@ -117,6 +121,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		users.Register(api, userService)
 		shares.Register(api, shareService)
 		jobs.Register(api, jobService)
+		files.Register(api, fileService)
 	})
 
 	if opts.Static != nil {
@@ -130,7 +135,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	}
 
 	slog.Info("application ready", "version", Version, "data_dir", cfg.DataDir)
-	return &App{Handler: router, API: api, Events: sseHub, Files: files, Jobs: jobService, db: database}, nil
+	return &App{Handler: router, API: api, Events: sseHub, Files: fileClient, Jobs: jobService, db: database}, nil
 }
 
 // chooseSystem returns how this process reaches the operating system.

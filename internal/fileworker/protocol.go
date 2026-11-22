@@ -63,6 +63,15 @@ type renameRequest struct {
 	Overwrite bool   `json:"overwrite"`
 }
 
+// copyRequest copies one file, possibly between two shares of the worker.
+type copyRequest struct {
+	FromShare string `json:"fromShare"`
+	From      string `json:"from"`
+	ToShare   string `json:"toShare"`
+	To        string `json:"to"`
+	Overwrite bool   `json:"overwrite"`
+}
+
 type pathRequest struct {
 	Share     string `json:"share"`
 	Path      string `json:"path"`
@@ -104,6 +113,9 @@ func encodeError(err error) (int, string) {
 	case errors.Is(err, sys.ErrReadOnly):
 		return http.StatusForbidden, codeReadOnly
 	case errors.Is(err, ErrInvalidPath), isEscape(err):
+		return http.StatusBadRequest, codeInvalid
+	case errors.Is(err, syscall.EINVAL):
+		// For example moving a folder into itself.
 		return http.StatusBadRequest, codeInvalid
 	case errors.Is(err, fs.ErrNotExist):
 		return http.StatusNotFound, codeNotFound
@@ -150,6 +162,11 @@ type remoteError struct {
 
 func (e *remoteError) Error() string { return "file worker: " + e.code + ": " + e.message }
 func (e *remoteError) Unwrap() error { return e.base }
+
+// CleanPath validates a path inside a share and returns it in the form the
+// worker uses ("." for the share's top folder). The web server checks paths
+// with it too, to answer with a clear error before asking a worker.
+func CleanPath(p string) (string, error) { return cleanPath(p) }
 
 // cleanPath validates a path inside a share and returns it in a form os.Root
 // accepts. "" means the share's top folder.

@@ -9,6 +9,7 @@ package app_test
 //	go test -p 1 -tags integration ./internal/app/
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -18,11 +19,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"netshare-hub/internal/app"
 	"netshare-hub/internal/platform/config"
+	"netshare-hub/internal/sys/sysexec"
 )
 
 // smb runs smbclient commands on a share as a user ("" = guest, no password)
@@ -402,5 +405,155 @@ func TestNetworkRulesOverRealSMB(t *testing.T) {
 		if got := connect(c.name); got != c.in {
 			t.Errorf("%s (rules %v) from %s: connected = %v, want %v", c.name, c.rules, ip, got, c.in)
 		}
+	}
+}
+
+// Step 1.11a with real users and real file workers: what the API does is
+// done AS the user, and the kernel has the last word.
+func TestFilesOverRealWorkers(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	// Workers run "<program> fileworker" as the user: build the real program
+	// into a folder every user can enter.
+	binDir, err := os.MkdirTemp("/usr/local/lib", "nsh-files-itest-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(binDir, 0o755)
+	t.Cleanup(func() { os.RemoveAll(binDir) })
+	bin := filepath.Join(binDir, "netshare-hub")
+	if out, err := exec.Command("go", "build", "-o", bin, "netshare-hub/cmd/netshare-hub").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.SecureCookies = false
+	system, err := sysexec.New(sysexec.Options{Protected: cfg.ProtectedDirs(), WorkerExe: bin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := app.New(context.Background(), cfg, app.Options{System: &system})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler)
+	base := server.URL + app.APIPrefix
+	admin := newClient(t, base)
+	var s session
+	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
+	admin.csrf = s.CSRFToken
+
+	suffix := fmt.Sprint(os.Getpid() % 10000)
+	jayName, anaName := "fj"+suffix, "fa"+suffix
+	jayID, anaID := createUser(t, admin, jayName).ID, createUser(t, admin, anaName).ID
+	dirs := map[string]string{}
+	var shareIDs []int64
+	t.Cleanup(func() {
+		for _, id := range shareIDs {
+			admin.do("DELETE", "/shares/"+itoa(id), nil, nil)
+		}
+		admin.do("DELETE", "/users/"+itoa(jayID), nil, nil)
+		admin.do("DELETE", "/users/"+itoa(anaID), nil, nil)
+		server.Close()
+		application.Close()
+		for _, d := range dirs {
+			os.RemoveAll(d)
+		}
+	})
+	for _, name := range []string{"fm" + suffix, "fn" + suffix} {
+		dir := fmt.Sprintf("/srv/shares/%s", name)
+		os.Mkdir(dir, 0o750)
+		dirs[name] = dir
+		os.WriteFile(filepath.Join(dir, "seed.txt"), []byte("seed"), 0o600) // root's, before sharing
+		var sh shareBody
+		status, _ := admin.do("POST", "/shares", map[string]any{"name": name, "path": dir, "access": []map[string]any{
+			{"userId": jayID, "level": "write"}, {"userId": anaID, "level": "read"},
+		}}, &sh)
+		if status != 201 {
+			t.Fatalf("create share %s: %d", name, status)
+		}
+		shareIDs = append(shareIDs, sh.ID)
+	}
+	waitJobs(t, admin) // the fix-permissions jobs for the seed files
+	fm, fn := "fm"+suffix, "fn"+suffix
+
+	jay, ana := newClient(t, base), newClient(t, base)
+	jay.login(jayName, pw)
+	ana.login(anaName, pw)
+	uidOf := func(name string) uint32 {
+		out, _ := exec.Command("id", "-u", name).Output()
+		var n uint32
+		fmt.Sscan(strings.TrimSpace(string(out)), &n)
+		return n
+	}
+	owner := func(p string) uint32 {
+		info, err := os.Lstat(p)
+		if err != nil {
+			t.Fatalf("stat %s: %v", p, err)
+		}
+		return info.Sys().(*syscall.Stat_t).Uid
+	}
+	item := func(share, p string) map[string]any { return map[string]any{"share": share, "path": p} }
+
+	// What jay makes belongs to jay.
+	if status, _ := jay.do("POST", "/files/"+fm+"/folders", map[string]any{"path": "work"}, nil); status != 201 {
+		t.Fatalf("mkdir: %d", status)
+	}
+	if got := owner(filepath.Join(dirs[fm], "work")); got != uidOf(jayName) {
+		t.Errorf("folder owner uid %d, want %s's", got, jayName)
+	}
+	var r resultBody
+	jay.do("POST", "/files/copy", map[string]any{"items": []map[string]any{item(fm, "seed.txt")}, "destination": item(fm, "work")}, &r)
+	if st, code := waitJob(t, jay, r.Job.ID); st != "succeeded" {
+		t.Fatalf("copy job: %s %s", st, code)
+	}
+	if got := owner(filepath.Join(dirs[fm], "work", "seed.txt")); got != uidOf(jayName) {
+		t.Errorf("copied file owner uid %d, want %s's", got, jayName)
+	}
+
+	// Moving between shares: the copy is jay's, the original is gone.
+	r = resultBody{}
+	jay.do("POST", "/files/move", map[string]any{"items": []map[string]any{item(fm, "work")}, "destination": item(fn, "")}, &r)
+	if r.Job == nil {
+		t.Fatal("a move between shares should be a job")
+	}
+	if st, code := waitJob(t, jay, r.Job.ID); st != "succeeded" {
+		t.Fatalf("move job: %s %s", st, code)
+	}
+	if _, err := os.Stat(filepath.Join(dirs[fm], "work")); err == nil {
+		t.Error("the source is still there after the move")
+	}
+	if got := owner(filepath.Join(dirs[fn], "work", "seed.txt")); got != uidOf(jayName) {
+		t.Errorf("moved file owner uid %d, want %s's", got, jayName)
+	}
+
+	// ana reads, but the kernel stops her writing (she is read-only).
+	if status, _, body := ana.raw("GET", "/files/"+fn+"/download?path=work/seed.txt", nil); status != 200 || string(body) != "seed" {
+		t.Errorf("ana download: %d %q", status, body)
+	}
+	var p problem
+	if status, _ := ana.do("POST", "/files/"+fn+"/folders", map[string]any{"path": "mine"}, &p); status != 403 {
+		t.Errorf("ana mkdir on a read-only share: %d", status)
+	}
+
+	// A file the kernel does not let jay read stays unread.
+	os.WriteFile(filepath.Join(dirs[fm], "root-only.txt"), []byte("root secret"), 0o600)
+	p = problem{}
+	status, _ := jay.do("GET", "/files/"+fm+"/download?path=root-only.txt", nil, &p)
+	if status != 403 || p.Code != "FILE_PERMISSION_DENIED" {
+		t.Errorf("download of a root-only file: %d %s", status, p.Code)
+	}
+
+	// A link to /etc/shadow is not a way out, for download, copy or zip.
+	os.Symlink("/etc/shadow", filepath.Join(dirs[fm], "shadow"))
+	if status, _, body := jay.raw("GET", "/files/"+fm+"/download?path=shadow", nil); status == 200 || strings.Contains(string(body), "root:") {
+		t.Errorf("download through a link out of the share: %d", status)
+	}
+	var z struct{ URL string }
+	jay.do("POST", "/files/zip", map[string]any{"items": []map[string]any{item(fm, "shadow"), item(fm, "seed.txt")}}, &z)
+	if status, _, body := jay.raw("GET", strings.TrimPrefix(z.URL, "/api/v1"), nil); status != 200 || bytes.Contains(body, []byte("root:")) {
+		t.Errorf("zip with a link out of the share: %d", status)
 	}
 }

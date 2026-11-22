@@ -50,14 +50,15 @@ func (p *Problem) GetHeaders() http.Header {
 
 // kindStatus is the only place a Kind becomes an HTTP status.
 var kindStatus = map[errs.Kind]int{
-	errs.KindInternal:        http.StatusInternalServerError,
-	errs.KindInvalid:         http.StatusUnprocessableEntity,
-	errs.KindUnauthenticated: http.StatusUnauthorized,
-	errs.KindForbidden:       http.StatusForbidden,
-	errs.KindNotFound:        http.StatusNotFound,
-	errs.KindConflict:        http.StatusConflict,
-	errs.KindRateLimited:     http.StatusTooManyRequests,
-	errs.KindUnavailable:     http.StatusServiceUnavailable,
+	errs.KindInternal:            http.StatusInternalServerError,
+	errs.KindInvalid:             http.StatusUnprocessableEntity,
+	errs.KindUnauthenticated:     http.StatusUnauthorized,
+	errs.KindForbidden:           http.StatusForbidden,
+	errs.KindNotFound:            http.StatusNotFound,
+	errs.KindConflict:            http.StatusConflict,
+	errs.KindRateLimited:         http.StatusTooManyRequests,
+	errs.KindUnavailable:         http.StatusServiceUnavailable,
+	errs.KindRangeNotSatisfiable: http.StatusRequestedRangeNotSatisfiable,
 }
 
 // FromError converts any error into a Problem and logs it. Internal causes

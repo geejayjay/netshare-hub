@@ -49,6 +49,9 @@ type Route struct {
 	Tag     string
 	Access  Access
 	Status  int // success status; 0 = framework default (200, or 204 with no body)
+	// Binary marks a route that streams a file instead of JSON (the handler
+	// returns *huma.StreamResponse); it is the response's content type.
+	Binary string
 }
 
 // Register adds a route to the API. It is the only way routes are added, so
@@ -68,6 +71,16 @@ func Register[I, O any](api huma.API, r Route, handler func(context.Context, *I)
 	}
 	if r.Access.permission != "" {
 		op.Extensions = map[string]any{"x-permission": string(r.Access.permission)}
+	}
+	if r.Binary != "" {
+		file := &huma.Response{
+			Description: "The file's content.",
+			Content:     map[string]*huma.MediaType{r.Binary: {Schema: &huma.Schema{Type: "string", Format: "binary"}}},
+		}
+		op.Responses = map[string]*huma.Response{"200": file}
+		if r.Binary == "application/octet-stream" {
+			op.Responses["206"] = &huma.Response{Description: "Part of the file (a Range request).", Content: file.Content}
+		}
 	}
 
 	huma.Register(api, op, func(ctx context.Context, in *I) (*O, error) {

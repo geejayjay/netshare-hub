@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/netip"
 	"path"
 	"slices"
 	"strings"
@@ -117,6 +118,19 @@ func (s *Service) Get(ctx context.Context, id int64) (Share, error) {
 	}
 	one := []Share{sh}
 	return one[0], s.fillUsernames(ctx, one)
+}
+
+// NetworkAllowed reports whether a client address may use a share under the
+// share's network rules (1.8). The file manager checks it on every request,
+// so the rules mean the same there as over SMB. An unknown share is allowed
+// here: the file worker answers "not found" for it.
+func (s *Service) NetworkAllowed(ctx context.Context, share string, ip netip.Addr) (bool, error) {
+	sh, ok, err := s.repo.GetByName(ctx, share)
+	if err != nil || !ok {
+		return true, err
+	}
+	allow, block := splitRules(sh.NetworkRules)
+	return sys.HostAllowed(allow, block, ip), nil
 }
 
 // Preview returns the effective access a share would have with these
