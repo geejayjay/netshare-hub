@@ -65,7 +65,7 @@ func Default() Config {
 		LogLevel:      "info",
 		LogFormat:     "json",
 		SecureCookies: true,
-		Sys:           "real",
+		Sys:           "agent",
 		AgentSocket:   "/run/netshare-hub/agent.sock",
 		AgentUser:     "netshare",
 	}

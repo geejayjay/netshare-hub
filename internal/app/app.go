@@ -85,7 +85,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := database.Migrate(ctx, migrations.FS); err != nil {
+	if err := database.Migrate(ctx, migrations.FS, filepath.Join(cfg.DataDir, "backups")); err != nil {
 		database.Close()
 		return nil, err
 	}

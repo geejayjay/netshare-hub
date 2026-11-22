@@ -1,0 +1,54 @@
+[Unit]
+Description=NetShare Hub web server
+After=network-online.target netshare-hub-agent.service
+Wants=network-online.target netshare-hub-agent.service
+
+[Service]
+Type=simple
+User=netshare
+Group=netshare
+ExecStart=/usr/bin/netshare-hub serve --config /etc/netshare-hub/config.toml
+Restart=on-failure
+RestartSec=2s
+
+# The web server faces the network, so it gets as little as possible: an
+# unprivileged user, no capabilities, a read-only system, and only its own
+# data folder (/var/lib/netshare-hub) writable. Every system change goes
+# through the agent's socket; every file operation through a user's worker.
+StateDirectory=netshare-hub
+StateDirectoryMode=0750
+UMask=0077
+
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# To listen on a port below 1024 (80, 443), add in an override
+# (systemctl edit netshare-hub):
+#   [Service]
+#   AmbientCapabilities=CAP_NET_BIND_SERVICE
+#   CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

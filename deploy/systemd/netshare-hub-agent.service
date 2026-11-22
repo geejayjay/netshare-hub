@@ -1,0 +1,50 @@
+[Unit]
+Description=NetShare Hub agent (system changes for the web server)
+After=network.target smbd.service
+Wants=smbd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/netshare-hub agent --config /etc/netshare-hub/config.toml
+Restart=on-failure
+RestartSec=2s
+
+# The agent runs as root on purpose: it creates accounts, writes the Samba
+# config, sets folder permissions and starts each user's file worker. It is
+# reachable only through its local socket (see internal/agent). Everything
+# below takes away what that work does not need. The file workers it starts
+# inherit all of it.
+RuntimeDirectory=netshare-hub
+RuntimeDirectoryMode=0750
+UMask=0022
+
+# Capabilities: owner and mode changes, ACLs on any file in a share, and
+# switching to a user's identity for their worker. Nothing else (no network
+# admin, no raw sockets, no module loading, no mounts).
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_SETUID CAP_SETGID CAP_KILL CAP_AUDIT_WRITE
+NoNewPrivileges=yes
+
+# /etc (accounts, Samba config) and the share folders must stay writable, so
+# only /usr and /boot are read-only. /home stays reachable: shares may live
+# there.
+ProtectSystem=true
+ProtectHome=no
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# Local sockets (the web server, Samba), netlink (account tools write audit
+# records) and IP (name lookups).
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
