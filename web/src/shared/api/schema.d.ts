@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    "/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List server alerts, newest first */
+        get: operations["listAlerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an alert */
+        get: operations["getAlert"];
+        put?: never;
+        post?: never;
+        /** Remove an alert from the list */
+        delete: operations["deleteAlert"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark an alert as seen (it is no longer active) */
+        post: operations["acknowledgeAlert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -451,6 +503,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List scheduled tasks: when they last ran, how it went, when they run next */
+        get: operations["listScheduledTasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -492,6 +561,40 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Alert: {
+            /** Format: date-time */
+            acknowledgedAt?: string;
+            /** Format: int64 */
+            acknowledgedBy?: number;
+            /** @description Neither resolved nor acknowledged. */
+            active: boolean;
+            /**
+             * Format: int64
+             * @description How many times it happened while active.
+             */
+            count: number;
+            /** @description Machine-readable facts for the UI (affected files, counts...). */
+            details: unknown;
+            /** Format: date-time */
+            firstAt: string;
+            /** Format: int64 */
+            id: number;
+            /** @description Which one (a share, an IP...); "" when there is only one. */
+            key: string;
+            /** @description What happened, e.g. "samba.reload_failed". Stable: the UI may switch on it. */
+            kind: string;
+            /** Format: date-time */
+            lastAt: string;
+            /** @description What happened and what to do, for a person. */
+            message: string;
+            /** Format: date-time */
+            resolvedAt?: string;
+            /** @enum {string} */
+            severity: "info" | "warning" | "error" | "critical";
+            /** @enum {string} */
+            source: "shares" | "uploads" | "security" | "storage" | "replication" | "system";
+            title: string;
+        };
         CreateShareRequest: {
             /** @description Users who may use the share. Without any (and without guest access), nobody can connect. */
             access?: components["schemas"]["ShareAccessInput"][] | null;
@@ -625,6 +728,11 @@ export interface components {
              */
             total: number;
         };
+        ListAlert: {
+            items: components["schemas"]["Alert"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
         ListJob: {
             items: components["schemas"]["Job"][];
             /** @description Present only when the list is paginated. */
@@ -651,6 +759,11 @@ export interface components {
         };
         ListShare: {
             items: components["schemas"]["Share"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListStatus: {
+            items: components["schemas"]["Status"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
@@ -699,7 +812,7 @@ export interface components {
             address: string;
         };
         /** @enum {string} */
-        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage";
+        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage";
         Preset: {
             /** @enum {string} */
             defaultLevel: "read" | "upload" | "write";
@@ -846,6 +959,21 @@ export interface components {
             /** Format: int64 */
             userId: number;
         };
+        Status: {
+            /** Format: date-time */
+            lastEnd?: string;
+            lastError?: string;
+            /** Format: date-time */
+            lastStart?: string;
+            name: string;
+            /** Format: date-time */
+            nextRun?: string;
+            running: boolean;
+            /** Format: int64 */
+            runs: number;
+            /** @description "every 1h0m0s" or "daily at 03:00". */
+            schedule: string;
+        };
         TransferRequest: {
             /**
              * @description When a file with the same name is there already: "rename" keeps both (default), "replace" overwrites it, "skip" leaves it.
@@ -904,6 +1032,139 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listAlerts: {
+        parameters: {
+            query?: {
+                /** @description Page number, starting at 1. */
+                page?: number;
+                /** @description Items per page. Each endpoint has its own default and maximum. */
+                pageSize?: number;
+                /** @description Field to sort by. Prefix with - for descending, e.g. -createdAt. */
+                sort?: string;
+                /** @description Free-text search. */
+                q?: string;
+                /** @description Only alerts that are neither resolved nor acknowledged. */
+                active?: boolean;
+                severity?: "info" | "warning" | "error" | "critical";
+                source?: "shares" | "uploads" | "security" | "storage" | "replication" | "system";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAlert"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    acknowledgeAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -1898,6 +2159,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listScheduledTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListStatus"];
                 };
             };
             /** @description Error */

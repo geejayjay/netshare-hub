@@ -27,6 +27,9 @@ const (
 	// JobsManage lets a user see and cancel every user's background jobs.
 	// Without it, users only see and cancel their own.
 	JobsManage Permission = "jobs:manage"
+	// AlertsManage lets a user acknowledge and remove server alerts.
+	// Seeing them needs SystemRead.
+	AlertsManage Permission = "alerts:manage"
 )
 
 // all lists every permission. Add new ones here too: the Admin role gets the
@@ -34,7 +37,7 @@ const (
 var all = []Permission{
 	UsersRead, UsersWrite, GroupsRead, GroupsWrite, SharesRead, SharesWrite,
 	FilesRead, FilesWrite, SettingsRead, SettingsWrite, AuditRead, SystemRead,
-	JobsManage,
+	JobsManage, AlertsManage,
 }
 
 // Role is a named bundle of permissions.

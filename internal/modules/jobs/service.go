@@ -199,7 +199,9 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.repo.FailUnknownKinds(ctx, kinds, s.now()); err != nil {
 		return err
 	}
-	s.cleanup(ctx)
+	if err := s.Cleanup(ctx); err != nil {
+		slog.WarnContext(ctx, "could not remove old jobs", "err", err)
+	}
 
 	s.wg.Add(1)
 	go s.dispatch()
@@ -298,14 +300,13 @@ func visible(actor *httpx.Principal, j Job) bool {
 
 func (s *Service) dispatch() {
 	defer s.wg.Done()
-	ticker := time.NewTicker(30 * time.Second) // also catches anything missed
+	ticker := time.NewTicker(30 * time.Second) // catches anything missed
 	defer ticker.Stop()
 	for {
 		s.fill()
 		select {
 		case <-s.wake:
 		case <-ticker.C:
-			s.cleanup(context.Background())
 		case <-s.stop:
 			return
 		}
@@ -425,13 +426,14 @@ func (s *Service) finish(ctx context.Context, job Job, runErr error) {
 	}
 }
 
-func (s *Service) cleanup(ctx context.Context) {
+// Cleanup removes finished jobs older than the retention time (a scheduled
+// task).
+func (s *Service) Cleanup(ctx context.Context) error {
 	n, err := s.repo.DeleteFinishedBefore(ctx, s.now().Add(-s.opts.Retention))
-	if err != nil {
-		slog.Warn("could not remove old jobs", "err", err)
-	} else if n > 0 {
-		slog.Info("removed old jobs", "count", n)
+	if err == nil && n > 0 {
+		slog.InfoContext(ctx, "removed old jobs", "count", n)
 	}
+	return err
 }
 
 func (s *Service) poke() {

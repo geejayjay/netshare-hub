@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"netshare-hub/internal/modules/alerts"
 	"netshare-hub/internal/modules/jobs"
 	"netshare-hub/internal/modules/users"
 	"netshare-hub/internal/platform/errs"
@@ -37,12 +38,13 @@ const JobFixPermissions = "shares.fix-permissions"
 // Files already inside a folder get the new permissions from a background
 // job (JobFixPermissions), queued after each change of who has access.
 type Service struct {
-	repo  *Repo
-	users Users
-	samba sys.Samba
-	files sys.Files
-	jobs  Jobs
-	now   func() time.Time
+	repo   *Repo
+	users  Users
+	samba  sys.Samba
+	files  sys.Files
+	jobs   Jobs
+	alerts Alerts
+	now    func() time.Time
 	// protected are folders that must never be exposed through a share, on
 	// top of the system folders: NetShare Hub's own data (the database holds
 	// password hashes).
@@ -55,6 +57,28 @@ type Service struct {
 
 func NewService(repo *Repo, u Users, system sys.System, j Jobs, protected ...string) *Service {
 	return &Service{repo: repo, users: u, samba: system.Samba, files: system.Files, jobs: j, now: time.Now, protected: protected}
+}
+
+// SetAlerts connects the alerts module (wired after both exist).
+func (s *Service) SetAlerts(a Alerts) { s.alerts = a }
+
+// alertReloadFailed is the alert kind for a Samba that did not reload.
+const alertReloadFailed = "samba.reload_failed"
+
+// reloadAlert raises or resolves the "Samba did not reload" alert.
+func (s *Service) reloadAlert(ctx context.Context, failed error) {
+	if s.alerts == nil {
+		return
+	}
+	if failed == nil {
+		_ = s.alerts.Resolve(ctx, alertReloadFailed, "")
+		return
+	}
+	_, _ = s.alerts.Raise(ctx, alerts.Raise{
+		Kind: alertReloadFailed, Severity: alerts.Error, Source: alerts.SourceShares,
+		Title:   "Samba did not reload its configuration",
+		Message: "The latest share changes are saved, but Samba is still running with the previous configuration. Check that Samba is running (systemctl status smbd); the changes take effect when it restarts.",
+	})
 }
 
 // allowed reports whether a real path may be shared.
@@ -403,6 +427,7 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 		s.restoreConfig(ctx)
 		return err
 	}
+	s.reloadAlert(ctx, applyErr)
 	if applyErr != nil {
 		return errs.Unavailable(CodeSambaReloadFailed,
 			"The change was saved, but Samba could not be reloaded. It will take effect when Samba restarts.").

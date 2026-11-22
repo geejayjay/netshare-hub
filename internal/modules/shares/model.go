@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"netshare-hub/internal/modules/alerts"
 	"netshare-hub/internal/modules/jobs"
 	"netshare-hub/internal/modules/users"
 	"netshare-hub/internal/platform/errs"
@@ -108,6 +109,12 @@ type UpdateInput struct {
 // Users is what shares needs from the users module.
 type Users interface {
 	GetMany(ctx context.Context, ids []int64) (map[int64]users.User, error)
+}
+
+// Alerts is what shares needs from the alerts module.
+type Alerts interface {
+	Raise(ctx context.Context, in alerts.Raise) (alerts.Alert, error)
+	Resolve(ctx context.Context, kind, key string) error
 }
 
 // Jobs is what shares needs from the jobs module.

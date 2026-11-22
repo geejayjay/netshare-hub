@@ -115,11 +115,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
+	// Through the controller, not w.(http.Flusher): middleware wraps the
+	// writer (the access log records the status), and the controller finds
+	// the real one behind it via Unwrap.
+	flusher := http.NewResponseController(w)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -130,7 +129,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer unsubscribe()
 
 	_, _ = w.Write([]byte(": connected\n\n"))
-	flusher.Flush()
+	if err := flusher.Flush(); err != nil {
+		return // this connection cannot stream
+	}
 
 	ticker := time.NewTicker(keepaliveInterval)
 	defer ticker.Stop()
@@ -146,12 +147,12 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if _, err := w.Write(frame); err != nil {
 				return
 			}
-			flusher.Flush()
+			_ = flusher.Flush()
 		case <-ticker.C:
 			if _, err := w.Write([]byte(": keepalive\n\n")); err != nil {
 				return
 			}
-			flusher.Flush()
+			_ = flusher.Flush()
 		}
 	}
 }

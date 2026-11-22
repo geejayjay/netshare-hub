@@ -1,6 +1,97 @@
 {
   "components": {
     "schemas": {
+      "Alert": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "acknowledgedBy": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "active": {
+            "description": "Neither resolved nor acknowledged.",
+            "type": "boolean"
+          },
+          "count": {
+            "description": "How many times it happened while active.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "details": {
+            "description": "Machine-readable facts for the UI (affected files, counts...)."
+          },
+          "firstAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "key": {
+            "description": "Which one (a share, an IP...); \"\" when there is only one.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What happened, e.g. \"samba.reload_failed\". Stable: the UI may switch on it.",
+            "type": "string"
+          },
+          "lastAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "description": "What happened and what to do, for a person.",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "shares",
+              "uploads",
+              "security",
+              "storage",
+              "replication",
+              "system"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "key",
+          "severity",
+          "source",
+          "title",
+          "message",
+          "details",
+          "count",
+          "firstAt",
+          "lastAt",
+          "active"
+        ],
+        "type": "object"
+      },
       "CreateShareRequest": {
         "additionalProperties": false,
         "properties": {
@@ -410,6 +501,25 @@
         ],
         "type": "object"
       },
+      "ListAlert": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ListJob": {
         "additionalProperties": false,
         "properties": {
@@ -513,6 +623,25 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/Share"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ListStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Status"
             },
             "type": "array"
           },
@@ -679,7 +808,8 @@
           "settings:write",
           "audit:read",
           "system:read",
-          "jobs:manage"
+          "jobs:manage",
+          "alerts:manage"
         ],
         "type": "string"
       },
@@ -1146,6 +1276,47 @@
         ],
         "type": "object"
       },
+      "Status": {
+        "additionalProperties": false,
+        "properties": {
+          "lastEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lastError": {
+            "type": "string"
+          },
+          "lastStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nextRun": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "runs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "schedule": {
+            "description": "\"every 1h0m0s\" or \"daily at 03:00\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "schedule",
+          "running",
+          "runs"
+        ],
+        "type": "object"
+      },
       "TransferRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1323,6 +1494,271 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/alerts": {
+      "get": {
+        "operationId": "listAlerts",
+        "parameters": [
+          {
+            "description": "Page number, starting at 1.",
+            "explode": false,
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "description": "Page number, starting at 1.",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page. Each endpoint has its own default and maximum.",
+            "explode": false,
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "description": "Items per page. Each endpoint has its own default and maximum.",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text search.",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Free-text search.",
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only alerts that are neither resolved nor acknowledged.",
+            "explode": false,
+            "in": "query",
+            "name": "active",
+            "schema": {
+              "description": "Only alerts that are neither resolved nor acknowledged.",
+              "type": "boolean"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "severity",
+            "schema": {
+              "enum": [
+                "info",
+                "warning",
+                "error",
+                "critical"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "enum": [
+                "shares",
+                "uploads",
+                "security",
+                "storage",
+                "replication",
+                "system"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAlert"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List server alerts, newest first",
+        "tags": [
+          "Alerts"
+        ],
+        "x-permission": "system:read"
+      }
+    },
+    "/alerts/{id}": {
+      "delete": {
+        "operationId": "deleteAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove an alert from the list",
+        "tags": [
+          "Alerts"
+        ],
+        "x-permission": "alerts:manage"
+      },
+      "get": {
+        "operationId": "getAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get an alert",
+        "tags": [
+          "Alerts"
+        ],
+        "x-permission": "system:read"
+      }
+    },
+    "/alerts/{id}/acknowledge": {
+      "post": {
+        "operationId": "acknowledgeAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Mark an alert as seen (it is no longer active)",
+        "tags": [
+          "Alerts"
+        ],
+        "x-permission": "alerts:manage"
+      }
+    },
     "/auth/login": {
       "post": {
         "operationId": "login",
@@ -2899,6 +3335,43 @@
           "Shares"
         ],
         "x-permission": "shares:write"
+      }
+    },
+    "/system/tasks": {
+      "get": {
+        "operationId": "listScheduledTasks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List scheduled tasks: when they last ran, how it went, when they run next",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "system:read"
       }
     },
     "/users": {

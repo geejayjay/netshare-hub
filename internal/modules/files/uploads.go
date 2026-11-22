@@ -316,20 +316,6 @@ func (s *Service) SweepUploads(ctx context.Context) {
 	}
 }
 
-// RunUploadSweeper sweeps now and then every hour until ctx ends.
-func (s *Service) RunUploadSweeper(ctx context.Context) {
-	tick := time.NewTicker(time.Hour)
-	defer tick.Stop()
-	for {
-		s.SweepUploads(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-		}
-	}
-}
-
 func fileworkerID(id string) bool {
 	if len(id) != 32 {
 		return false

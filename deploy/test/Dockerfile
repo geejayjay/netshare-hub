@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         passwd \
         samba \
         samba-common-bin \
+        samba-vfs-modules \
         smbclient \
         sudo \
     && rm -rf /var/lib/apt/lists/*

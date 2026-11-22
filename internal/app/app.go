@@ -18,9 +18,11 @@ import (
 	"netshare-hub/internal/agent"
 	"netshare-hub/internal/db/migrations"
 	"netshare-hub/internal/fileworker"
+	"netshare-hub/internal/modules/alerts"
 	"netshare-hub/internal/modules/auth"
 	"netshare-hub/internal/modules/files"
 	"netshare-hub/internal/modules/jobs"
+	"netshare-hub/internal/modules/scheduler"
 	"netshare-hub/internal/modules/shares"
 	"netshare-hub/internal/modules/system"
 	"netshare-hub/internal/modules/users"
@@ -50,7 +52,7 @@ type App struct {
 	// Jobs runs long work in the background (step 1.3).
 	Jobs *jobs.Service
 	db   *db.DB
-	// stop ends background loops (the upload cleanup) and waits for them.
+	// stop ends the scheduled tasks and waits for them.
 	stop  func()
 	files *files.Service
 }
@@ -99,6 +101,8 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	// Users must be taken off every share before their system account goes away.
 	userService.SetAccessRevoker(shareService)
 	jobService.Register(shares.JobFixPermissions, shareService.RunFixPermissions)
+	alertService := alerts.NewService(alerts.NewRepo(database), sseHub)
+	shareService.SetAlerts(alertService)
 	for kind, h := range opts.JobKinds {
 		jobService.Register(kind, h)
 	}
@@ -107,6 +111,15 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		files.Options{MaxUploadBytes: cfg.MaxUploadBytes, UploadExpiry: opts.UploadExpiry})
 	jobService.Register(files.JobCopy, fileService.RunCopy)
 	jobService.Register(files.JobDelete, fileService.RunDelete)
+
+	// Everything timed, in one place.
+	tasks := scheduler.New()
+	tasks.Add(scheduler.Task{Name: "uploads.cleanup", Every: time.Hour, Run: func(ctx context.Context) error {
+		fileService.SweepUploads(ctx) // abandoned uploads: a day without data
+		return nil
+	}})
+	tasks.Add(scheduler.Task{Name: "jobs.cleanup", Every: time.Hour, Run: jobService.Cleanup})
+	tasks.Add(scheduler.Task{Name: "alerts.cleanup", Daily: 3*time.Hour + 30*time.Minute, Run: alertService.Prune})
 
 	router := chi.NewRouter()
 	router.Use(httpx.RequestID, httpx.RealIP, httpx.AccessLog, httpx.Recover, httpx.SecurityHeaders)
@@ -129,6 +142,8 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		jobs.Register(api, jobService)
 		files.Register(api, fileService)
 		files.RegisterUploads(r, fileService)
+		alerts.Register(api, alertService)
+		scheduler.Register(api, tasks)
 	})
 
 	if opts.Static != nil {
@@ -141,14 +156,8 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		return nil, err
 	}
 
-	// Abandoned uploads are thrown away after a day without data.
-	background, cancel := context.WithCancel(context.Background())
-	sweeping := make(chan struct{})
-	go func() {
-		defer close(sweeping)
-		fileService.RunUploadSweeper(background)
-	}()
-	stop := func() { cancel(); <-sweeping }
+	tasks.Start()
+	stop := tasks.Stop
 
 	slog.Info("application ready", "version", Version, "data_dir", cfg.DataDir)
 	return &App{Handler: router, API: api, Events: sseHub, Files: fileClient, Jobs: jobService, db: database, stop: stop, files: fileService}, nil
