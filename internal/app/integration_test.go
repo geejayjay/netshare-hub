@@ -11,6 +11,7 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 
 	"netshare-hub/internal/app"
 	"netshare-hub/internal/platform/config"
+	"netshare-hub/internal/sys"
 	"netshare-hub/internal/sys/sysexec"
 )
 
@@ -585,5 +587,85 @@ func TestFilesOverRealWorkers(t *testing.T) {
 		"Upload-Metadata": metadata("share", fm, "path", "", "filename", "ana.txt")}, nil)
 	if res.status != 403 {
 		t.Errorf("upload by a read-only user: %d", res.status)
+	}
+}
+
+// Step 1.16a against real Samba: settings reach the running Samba, and a
+// bad setting leaves the running config exactly as it was.
+func TestSambaSettingsOverRealSamba(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.SecureCookies = false
+	system, err := sysexec.New(sysexec.Options{Protected: cfg.ProtectedDirs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := app.New(context.Background(), cfg, app.Options{System: &system})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler)
+	admin := newClient(t, server.URL+app.APIPrefix)
+	var s session
+	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
+	admin.csrf = s.CSRFToken
+	defaults := map[string]any{"serverName": "", "workgroup": "", "minProtocol": "default", "maxProtocol": "default",
+		"encryption": "default", "multichannel": "default"}
+	t.Cleanup(func() {
+		admin.do("PUT", "/settings/samba", defaults, nil)
+		server.Close()
+		application.Close()
+	})
+
+	// First, an SMB2-only client gets in (so a refusal below means the
+	// setting works, not that Samba is down).
+	smb2 := func() string {
+		out, _ := exec.Command("smbclient", "-L", "//127.0.0.1", "-N", "--option=client max protocol=SMB2_10").CombinedOutput()
+		return string(out)
+	}
+	for i := 0; i < 50 && !strings.Contains(smb2(), "IPC$"); i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if out := smb2(); !strings.Contains(out, "IPC$") {
+		t.Fatalf("an SMB2 client cannot connect before the settings change:\n%s", out)
+	}
+
+	status, _ := admin.do("PUT", "/settings/samba", map[string]any{"serverName": "nsh-itest", "workgroup": "ITEST",
+		"minProtocol": "SMB3_00", "maxProtocol": "default", "encryption": "required", "multichannel": "default"}, nil)
+	if status != 200 {
+		t.Fatalf("put settings: %d", status)
+	}
+	// What the running Samba now uses (smb.conf includes the managed file).
+	out, _ := exec.Command("testparm", "-s", "-v", "--parameter-name", "workgroup").CombinedOutput()
+	if !strings.Contains(string(out), "ITEST") {
+		t.Errorf("workgroup not applied: %s", out)
+	}
+	for param, want := range map[string]string{
+		"netbios name": "NSH-ITEST", "server min protocol": "SMB3_00", "server smb encrypt": "required",
+	} {
+		out, _ := exec.Command("testparm", "-s", "--parameter-name", param).CombinedOutput()
+		if !strings.Contains(string(out), want) {
+			t.Errorf("%s = %q, want %s", param, strings.TrimSpace(string(out)), want)
+		}
+	}
+	// A client that offers only SMB2 is turned away now.
+	if out := smb2(); strings.Contains(out, "IPC$") {
+		t.Errorf("an SMB2-only client was let in with min protocol SMB3_00:\n%s", out)
+	}
+
+	// A bad setting, even sent straight to the system layer past every
+	// check above it, changes nothing: the file Samba runs on is the same.
+	before, _ := os.ReadFile(sysexec.DefaultManagedConfig)
+	err = system.Samba.ApplyConfig(context.Background(), sys.SambaConfig{
+		Server: sys.ServerSettings{NetbiosName: "evil\n[global]\n   guest account = root"}})
+	if !errors.Is(err, sys.ErrInvalid) {
+		t.Errorf("bad setting: %v, want ErrInvalid", err)
+	}
+	after, _ := os.ReadFile(sysexec.DefaultManagedConfig)
+	if string(before) != string(after) {
+		t.Errorf("a refused setting changed the running config:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }

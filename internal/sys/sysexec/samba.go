@@ -42,10 +42,11 @@ func NewSamba(r Runner, managedConfig, mainConfig string, protected ...string) *
 	return &Samba{runner: r, managedConfig: managedConfig, mainConfig: mainConfig, protected: protected}
 }
 
-// ApplyShares is the enforcement point for what may be shared. It does not
+// ApplyConfig is the enforcement point for what may be shared. It does not
 // trust its caller: every share is checked here, against where its folder
 // really is right now, and the config is built here.
-func (s *Samba) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
+func (s *Samba) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
+	shares := cfg.Shares
 	for i, sh := range shares {
 		if err := s.checkPath(sh); err != nil {
 			return err
@@ -58,8 +59,9 @@ func (s *Samba) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
 			}
 		}
 	}
-	// RenderShares checks names, comments, account names and the path rules.
-	config, err := sys.RenderShares(shares)
+	// RenderConfig checks the server settings, and the shares' names,
+	// comments, account names and path rules.
+	config, err := sys.RenderConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
 	}

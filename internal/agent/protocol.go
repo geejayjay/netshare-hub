@@ -31,7 +31,7 @@ const (
 	opSetPassword    = "accounts.set-password"
 	opSetEnabled     = "accounts.set-enabled"
 	opDeleteUser     = "accounts.delete"
-	opApplyShares    = "samba.apply-shares"
+	opApplyConfig    = "samba.apply-config"
 	opFixPermissions = "samba.fix-permissions"
 	opResolveDir     = "files.resolve-dir"
 	opCreateShareDir = "files.create-share-dir"
@@ -62,8 +62,9 @@ type deleteUserRequest struct {
 	Name string `json:"name"`
 }
 
-type applySharesRequest struct {
-	Shares []sys.ShareSpec `json:"shares"`
+type applyConfigRequest struct {
+	Server sys.ServerSettings `json:"server"`
+	Shares []sys.ShareSpec    `json:"shares"`
 }
 
 // fixPermissionsRequest names a share; the agent reads its folder and access

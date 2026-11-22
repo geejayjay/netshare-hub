@@ -886,6 +886,77 @@
         ],
         "type": "object"
       },
+      "ServerSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "encryption": {
+            "description": "\"if-supported\" encrypts when the client can; \"required\" refuses clients that cannot (needs minProtocol SMB3_00 or newer).",
+            "enum": [
+              "default",
+              "off",
+              "if-supported",
+              "required"
+            ],
+            "type": "string"
+          },
+          "maxProtocol": {
+            "description": "The newest SMB version clients may use.",
+            "enum": [
+              "default",
+              "SMB2_02",
+              "SMB2_10",
+              "SMB3_00",
+              "SMB3_02",
+              "SMB3_11"
+            ],
+            "type": "string"
+          },
+          "minProtocol": {
+            "description": "The oldest SMB version clients may use. SMB1 is never allowed.",
+            "enum": [
+              "default",
+              "SMB2_02",
+              "SMB2_10",
+              "SMB3_00",
+              "SMB3_02",
+              "SMB3_11"
+            ],
+            "type": "string"
+          },
+          "multichannel": {
+            "description": "Several network links per client, for speed.",
+            "enum": [
+              "default",
+              "on",
+              "off"
+            ],
+            "type": "string"
+          },
+          "serverName": {
+            "description": "The server's name on the network (\\\\NAME): 1-15 letters, digits or -. Empty: keep the system's.",
+            "maxLength": 15,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workgroup": {
+            "description": "The Windows workgroup: 1-15 letters, digits or -. Empty: keep the system's (usually WORKGROUP).",
+            "maxLength": 15,
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverName",
+          "workgroup",
+          "minProtocol",
+          "maxProtocol",
+          "encryption",
+          "multichannel"
+        ],
+        "type": "object"
+      },
       "SessionInfo": {
         "additionalProperties": false,
         "properties": {
@@ -2258,6 +2329,88 @@
           "Users"
         ],
         "x-permission": "users:read"
+      }
+    },
+    "/settings/samba": {
+      "get": {
+        "operationId": "getSambaSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get the server-wide SMB settings",
+        "tags": [
+          "Settings"
+        ],
+        "x-permission": "settings:read"
+      },
+      "put": {
+        "operationId": "updateSambaSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Replace the server-wide SMB settings (checked by Samba before anything changes)",
+        "tags": [
+          "Settings"
+        ],
+        "x-permission": "settings:write"
       }
     },
     "/setup": {

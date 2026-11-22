@@ -56,7 +56,7 @@ func (f *Files) CreateShareDir(ctx context.Context, path string) (string, error)
 		return "", err // fs.ErrExist when taken
 	}
 	// root:root, rwx------: nobody else can enter until the share's ACL
-	// (set by ApplyShares) names who may. The owning group and "other" get
+	// (set by ApplyConfig) names who may. The owning group and "other" get
 	// nothing, and so nothing through the default ACL either: new files are
 	// reachable only through the share's own entries.
 	err = os.Chown(target, 0, 0)

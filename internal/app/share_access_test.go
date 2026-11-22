@@ -229,7 +229,7 @@ func TestShareAccessModes(t *testing.T) {
 	want(t, "job status", job.Status, "succeeded")
 
 	// --- a folder on a filesystem without ACLs: refused, with a hint ---
-	fake.FailNext("ApplyShares", &sys.ACLError{Share: "nfs", Path: "/srv/nfs", Err: sys.ErrACLUnsupported})
+	fake.FailNext("ApplyConfig", &sys.ACLError{Share: "nfs", Path: "/srv/nfs", Err: sys.ErrACLUnsupported})
 	var p problem
 	status, _ = admin.do("POST", "/shares", map[string]any{"name": "nfs", "path": "/srv/nfs"}, &p)
 	want(t, "no ACL support status", status, 422)

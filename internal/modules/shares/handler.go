@@ -141,6 +141,17 @@ func Register(api huma.API, svc *Service) {
 	}, h.preview)
 
 	httpx.Register(api, httpx.Route{
+		ID: "getSambaSettings", Method: http.MethodGet, Path: "/settings/samba",
+		Summary: "Get the server-wide SMB settings", Tag: "Settings", Access: httpx.Require(rbac.SettingsRead),
+	}, h.getServer)
+
+	httpx.Register(api, httpx.Route{
+		ID: "updateSambaSettings", Method: http.MethodPut, Path: "/settings/samba",
+		Summary: "Replace the server-wide SMB settings (checked by Samba before anything changes)", Tag: "Settings",
+		Access: httpx.Require(rbac.SettingsWrite),
+	}, h.updateServer)
+
+	httpx.Register(api, httpx.Route{
 		ID: "getShare", Method: http.MethodGet, Path: "/shares/{id}",
 		Summary: "Get a share", Tag: tag, Access: httpx.Require(rbac.SharesRead),
 	}, h.get)
@@ -198,6 +209,30 @@ func (h *handler) get(ctx context.Context, in *idInput) (*shareOutput, error) {
 		return nil, err
 	}
 	return &shareOutput{Body: sh}, nil
+}
+
+type serverOutput struct {
+	Body ServerSettings
+}
+
+type serverInput struct {
+	Body ServerSettings
+}
+
+func (h *handler) getServer(ctx context.Context, _ *struct{}) (*serverOutput, error) {
+	out, err := h.svc.ServerSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &serverOutput{Body: out}, nil
+}
+
+func (h *handler) updateServer(ctx context.Context, in *serverInput) (*serverOutput, error) {
+	out, err := h.svc.UpdateServerSettings(ctx, in.Body)
+	if err != nil {
+		return nil, err
+	}
+	return &serverOutput{Body: out}, nil
 }
 
 func (h *handler) presets(context.Context, *struct{}) (*presetsOutput, error) {

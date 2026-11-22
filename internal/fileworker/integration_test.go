@@ -108,7 +108,7 @@ func TestRealWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		system.Samba.ApplyShares(ctx, nil)
+		system.Samba.ApplyConfig(ctx, sys.SambaConfig{})
 		for _, u := range users {
 			system.Accounts.DeleteUser(ctx, u)
 		}
@@ -118,8 +118,8 @@ func TestRealWorkers(t *testing.T) {
 
 	apply := func(shares ...sys.ShareSpec) {
 		t.Helper()
-		if err := system.Samba.ApplyShares(ctx, shares); err != nil && !errors.Is(err, sys.ErrReloadFailed) {
-			t.Fatalf("ApplyShares: %v", err)
+		if err := system.Samba.ApplyConfig(ctx, sys.SambaConfig{Shares: shares}); err != nil && !errors.Is(err, sys.ErrReloadFailed) {
+			t.Fatalf("ApplyConfig: %v", err)
 		}
 	}
 	mediaShare := sys.ShareSpec{Name: "wkmedia", Path: media, Readers: []string{jay, ana}, Writers: []string{jay}}

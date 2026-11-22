@@ -127,7 +127,7 @@ func TestAgentEndToEnd(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() {
-		remote.Samba.ApplyShares(context.Background(), nil)
+		remote.Samba.ApplyConfig(context.Background(), sys.SambaConfig{})
 		for _, u := range []string{rwUser, roUser, outsider} {
 			remote.Accounts.DeleteUser(context.Background(), u)
 		}
@@ -140,12 +140,12 @@ func TestAgentEndToEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(shareDir) })
 
-	err = remote.Samba.ApplyShares(ctx, []sys.ShareSpec{{
+	err = remote.Samba.ApplyConfig(ctx, sys.SambaConfig{Shares: []sys.ShareSpec{{
 		Name: "itest", Path: shareDir, Comment: "integration test",
 		Readers: []string{rwUser, roUser}, Writers: []string{rwUser},
-	}})
+	}}})
 	if err != nil {
-		t.Fatalf("ApplyShares: %v", err)
+		t.Fatalf("ApplyConfig: %v", err)
 	}
 
 	// --- prove it over real SMB ---
@@ -197,7 +197,7 @@ func TestAgentEndToEnd(t *testing.T) {
 	refused["symlink into a system folder"] = sys.ShareSpec{Name: "bad", Path: link, Readers: []string{rwUser}}
 
 	for name, spec := range refused {
-		if err := remote.Samba.ApplyShares(ctx, []sys.ShareSpec{spec}); !errors.Is(err, sys.ErrInvalid) {
+		if err := remote.Samba.ApplyConfig(ctx, sys.SambaConfig{Shares: []sys.ShareSpec{spec}}); !errors.Is(err, sys.ErrInvalid) {
 			t.Errorf("%s: got %v, want ErrInvalid", name, err)
 		}
 	}
@@ -216,7 +216,7 @@ func TestAgentEndToEnd(t *testing.T) {
 	}
 
 	// --- removing the share and the users really removes them ---
-	if err := remote.Samba.ApplyShares(ctx, nil); err != nil {
+	if err := remote.Samba.ApplyConfig(ctx, sys.SambaConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	if out := smb(t, "itest", rwUser, "changed-pass-2", "ls"); strings.Contains(out, "hello.txt") {

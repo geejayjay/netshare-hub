@@ -33,14 +33,14 @@ func setup(t *testing.T) (*fileworker.Client, *sysfake.Fake) {
 			t.Fatal(err)
 		}
 	}
-	err := fake.ApplyShares(ctx, []sys.ShareSpec{
+	err := fake.ApplyConfig(ctx, sys.SambaConfig{Shares: []sys.ShareSpec{
 		{Name: "media", Path: "/srv/media", Readers: []string{"jay", "ana"}, Writers: []string{"jay"}},
 		{Name: "docs", Path: "/srv/docs", Readers: []string{"jay"}, Writers: []string{"jay"}},
-	})
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { fake.ApplyShares(ctx, nil) }) // stops the in-process workers
+	t.Cleanup(func() { fake.ApplyConfig(ctx, sys.SambaConfig{}) }) // stops the in-process workers
 	return fileworker.NewClient(fake), fake
 }
 
@@ -295,9 +295,9 @@ func TestAccessChangesTakeEffect(t *testing.T) {
 	read(t, c, "ana", "media", "film.txt", "") // ana's worker is now running
 
 	// Ana is taken off the share.
-	fake.ApplyShares(ctx, []sys.ShareSpec{
+	fake.ApplyConfig(ctx, sys.SambaConfig{Shares: []sys.ShareSpec{
 		{Name: "media", Path: "/srv/media", Readers: []string{"jay"}, Writers: []string{"jay"}},
-	})
+	}})
 	if _, err := c.Read(ctx, "ana", "media", "film.txt", ""); !errors.Is(err, sys.ErrNotFound) {
 		t.Errorf("read after losing access: got %v, want sys.ErrNotFound", err)
 	}

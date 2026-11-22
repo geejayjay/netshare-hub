@@ -16,7 +16,7 @@ import (
 //
 // The system layer decides what a worker may reach: only the shares the
 // account has access to, taken from the shares the system layer itself last
-// applied (see Samba.ApplyShares). The web server names a share; it never
+// applied (see Samba.ApplyConfig). The web server names a share; it never
 // supplies a path on the server.
 
 // ErrReadOnly means the account has read-only access to the share.

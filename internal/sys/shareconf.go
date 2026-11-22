@@ -111,11 +111,21 @@ const uploadOnlyKey = "# upload only:"
 //	uploaders  valid users + write list (the ACL stops them listing)
 //	guest      guest ok = yes, and no valid users: anyone may read
 func RenderShares(shares []ShareSpec) (string, error) {
-	shares = append([]ShareSpec(nil), shares...) // do not reorder the caller's slice
+	return RenderConfig(SambaConfig{Shares: shares})
+}
+
+// RenderConfig produces the whole managed Samba config: the server
+// settings, then the shares. Like RenderShares, it refuses anything unsafe.
+func RenderConfig(cfg SambaConfig) (string, error) {
+	if err := cfg.Server.Check(); err != nil {
+		return "", fmt.Errorf("refusing to render: %w", err)
+	}
+	shares := append([]ShareSpec(nil), cfg.Shares...) // do not reorder the caller's slice
 	sort.Slice(shares, func(i, j int) bool { return strings.ToLower(shares[i].Name) < strings.ToLower(shares[j].Name) })
 
 	var b strings.Builder
 	b.WriteString(ConfigHeader)
+	renderServer(&b, cfg.Server)
 
 	for _, s := range shares {
 		if err := s.Check(); err != nil {
@@ -241,6 +251,9 @@ func ParseShares(config string) []ShareSpec {
 		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
 			flush()
 			current = &ShareSpec{Name: line[1 : len(line)-1]}
+			if strings.EqualFold(current.Name, "global") {
+				current = nil // server settings, not a share
+			}
 			continue
 		}
 		key, value, ok := strings.Cut(line, " = ")

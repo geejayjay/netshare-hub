@@ -9,6 +9,7 @@ package sysfake
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
@@ -40,7 +41,7 @@ type Fake struct {
 
 	// Config is the Samba config rendered from the last applied shares.
 	Config string
-	// Applied counts successful ApplyShares calls.
+	// Applied counts successful ApplyConfig calls.
 	Applied int
 	// fixed lists the shares FixPermissions ran for, in order.
 	fixed []string
@@ -96,7 +97,7 @@ func (f *Fake) System() sys.System {
 }
 
 // FailNext makes the next call of op fail with err. Operations:
-// "CreateUser", "SetPassword", "SetEnabled", "DeleteUser", "ApplyShares",
+// "CreateUser", "SetPassword", "SetEnabled", "DeleteUser", "ApplyConfig",
 // "FixPermissions".
 func (f *Fake) FailNext(op string, err error) {
 	f.mu.Lock()
@@ -211,11 +212,12 @@ func (f *Fake) DeleteUser(_ context.Context, name string) error {
 
 // --- sys.Samba ---
 
-func (f *Fake) ApplyShares(_ context.Context, shares []sys.ShareSpec) error {
+func (f *Fake) ApplyConfig(_ context.Context, cfg sys.SambaConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	shares := cfg.Shares
 	// Same rules and same renderer as the real system.
-	config, err := sys.RenderShares(shares)
+	config, err := sys.RenderConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
 	}
@@ -234,8 +236,11 @@ func (f *Fake) ApplyShares(_ context.Context, shares []sys.ShareSpec) error {
 			}
 		}
 	}
-	if err := f.fail("ApplyShares"); err != nil {
-		return err
+	// Like the real system, a failed reload still leaves the new config in
+	// place; any other failure changes nothing.
+	failure := f.fail("ApplyConfig")
+	if failure != nil && !errors.Is(failure, sys.ErrReloadFailed) {
+		return failure
 	}
 	f.Config = config
 	f.Applied++
@@ -246,7 +251,7 @@ func (f *Fake) ApplyShares(_ context.Context, shares []sys.ShareSpec) error {
 			f.stopWorkers(name)
 		}
 	}
-	return nil
+	return failure
 }
 
 // FixPermissions only checks the share is live and counts the call: the

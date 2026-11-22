@@ -327,6 +327,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/samba": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the server-wide SMB settings */
+        get: operations["getSambaSettings"];
+        /** Replace the server-wide SMB settings (checked by Samba before anything changes) */
+        put: operations["updateSambaSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/setup": {
         parameters: {
             query?: never;
@@ -738,6 +756,34 @@ export interface components {
             id: components["schemas"]["Role"];
             name: string;
             permissions: components["schemas"]["Permission"][];
+        };
+        ServerSettings: {
+            /**
+             * @description "if-supported" encrypts when the client can; "required" refuses clients that cannot (needs minProtocol SMB3_00 or newer).
+             * @enum {string}
+             */
+            encryption: "default" | "off" | "if-supported" | "required";
+            /**
+             * @description The newest SMB version clients may use.
+             * @enum {string}
+             */
+            maxProtocol: "default" | "SMB2_02" | "SMB2_10" | "SMB3_00" | "SMB3_02" | "SMB3_11";
+            /**
+             * @description The oldest SMB version clients may use. SMB1 is never allowed.
+             * @enum {string}
+             */
+            minProtocol: "default" | "SMB2_02" | "SMB2_10" | "SMB3_00" | "SMB3_02" | "SMB3_11";
+            /**
+             * @description Several network links per client, for speed.
+             * @enum {string}
+             */
+            multichannel: "default" | "on" | "off";
+            /** @description The server's name on the network (\\NAME): 1-15 letters, digits or -. Empty: keep the system's. */
+            serverName: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            /** @description The Windows workgroup: 1-15 letters, digits or -. Empty: keep the system's (usually WORKGROUP). */
+            workgroup: string;
         };
         SessionInfo: {
             /** @description Send this back in the X-CSRF-Token header on every POST, PATCH, PUT and DELETE. */
@@ -1468,6 +1514,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListRoleInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSambaSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateSambaSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServerSettings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
                 };
             };
             /** @description Error */

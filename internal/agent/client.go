@@ -115,11 +115,11 @@ func (c *Client) DeleteUser(ctx context.Context, name string) error {
 
 // --- sys.Samba ---
 
-func (c *Client) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
-	if shares == nil {
-		shares = []sys.ShareSpec{}
+func (c *Client) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
+	if cfg.Shares == nil {
+		cfg.Shares = []sys.ShareSpec{}
 	}
-	return c.call(ctx, opApplyShares, applySharesRequest{Shares: shares}, nil)
+	return c.call(ctx, opApplyConfig, applyConfigRequest{Server: cfg.Server, Shares: cfg.Shares}, nil)
 }
 
 // FixPermissions can run for hours on a big share, so it is not bound by

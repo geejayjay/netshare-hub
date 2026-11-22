@@ -249,7 +249,7 @@ func TestShares(t *testing.T) {
 
 	// --- Samba rejects the config: nothing changes anywhere ---
 	before := fake.Config
-	fake.FailNext("ApplyShares", &sys.ConfigError{Output: "Unknown parameter encountered"})
+	fake.FailNext("ApplyConfig", &sys.ConfigError{Output: "Unknown parameter encountered"})
 	var p problem
 	status, _ = admin.do("POST", "/shares", map[string]any{"name": "broken", "path": "/srv/broken"}, &p)
 	want(t, "rejected config status", status, 500)
@@ -262,7 +262,7 @@ func TestShares(t *testing.T) {
 	want(t, "shares after rejection", list.Page.Total, 2)
 
 	// --- reload fails: saved on both sides, and the caller is told ---
-	fake.FailNext("ApplyShares", sys.ErrReloadFailed)
+	fake.FailNext("ApplyConfig", sys.ErrReloadFailed)
 	p = problem{}
 	status, _ = admin.do("PATCH", "/shares/"+itoa(media.ID), map[string]any{"comment": "Films and music"}, &p)
 	want(t, "reload failure status", status, 503)
@@ -286,7 +286,7 @@ func TestShares(t *testing.T) {
 	// --- removing a user takes them off every share BEFORE the account goes ---
 	// If Samba cannot be updated, the user must stay (a stale config naming a
 	// deleted account would give access to whoever gets that name next).
-	fake.FailNext("ApplyShares", &sys.ConfigError{Output: "boom"})
+	fake.FailNext("ApplyConfig", &sys.ConfigError{Output: "boom"})
 	status, _ = admin.do("DELETE", "/users/"+itoa(ana.ID), nil, nil)
 	want(t, "delete user with failing samba", status, 500)
 	if fake.Account("ana") == nil {

@@ -121,6 +121,7 @@ const (
 	CodeSambaReloadFailed      errs.Code = "SAMBA_RELOAD_FAILED"
 	CodePermissionsUnsupported errs.Code = "SHARE_PERMISSIONS_UNSUPPORTED"
 	CodePermissionsFailed      errs.Code = "SHARE_PERMISSIONS_FAILED"
+	CodeSambaConfigRefused     errs.Code = "SAMBA_CONFIG_REFUSED"
 )
 
 func errNotFound() error {

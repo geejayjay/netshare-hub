@@ -369,8 +369,12 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 	if err != nil {
 		return err
 	}
+	server, _, err := s.repo.serverSettings(ctx, tx)
+	if err != nil {
+		return err
+	}
 
-	applyErr := s.samba.ApplyShares(ctx, specs)
+	applyErr := s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs})
 	var aclErr *sys.ACLError
 	switch {
 	case applyErr == nil:
@@ -413,7 +417,10 @@ func (s *Service) restoreConfig(ctx context.Context) {
 	if err == nil {
 		var specs []sys.ShareSpec
 		if specs, err = s.specs(ctx, shares); err == nil {
-			err = s.samba.ApplyShares(ctx, specs)
+			var server sys.ServerSettings
+			if server, _, err = s.repo.serverSettings(ctx, s.repo.db.Read); err == nil {
+				err = s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs})
+			}
 		}
 	}
 	if err != nil {

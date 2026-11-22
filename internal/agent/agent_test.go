@@ -56,11 +56,11 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	// Shares: the agent side builds the config from structured data.
-	err := system.Samba.ApplyShares(ctx, []sys.ShareSpec{
+	err := system.Samba.ApplyConfig(ctx, sys.SambaConfig{Shares: []sys.ShareSpec{
 		{Name: "media", Path: "/srv/media", Comment: "Films", Readers: []string{"jay"}, Writers: []string{"jay"}},
-	})
+	}})
 	if err != nil {
-		t.Fatalf("ApplyShares: %v", err)
+		t.Fatalf("ApplyConfig: %v", err)
 	}
 	for _, want := range []string{"[media]", "path = /srv/media", "valid users = jay", "write list = jay"} {
 		if !strings.Contains(fake.Config, want) {
@@ -68,8 +68,8 @@ func TestRoundTrip(t *testing.T) {
 		}
 	}
 	// An empty list is valid: it removes every share.
-	if err := system.Samba.ApplyShares(ctx, nil); err != nil {
-		t.Fatalf("ApplyShares(nil): %v", err)
+	if err := system.Samba.ApplyConfig(ctx, sys.SambaConfig{}); err != nil {
+		t.Fatalf("ApplyConfig(nil): %v", err)
 	}
 	if strings.Contains(fake.Config, "[media]") {
 		t.Error("shares were not removed")
@@ -114,8 +114,8 @@ func TestErrorsSurviveTheSocket(t *testing.T) {
 			return err
 		}, fs.ErrExist},
 		{"reload failed", func() error {
-			fake.FailNext("ApplyShares", sys.ErrReloadFailed)
-			return system.Samba.ApplyShares(ctx, nil)
+			fake.FailNext("ApplyConfig", sys.ErrReloadFailed)
+			return system.Samba.ApplyConfig(ctx, sys.SambaConfig{})
 		}, sys.ErrReloadFailed},
 	}
 	for _, c := range cases {
@@ -124,9 +124,9 @@ func TestErrorsSurviveTheSocket(t *testing.T) {
 		}
 	}
 
-	fake.FailNext("ApplyShares", &sys.ConfigError{Output: "Unknown parameter"})
+	fake.FailNext("ApplyConfig", &sys.ConfigError{Output: "Unknown parameter"})
 	var cfgErr *sys.ConfigError
-	if err := system.Samba.ApplyShares(ctx, nil); !errors.As(err, &cfgErr) || cfgErr.Output != "Unknown parameter" {
+	if err := system.Samba.ApplyConfig(ctx, sys.SambaConfig{}); !errors.As(err, &cfgErr) || cfgErr.Output != "Unknown parameter" {
 		t.Errorf("config error: got %v", err)
 	}
 }
@@ -146,7 +146,7 @@ func TestAgentEnforcesTheRulesItself(t *testing.T) {
 		"group as user":     {Name: "x", Path: "/srv/x", Readers: []string{"@root"}},
 	}
 	for name, spec := range bad {
-		if err := system.Samba.ApplyShares(ctx, []sys.ShareSpec{spec}); !errors.Is(err, sys.ErrInvalid) {
+		if err := system.Samba.ApplyConfig(ctx, sys.SambaConfig{Shares: []sys.ShareSpec{spec}}); !errors.Is(err, sys.ErrInvalid) {
 			t.Errorf("%s: got %v, want ErrInvalid", name, err)
 		}
 	}

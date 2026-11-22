@@ -59,14 +59,14 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 		return nil, system.Accounts.DeleteUser(ctx, r.Name)
 	}, func(r deleteUserRequest) []any { return []any{"account", r.Name} })
 
-	register(s, opApplyShares, func(ctx context.Context, r applySharesRequest) (any, error) {
-		return nil, system.Samba.ApplyShares(ctx, r.Shares)
-	}, func(r applySharesRequest) []any {
+	register(s, opApplyConfig, func(ctx context.Context, r applyConfigRequest) (any, error) {
+		return nil, system.Samba.ApplyConfig(ctx, sys.SambaConfig{Server: r.Server, Shares: r.Shares})
+	}, func(r applyConfigRequest) []any {
 		names := make([]string, len(r.Shares))
 		for i, sh := range r.Shares {
 			names[i] = sh.Name
 		}
-		return []any{"shares", names}
+		return []any{"shares", names, "server", r.Server}
 	})
 
 	// Long-running (a whole share's tree), so it does not take the lock

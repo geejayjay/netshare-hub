@@ -106,7 +106,8 @@ type Accounts interface {
 
 // Samba manages the Samba configuration NetShare Hub owns.
 type Samba interface {
-	// ApplyShares makes Samba serve exactly these shares. The system layer
+	// ApplyConfig makes Samba serve exactly these shares, with these server
+	// settings. The system layer
 	// checks every share against the rules, builds the config itself, lets
 	// Samba's own validator check it, atomically replaces the managed config
 	// file, and reloads Samba. If anything is refused, nothing changes.
@@ -115,9 +116,11 @@ type Samba interface {
 	// so the kernel enforces the same access as Samba (for the file manager
 	// too). Files already inside keep their ACL until FixPermissions runs.
 	// Only managed accounts may be named in a share.
+	// Server settings in cfg.Server are written to the same file, in the
+	// same step: a setting Samba refuses changes nothing either.
 	// Errors: ErrInvalid, *ConfigError, ErrReloadFailed, *ACLError
 	// (wrapping ErrACLUnsupported when the filesystem has no ACLs).
-	ApplyShares(ctx context.Context, shares []ShareSpec) error
+	ApplyConfig(ctx context.Context, cfg SambaConfig) error
 	// FixPermissions re-applies a live share's access to every file and
 	// folder inside it. It takes the access from the applied config, never
 	// from the caller. It can run for a long time on a big share and stops
@@ -133,7 +136,7 @@ type Files interface {
 	// Errors: fs.ErrNotExist, ErrNotDir.
 	ResolveDir(ctx context.Context, path string) (string, error)
 	// CreateShareDir creates one new directory (its parent must exist) owned
-	// by root that nobody else can enter until ApplyShares gives the share's
+	// by root that nobody else can enter until ApplyConfig gives the share's
 	// users access through its ACL. It returns the real path.
 	// Errors: fs.ErrNotExist (parent), fs.ErrExist.
 	CreateShareDir(ctx context.Context, path string) (string, error)
