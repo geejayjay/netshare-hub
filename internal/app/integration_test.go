@@ -556,4 +556,34 @@ func TestFilesOverRealWorkers(t *testing.T) {
 	if status, _, body := jay.raw("GET", strings.TrimPrefix(z.URL, "/api/v1"), nil); status != 200 || bytes.Contains(body, []byte("root:")) {
 		t.Errorf("zip with a link out of the share: %d", status)
 	}
+
+	// --- 1.13a: an upload lands as the user, with the folder's permissions ---
+	up := startUpload(t, jay, 6, "share", fm, "path", "", "filename", "upload.txt")
+	if res := send(jay, up, 0, []byte("abc")); res.status != 204 {
+		t.Fatalf("upload part 1: %d %s", res.status, res.body)
+	}
+	if res := send(jay, up, 3, []byte("def")); res.status != 204 || res.header.Get("NetShare-File-Path") != "upload.txt" {
+		t.Fatalf("upload part 2: %d %v", res.status, res.header)
+	}
+	final := filepath.Join(dirs[fm], "upload.txt")
+	if got, _ := os.ReadFile(final); string(got) != "abcdef" {
+		t.Errorf("uploaded content %q", got)
+	}
+	if got := owner(final); got != uidOf(jayName) {
+		t.Errorf("uploaded file owner uid %d, want %s's", got, jayName)
+	}
+	// Inherited from the share folder: ana (read-only) can read it.
+	if status, _, body := ana.raw("GET", "/files/"+fm+"/download?path=upload.txt", nil); status != 200 || string(body) != "abcdef" {
+		t.Errorf("ana reading jay's upload: %d %q", status, body)
+	}
+	// The temporary file was hidden over SMB while it existed, and is gone.
+	if acl, _ := exec.Command("ls", "-a", dirs[fm]).Output(); strings.Contains(string(acl), ".nsh-upload-") {
+		t.Errorf("temporary upload file left behind:\n%s", acl)
+	}
+	// ana may not upload (read-only), whatever she sends.
+	res := ana.tus("POST", "/uploads", map[string]string{"Upload-Length": "3",
+		"Upload-Metadata": metadata("share", fm, "path", "", "filename", "ana.txt")}, nil)
+	if res.status != 403 {
+		t.Errorf("upload by a read-only user: %d", res.status)
+	}
 }

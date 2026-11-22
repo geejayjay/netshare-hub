@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"netshare-hub/internal/app"
 	"netshare-hub/internal/sys/sysfake"
 )
 
@@ -65,7 +66,13 @@ type fileEnv struct {
 
 func newFileEnv(t *testing.T) fileEnv {
 	t.Helper()
-	admin, fake, base := newSystemServer(t)
+	env, _ := newFileEnvWith(t, app.Options{})
+	return env
+}
+
+func newFileEnvWith(t *testing.T, opts app.Options) (fileEnv, *app.App) {
+	t.Helper()
+	admin, fake, base, application := newSystemServerWith(t, opts)
 	jay := createUser(t, admin, "jay")
 	for _, sh := range []struct{ name, level string }{{"media", "write"}, {"docs", "read"}} {
 		status, _ := admin.do("POST", "/shares", map[string]any{
@@ -84,7 +91,7 @@ func newFileEnv(t *testing.T) fileEnv {
 	os.WriteFile(filepath.Join(env.docs, "manual.pdf"), []byte("%PDF-1.7"), 0o644)
 	env.jay = newClient(t, base)
 	env.jay.login("jay", pw)
-	return env
+	return env, application
 }
 
 // waitJob waits for a job to end and returns its final state.

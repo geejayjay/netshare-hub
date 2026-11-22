@@ -95,6 +95,10 @@ const (
 	CodeRangeInvalid     errs.Code = "FILE_RANGE_INVALID"
 	CodeZipExpired       errs.Code = "ZIP_LINK_EXPIRED"
 	CodePartlyDone       errs.Code = "FILES_PARTLY_DONE"
+	CodeNoSpace          errs.Code = "FILES_NO_SPACE"
+	CodeUploadNotFound   errs.Code = "UPLOAD_NOT_FOUND"
+	CodeUploadBusy       errs.Code = "UPLOAD_BUSY"
+	CodeUploadOffset     errs.Code = "UPLOAD_OFFSET_MISMATCH"
 )
 
 // fail turns a file worker or system error into an answer for the user.
@@ -127,6 +131,8 @@ func fail(err error, field string) error {
 		return errs.Conflict(CodeNotFolder, "This is not a folder.")
 	case errors.Is(err, fileworker.ErrInvalidRange):
 		return errs.RangeNotSatisfiable(CodeRangeInvalid, "The requested part of the file is outside the file.")
+	case errors.Is(err, fileworker.ErrNoSpace):
+		return errs.Unavailable(CodeNoSpace, "The disk of this share is full.")
 	case errors.Is(err, sys.ErrDisabled):
 		return errs.Forbidden(CodeAccountDisabled, "Your account is disabled.")
 	case errors.Is(err, sys.ErrNotManaged):

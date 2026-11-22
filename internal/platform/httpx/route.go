@@ -122,6 +122,34 @@ func (a Access) guard(method string) func(huma.Context, func(huma.Context)) {
 	}
 }
 
+// Protect applies the same checks as Register (login, CSRF on changes,
+// permission) to a plain handler: for the few endpoints that are not JSON
+// and must stream a request body (tus uploads).
+func Protect(a Access, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a.public {
+			next.ServeHTTP(w, r)
+			return
+		}
+		mutating := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
+		p := PrincipalFrom(r.Context())
+		var denied *errs.E
+		switch {
+		case p == nil:
+			denied = errs.Unauthenticated(errs.CodeUnauthenticated, "Please log in to continue.")
+		case mutating && !validCSRF(p, r.Header.Get(HeaderCSRF)):
+			denied = errs.Forbidden(errs.CodeCSRFInvalid, "Your session could not be verified. Please reload the page and try again.")
+		case a.permission != "" && !p.Can(a.permission):
+			denied = errs.Forbidden(errs.CodeForbidden, "You do not have permission to do this.")
+		}
+		if denied != nil {
+			WriteProblem(w, FromError(r.Context(), denied))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func validCSRF(p *Principal, token string) bool {
 	return token != "" && subtle.ConstantTimeCompare([]byte(token), []byte(p.CSRFToken)) == 1
 }

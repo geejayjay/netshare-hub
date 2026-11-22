@@ -40,6 +40,9 @@ type Config struct {
 	// AgentUser is the only user (besides root) the agent accepts calls
 	// from: the account the web server runs as.
 	AgentUser string `toml:"agent_user"`
+	// MaxUploadBytes is the largest file the web file manager accepts in
+	// one upload. 0 means no limit (the disk is the limit).
+	MaxUploadBytes int64 `toml:"max_upload_bytes"`
 }
 
 // ProtectedDirs are folders a share must never expose: NetShare Hub's own

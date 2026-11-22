@@ -50,6 +50,9 @@ type App struct {
 	// Jobs runs long work in the background (step 1.3).
 	Jobs *jobs.Service
 	db   *db.DB
+	// stop ends background loops (the upload cleanup) and waits for them.
+	stop  func()
+	files *files.Service
 }
 
 // Options are the parts of the application a caller may supply.
@@ -65,6 +68,8 @@ type Options struct {
 	JobKinds map[string]jobs.Handler
 	// JobOptions tunes the job engine (tests use short intervals).
 	JobOptions jobs.Options
+	// UploadExpiry overrides how long an idle upload is kept (tests).
+	UploadExpiry time.Duration
 }
 
 // New builds the application.
@@ -98,7 +103,8 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		jobService.Register(kind, h)
 	}
 	fileClient := fileworker.NewClient(osLayer.Workers)
-	fileService := files.NewService(fileClient, userService, shareService, jobService)
+	fileService := files.NewService(database, fileClient, userService, shareService, jobService,
+		files.Options{MaxUploadBytes: cfg.MaxUploadBytes, UploadExpiry: opts.UploadExpiry})
 	jobService.Register(files.JobCopy, fileService.RunCopy)
 	jobService.Register(files.JobDelete, fileService.RunDelete)
 
@@ -122,6 +128,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		shares.Register(api, shareService)
 		jobs.Register(api, jobService)
 		files.Register(api, fileService)
+		files.RegisterUploads(r, fileService)
 	})
 
 	if opts.Static != nil {
@@ -134,8 +141,17 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		return nil, err
 	}
 
+	// Abandoned uploads are thrown away after a day without data.
+	background, cancel := context.WithCancel(context.Background())
+	sweeping := make(chan struct{})
+	go func() {
+		defer close(sweeping)
+		fileService.RunUploadSweeper(background)
+	}()
+	stop := func() { cancel(); <-sweeping }
+
 	slog.Info("application ready", "version", Version, "data_dir", cfg.DataDir)
-	return &App{Handler: router, API: api, Events: sseHub, Files: fileClient, Jobs: jobService, db: database}, nil
+	return &App{Handler: router, API: api, Events: sseHub, Files: fileClient, Jobs: jobService, db: database, stop: stop, files: fileService}, nil
 }
 
 // chooseSystem returns how this process reaches the operating system.
@@ -160,8 +176,12 @@ func chooseSystem(ctx context.Context, cfg config.Config, override *sys.System) 
 	}
 }
 
+// SweepUploads throws away abandoned uploads now (it also runs every hour).
+func (a *App) SweepUploads(ctx context.Context) { a.files.SweepUploads(ctx) }
+
 // Close releases resources.
 func (a *App) Close() error {
+	a.stop()
 	// Running jobs pause and resume at the next start.
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

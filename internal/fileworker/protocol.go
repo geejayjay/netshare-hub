@@ -91,6 +91,7 @@ var (
 	ErrNotDir      = errors.New("not a folder")
 	ErrIsDir       = errors.New("is a folder")
 	ErrNotEmpty    = errors.New("folder is not empty")
+	ErrNoSpace     = errors.New("no space left on the disk")
 )
 
 // Wire codes, one per error above.
@@ -103,6 +104,8 @@ const (
 	codeNotDir     = "not_dir"
 	codeIsDir      = "is_dir"
 	codeNotEmpty   = "not_empty"
+	codeOffset     = "offset_mismatch"
+	codeNoSpace    = "no_space"
 	codeForbidden  = "forbidden"
 	codeInternal   = "internal"
 )
@@ -123,6 +126,10 @@ func encodeError(err error) (int, string) {
 		return http.StatusConflict, codeExists
 	case errors.Is(err, fs.ErrPermission):
 		return http.StatusForbidden, codePermission
+	case errors.Is(err, ErrOffsetMismatch):
+		return http.StatusConflict, codeOffset
+	case errors.Is(err, ErrNoSpace), errors.Is(err, syscall.ENOSPC):
+		return http.StatusInsufficientStorage, codeNoSpace
 	case errors.Is(err, ErrNotEmpty), errors.Is(err, syscall.ENOTEMPTY):
 		return http.StatusConflict, codeNotEmpty
 	case errors.Is(err, ErrNotDir), errors.Is(err, syscall.ENOTDIR):
@@ -151,6 +158,8 @@ func decodeError(code, message string) error {
 		codeNotDir:     ErrNotDir,
 		codeIsDir:      ErrIsDir,
 		codeNotEmpty:   ErrNotEmpty,
+		codeOffset:     ErrOffsetMismatch,
+		codeNoSpace:    ErrNoSpace,
 	}[code]
 	return &remoteError{code: code, message: message, base: base}
 }

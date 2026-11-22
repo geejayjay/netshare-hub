@@ -9,6 +9,7 @@ import (
 
 	"netshare-hub/internal/fileworker"
 	"netshare-hub/internal/modules/jobs"
+	"netshare-hub/internal/platform/db"
 	"netshare-hub/internal/platform/errs"
 	"netshare-hub/internal/platform/validate"
 	"netshare-hub/internal/sys"
@@ -24,11 +25,24 @@ type Service struct {
 	shares Shares
 	jobs   Jobs
 	zips   *zipTokens
+	up     *uploads
 	now    func() time.Time
 }
 
-func NewService(files *fileworker.Client, u Users, s Shares, j Jobs) *Service {
-	return &Service{files: files, users: u, shares: s, jobs: j, zips: newZipTokens(), now: time.Now}
+// Options tune the file manager.
+type Options struct {
+	// MaxUploadBytes is the largest upload accepted; 0 means no limit.
+	MaxUploadBytes int64
+	// UploadExpiry is how long an upload may sit idle (default a day).
+	UploadExpiry time.Duration
+}
+
+func NewService(database *db.DB, files *fileworker.Client, u Users, s Shares, j Jobs, opts Options) *Service {
+	if opts.UploadExpiry <= 0 {
+		opts.UploadExpiry = DefaultUploadExpiry
+	}
+	return &Service{files: files, users: u, shares: s, jobs: j, zips: newZipTokens(), now: time.Now,
+		up: &uploads{repo: uploadRepo{db: database}, maxSize: opts.MaxUploadBytes, expiry: opts.UploadExpiry, busy: map[string]bool{}}}
 }
 
 // accountOf returns the system account a user's file operations run as.

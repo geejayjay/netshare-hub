@@ -24,6 +24,13 @@ const pw = "correct-horse"
 // and returns a logged-in admin client.
 func newSystemServer(t *testing.T) (*client, *sysfake.Fake, string) {
 	t.Helper()
+	admin, fake, base, _ := newSystemServerWith(t, app.Options{})
+	return admin, fake, base
+}
+
+// newSystemServerWith is newSystemServer with app options, and the app.
+func newSystemServerWith(t *testing.T, opts app.Options) (*client, *sysfake.Fake, string, *app.App) {
+	t.Helper()
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.SecureCookies = false
@@ -31,7 +38,8 @@ func newSystemServer(t *testing.T) (*client, *sysfake.Fake, string) {
 
 	fake := sysfake.New()
 	system := fake.System()
-	application, err := app.New(context.Background(), cfg, app.Options{System: &system})
+	opts.System = &system
+	application, err := app.New(context.Background(), cfg, opts)
 	if err != nil {
 		t.Fatalf("build app: %v", err)
 	}
@@ -48,7 +56,7 @@ func newSystemServer(t *testing.T) (*client, *sysfake.Fake, string) {
 		t.Fatalf("setup: status %d", status)
 	}
 	admin.csrf = s.CSRFToken
-	return admin, fake, base
+	return admin, fake, base, application
 }
 
 type userBody struct {

@@ -213,6 +213,59 @@ func (c *Client) Write(ctx context.Context, account, share, path string, data io
 	return out, finish(res, &out)
 }
 
+// --- resumable uploads (see upload.go) ---
+
+// UploadCreate makes the empty temporary file of upload id in dir.
+func (c *Client) UploadCreate(ctx context.Context, account, share, dir, id string) error {
+	res, err := c.send(ctx, account, http.MethodPost, "upload/create", nil, jsonBody(uploadRequest{Share: share, Dir: dir, ID: id}), nil)
+	if err != nil {
+		return err
+	}
+	return finish(res, nil)
+}
+
+// UploadSize returns how many bytes of the upload have arrived.
+func (c *Client) UploadSize(ctx context.Context, account, share, dir, id string) (int64, error) {
+	var out sizeResponse
+	res, err := c.send(ctx, account, http.MethodGet, "upload/size", url.Values{"share": {share}, "dir": {dir}, "id": {id}}, nil, nil)
+	if err != nil {
+		return 0, err
+	}
+	return out.Size, finish(res, &out)
+}
+
+// UploadAppend adds data at offset and returns the new size. Data that
+// arrived before a broken connection is kept; the error says it broke.
+func (c *Client) UploadAppend(ctx context.Context, account, share, dir, id string, offset int64, data io.Reader) (int64, error) {
+	var out sizeResponse
+	q := url.Values{"share": {share}, "dir": {dir}, "id": {id}, "offset": {strconv.FormatInt(offset, 10)}}
+	res, err := c.send(ctx, account, http.MethodPost, "upload/append", q, nil, data)
+	if err != nil {
+		return 0, err
+	}
+	return out.Size, finish(res, &out)
+}
+
+// UploadFinish moves the complete upload into place as name (in its folder).
+func (c *Client) UploadFinish(ctx context.Context, account, share, dir, id, name string, overwrite bool) (Entry, error) {
+	var out Entry
+	res, err := c.send(ctx, account, http.MethodPost, "upload/finish", nil,
+		jsonBody(uploadRequest{Share: share, Dir: dir, ID: id, Name: name, Overwrite: overwrite}), nil)
+	if err != nil {
+		return out, err
+	}
+	return out, finish(res, &out)
+}
+
+// UploadAbort throws away an upload's data.
+func (c *Client) UploadAbort(ctx context.Context, account, share, dir, id string) error {
+	res, err := c.send(ctx, account, http.MethodPost, "upload/abort", nil, jsonBody(uploadRequest{Share: share, Dir: dir, ID: id}), nil)
+	if err != nil {
+		return err
+	}
+	return finish(res, nil)
+}
+
 // Download is an open file being read.
 type Download struct {
 	// Body is the file's content (or the requested range). Close it when done.

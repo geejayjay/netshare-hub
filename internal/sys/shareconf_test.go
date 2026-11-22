@@ -27,6 +27,8 @@ func TestRender(t *testing.T) {
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
+   veto files = /.nsh-upload-*/
+   delete veto files = yes
 
 [inbox]
    path = /srv/inbox
@@ -40,6 +42,8 @@ func TestRender(t *testing.T) {
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
+   veto files = /.nsh-upload-*/
+   delete veto files = yes
 
 [media]
    path = /srv/media
@@ -53,6 +57,8 @@ func TestRender(t *testing.T) {
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
+   veto files = /.nsh-upload-*/
+   delete veto files = yes
 
 [public]
    path = /srv/public
@@ -64,6 +70,8 @@ func TestRender(t *testing.T) {
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
+   veto files = /.nsh-upload-*/
+   delete veto files = yes
 `
 	if got != want {
 		t.Errorf("config:\n%s\nwant:\n%s", got, want)

@@ -51,6 +51,11 @@ func NewHandler(roots []sys.WorkerRoot) *Handler {
 	h.mux.HandleFunc("POST /v1/rename", h.rename)
 	h.mux.HandleFunc("POST /v1/remove", h.remove)
 	h.mux.HandleFunc("POST /v1/copy", h.copy)
+	h.mux.HandleFunc("POST /v1/upload/create", h.uploadCreate)
+	h.mux.HandleFunc("GET /v1/upload/size", h.uploadSize)
+	h.mux.HandleFunc("POST /v1/upload/append", h.uploadAppend)
+	h.mux.HandleFunc("POST /v1/upload/finish", h.uploadFinish)
+	h.mux.HandleFunc("POST /v1/upload/abort", h.uploadAbort)
 	return h
 }
 
@@ -118,6 +123,9 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		if len(result.Entries) == limit {
 			result.Next = result.Entries[limit-1].Name
 			break
+		}
+		if isUploadTemp(item.Name()) {
+			continue // an upload (or a save) still in progress
 		}
 		info, err := item.Info()
 		if err != nil {
