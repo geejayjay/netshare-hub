@@ -127,6 +127,7 @@ func openShareDir(dir string, protected []string) (*os.File, error) {
 // aclBackup is a share folder's ACL before a change, to put it back.
 type aclBackup struct {
 	path   string
+	mode   fs.FileMode // permission and sticky bits
 	access acl
 	def    acl // nil: the folder had no default ACL
 }
@@ -141,6 +142,9 @@ func (b *aclBackup) restore(protected []string) error {
 	if err := unix.Fsetxattr(fd, xattrAccess, b.access.encode(), 0); err != nil {
 		return err
 	}
+	if err := f.Chmod(b.mode); err != nil {
+		return err
+	}
 	if b.def == nil {
 		if err := unix.Fremovexattr(fd, xattrDefault); err != nil && !errors.Is(err, unix.ENODATA) {
 			return err
@@ -153,7 +157,14 @@ func (b *aclBackup) restore(protected []string) error {
 // setShareACL gives a share's own folder the share's access. It returns how
 // the folder was before, or nil when the folder does not exist (Samba will
 // report the share as unavailable; there is nothing to protect).
-func setShareACL(s sys.ShareSpec, ids identities, protected []string) (*aclBackup, error) {
+//
+// A drop box also gets the sticky bit: uploaders may add files to the
+// folder (write access to it), and without the bit that would also let
+// them delete or replace someone else's upload by guessing its name. With
+// it, only a file's owner can remove or rename it. wasDropBox says the
+// previous version of the share had uploaders, so the bit is NetShare
+// Hub's to clear; a sticky bit an admin set on another folder is kept.
+func setShareACL(s sys.ShareSpec, ids identities, protected []string, wasDropBox bool) (*aclBackup, error) {
 	top, inner, err := shareGrants(s, ids)
 	if err != nil {
 		return nil, err
@@ -172,7 +183,7 @@ func setShareACL(s sys.ShareSpec, ids identities, protected []string) (*aclBacku
 	}
 
 	fd := int(f.Fd())
-	backup := &aclBackup{path: s.Path}
+	backup := &aclBackup{path: s.Path, mode: info.Mode() & (fs.ModePerm | fs.ModeSticky | fs.ModeSetgid | fs.ModeSetuid)}
 	if backup.access, err = accessACL(fd, info.Mode()); err != nil {
 		return nil, &sys.ACLError{Share: s.Name, Path: s.Path, Err: err}
 	}
@@ -182,7 +193,28 @@ func setShareACL(s sys.ShareSpec, ids identities, protected []string) (*aclBacku
 	if _, err := applyItem(f, info, top, inner, ids.owned); err != nil {
 		return nil, &sys.ACLError{Share: s.Name, Path: s.Path, Err: err}
 	}
+	if dropBox := len(normalized(s).Uploaders) > 0; dropBox || wasDropBox {
+		if err := setSticky(f, dropBox); err != nil {
+			backup.restore(protected)
+			return nil, &sys.ACLError{Share: s.Name, Path: s.Path, Err: err}
+		}
+	}
 	return backup, nil
+}
+
+func setSticky(f *os.File, on bool) error {
+	info, err := f.Stat() // after the ACL change: group bits now show the mask
+	if err != nil {
+		return err
+	}
+	mode := info.Mode() & (fs.ModePerm | fs.ModeSetgid | fs.ModeSetuid)
+	if on {
+		mode |= fs.ModeSticky
+	}
+	if mode == info.Mode()&(fs.ModePerm|fs.ModeSticky|fs.ModeSetgid|fs.ModeSetuid) {
+		return nil
+	}
+	return f.Chmod(mode)
 }
 
 // fixShareTree applies a share's access to everything inside its folder.

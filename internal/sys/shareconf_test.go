@@ -23,6 +23,7 @@ func TestRender(t *testing.T) {
    guest ok = no
    read only = yes
    valid users = ana
+   access based share enum = yes
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
@@ -35,6 +36,7 @@ func TestRender(t *testing.T) {
    valid users = jay, ana, bob
    write list = jay, ana, bob
    # upload only: ana, bob
+   access based share enum = yes
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
@@ -47,6 +49,7 @@ func TestRender(t *testing.T) {
    read only = yes
    valid users = ana, jay
    write list = jay
+   access based share enum = yes
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
@@ -57,6 +60,7 @@ func TestRender(t *testing.T) {
    guest ok = yes
    read only = yes
    write list = jay
+   access based share enum = yes
    inherit acls = yes
    create mask = 0660
    directory mask = 0770
@@ -86,21 +90,22 @@ func TestRenderShareWithoutUsersIsUnavailable(t *testing.T) {
 func TestRenderRefusesUnsafeValues(t *testing.T) {
 	ok := ShareSpec{Name: "media", Path: "/srv/media", Readers: []string{"jay"}}
 	cases := map[string]func(*ShareSpec){
-		"newline in comment":     func(s *ShareSpec) { s.Comment = "x\n[global]\n   guest ok = yes" },
-		"line continuation":      func(s *ShareSpec) { s.Comment = `x\` },
-		"samba variable":         func(s *ShareSpec) { s.Path = "/srv/%U" },
-		"newline in path":        func(s *ShareSpec) { s.Path = "/srv/media\n   guest ok = yes" },
-		"relative path":          func(s *ShareSpec) { s.Path = "srv/media" },
-		"path with dot-dot":      func(s *ShareSpec) { s.Path = "/srv/../etc" },
-		"system folder":          func(s *ShareSpec) { s.Path = "/etc/samba" },
-		"root folder":            func(s *ShareSpec) { s.Path = "/" },
-		"section in name":        func(s *ShareSpec) { s.Name = "x]\n[global" },
-		"reserved name":          func(s *ShareSpec) { s.Name = "Global" },
-		"group syntax in user":   func(s *ShareSpec) { s.Readers = []string{"@wheel"} },
-		"list injection in user": func(s *ShareSpec) { s.Writers = []string{"jay, root"} },
-		"writer not a reader":    func(s *ShareSpec) { s.Writers = []string{"ana"} },
-		"uploader also a reader": func(s *ShareSpec) { s.Uploaders = []string{"jay"} },
-		"bad uploader name":      func(s *ShareSpec) { s.Uploaders = []string{"@wheel"} },
+		"newline in comment":       func(s *ShareSpec) { s.Comment = "x\n[global]\n   guest ok = yes" },
+		"line continuation":        func(s *ShareSpec) { s.Comment = `x\` },
+		"samba variable":           func(s *ShareSpec) { s.Path = "/srv/%U" },
+		"newline in path":          func(s *ShareSpec) { s.Path = "/srv/media\n   guest ok = yes" },
+		"relative path":            func(s *ShareSpec) { s.Path = "srv/media" },
+		"path with dot-dot":        func(s *ShareSpec) { s.Path = "/srv/../etc" },
+		"system folder":            func(s *ShareSpec) { s.Path = "/etc/samba" },
+		"root folder":              func(s *ShareSpec) { s.Path = "/" },
+		"section in name":          func(s *ShareSpec) { s.Name = "x]\n[global" },
+		"reserved name":            func(s *ShareSpec) { s.Name = "Global" },
+		"group syntax in user":     func(s *ShareSpec) { s.Readers = []string{"@wheel"} },
+		"list injection in user":   func(s *ShareSpec) { s.Writers = []string{"jay, root"} },
+		"writer not a reader":      func(s *ShareSpec) { s.Writers = []string{"ana"} },
+		"uploader also a reader":   func(s *ShareSpec) { s.Uploaders = []string{"jay"} },
+		"bad uploader name":        func(s *ShareSpec) { s.Uploaders = []string{"@wheel"} },
+		"guest share with uploads": func(s *ShareSpec) { s.Guest = true; s.Uploaders = []string{"ana"} },
 	}
 	for name, breakIt := range cases {
 		s := ok
@@ -223,4 +228,40 @@ func TestGuestShareHasNoUserList(t *testing.T) {
 	if strings.Contains(got, "valid users") || strings.Contains(got, "write list") {
 		t.Errorf("a guest share without writers has no user lists:\n%s", got)
 	}
+}
+
+// Step 1.7: users only see shares they can open (always), and optionally
+// only the files they can read.
+func TestRenderVisibility(t *testing.T) {
+	shares := []ShareSpec{
+		{Name: "big", Path: "/srv/big", Readers: []string{"jay"}},
+		{Name: "hr", Path: "/srv/hr", Readers: []string{"jay"}, HideUnreadable: true},
+	}
+	got, err := RenderShares(shares)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(got, "access based share enum = yes") != 2 {
+		t.Errorf("every share must hide itself from users who cannot open it:\n%s", got)
+	}
+	if strings.Count(got, "hide unreadable = yes") != 1 || strings.Contains(section(got, "big"), "hide unreadable") {
+		t.Errorf("hide unreadable only where asked:\n%s", got)
+	}
+	parsed := ParseShares(got)
+	if parsed[0].HideUnreadable || !parsed[1].HideUnreadable {
+		t.Errorf("parsed: %+v", parsed)
+	}
+	roots := RootsFor("jay", parsed)
+	if roots[0].HideUnreadable || !roots[1].HideUnreadable {
+		t.Errorf("the file manager must hide the same: %+v", roots)
+	}
+}
+
+func section(config, name string) string {
+	start := strings.Index(config, "["+name+"]")
+	rest := config[start+1:]
+	if end := strings.Index(rest, "\n["); end >= 0 {
+		rest = rest[:end]
+	}
+	return rest
 }

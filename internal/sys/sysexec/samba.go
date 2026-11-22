@@ -66,7 +66,7 @@ func (s *Samba) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
 
 	// Folder permissions first: only for shares whose access changed, and
 	// put back as they were if anything after this fails.
-	changed, removed := s.diff(shares)
+	changed, removed, before := s.diff(shares)
 	var ids identities
 	if len(changed)+len(removed) > 0 {
 		if ids, err = loadIdentities(ctx, s.runner); err != nil {
@@ -82,7 +82,7 @@ func (s *Samba) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
 		}
 	}
 	for _, sh := range changed {
-		b, err := setShareACL(sh, ids, s.protected)
+		b, err := setShareACL(sh, ids, s.protected, len(before[sh.Name].Uploaders) > 0)
 		if err != nil {
 			undo()
 			return err
@@ -100,7 +100,7 @@ func (s *Samba) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
 	}
 	// Folders no longer shared lose the entries NetShare Hub gave them.
 	for _, old := range removed {
-		if _, stripErr := setShareACL(sys.ShareSpec{Name: old.Name, Path: old.Path}, ids, s.protected); stripErr != nil {
+		if _, stripErr := setShareACL(sys.ShareSpec{Name: old.Name, Path: old.Path}, ids, s.protected, len(old.Uploaders) > 0); stripErr != nil {
 			slog.WarnContext(ctx, "could not remove permissions from a folder that is no longer shared", "path", old.Path, "err", stripErr)
 		}
 	}
@@ -123,14 +123,15 @@ func (s *Samba) applied() ([]sys.ShareSpec, error) {
 }
 
 // diff compares new shares with the applied ones: changed are the shares
-// whose folder needs new permissions, removed the folders no longer shared.
-func (s *Samba) diff(shares []sys.ShareSpec) (changed, removed []sys.ShareSpec) {
+// whose folder needs new permissions, removed the folders no longer shared,
+// and before the applied shares by name.
+func (s *Samba) diff(shares []sys.ShareSpec) (changed, removed []sys.ShareSpec, before map[string]sys.ShareSpec) {
+	before = map[string]sys.ShareSpec{}
 	previous, err := s.applied()
 	if err != nil {
 		// Unknown starting point: set every folder.
-		return shares, nil
+		return shares, nil, before
 	}
-	before := map[string]sys.ShareSpec{}
 	for _, p := range previous {
 		before[p.Name] = p
 	}
@@ -146,7 +147,7 @@ func (s *Samba) diff(shares []sys.ShareSpec) (changed, removed []sys.ShareSpec) 
 			removed = append(removed, p)
 		}
 	}
-	return changed, removed
+	return changed, removed, before
 }
 
 func (s *Samba) FixPermissions(ctx context.Context, name string) (sys.PermissionStats, error) {

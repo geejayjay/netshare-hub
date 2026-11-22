@@ -33,16 +33,19 @@ type ShareAccess struct {
 
 // Share is a folder shared over SMB.
 type Share struct {
-	ID          int64         `json:"id"`
-	Name        string        `json:"name" doc:"The name clients connect to: \\\\server\\name."`
-	Path        string        `json:"path" doc:"The folder on the server, with symbolic links resolved."`
-	Comment     string        `json:"comment"`
-	ReadOnly    bool          `json:"readOnly" doc:"Nobody can change files, whatever their level."`
-	GuestAccess bool          `json:"guestAccess" doc:"Anyone on the network can read without a password, and every user with SMB access can read with theirs."`
-	Preset      string        `json:"preset" doc:"The preset the share was set up with, or \"custom\". A label only: the rules are the other fields."`
-	Access      []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
-	CreatedAt   time.Time     `json:"createdAt"`
-	UpdatedAt   time.Time     `json:"updatedAt"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name" doc:"The name clients connect to: \\\\server\\name."`
+	Path        string `json:"path" doc:"The folder on the server, with symbolic links resolved."`
+	Comment     string `json:"comment"`
+	ReadOnly    bool   `json:"readOnly" doc:"Nobody can change files, whatever their level."`
+	GuestAccess bool   `json:"guestAccess" doc:"Anyone on the network can read without a password, and every user with SMB access can read with theirs."`
+	Preset      string `json:"preset" doc:"The preset the share was set up with, or \"custom\". A label only: the rules are the other fields."`
+	// Users never see shares they cannot open (always on); this also hides
+	// the files and folders inside that they cannot read.
+	HideUnreadable bool          `json:"hideUnreadable" doc:"Hide files and folders a user cannot read, over SMB and in the file manager. Slows down listing very big folders."`
+	Access         []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
+	CreatedAt      time.Time     `json:"createdAt"`
+	UpdatedAt      time.Time     `json:"updatedAt"`
 }
 
 // MyShare is a share visible to the signed-in user in their personal portal.
@@ -72,16 +75,18 @@ type CreateInput struct {
 	Comment         string
 	CreateDirectory bool
 	Rules
-	Preset string
-	Access []AccessInput
+	Preset         string
+	HideUnreadable bool
+	Access         []AccessInput
 }
 
 // UpdateInput changes only the fields that are set (non-nil).
 type UpdateInput struct {
-	Comment     *string
-	ReadOnly    *bool
-	GuestAccess *bool
-	Preset      *string
+	Comment        *string
+	ReadOnly       *bool
+	GuestAccess    *bool
+	Preset         *string
+	HideUnreadable *bool
 	// Access, when set, replaces the whole access list.
 	Access *[]AccessInput
 }

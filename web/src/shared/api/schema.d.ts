@@ -312,6 +312,8 @@ export interface components {
             createDirectory?: boolean;
             /** @description Anyone on the network can read without a password. */
             guestAccess?: boolean;
+            /** @description Hide files and folders a user cannot read. Slows down listing very big folders. */
+            hideUnreadable?: boolean;
             /** @example media */
             name: string;
             /**
@@ -534,6 +536,8 @@ export interface components {
             createdAt: string;
             /** @description Anyone on the network can read without a password, and every user with SMB access can read with theirs. */
             guestAccess: boolean;
+            /** @description Hide files and folders a user cannot read, over SMB and in the file manager. Slows down listing very big folders. */
+            hideUnreadable: boolean;
             /** Format: int64 */
             id: number;
             /** @description The name clients connect to: \\server\name. */
@@ -571,6 +575,7 @@ export interface components {
             access?: components["schemas"]["ShareAccessInput"][];
             comment?: string;
             guestAccess?: boolean;
+            hideUnreadable?: boolean;
             preset?: string;
             readOnly?: boolean;
         };

@@ -180,6 +180,85 @@ func TestPresetsOverRealSMB(t *testing.T) {
 		t.Errorf("the drop box owner should see uploads:\n%s", out)
 	}
 
+	// An uploader cannot replace someone else's file by guessing its name
+	// (the drop box folder is sticky). Their own file can still be renamed.
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "theirs.txt"), []byte("collector"), 0o644)
+	os.WriteFile(filepath.Join(tmp, "mine.txt"), []byte("uploader"), 0o644)
+	smb(t, "pdropbox", writer, "put "+filepath.Join(tmp, "theirs.txt")+" collect.txt")
+	smb(t, "pdropbox", other, "put "+filepath.Join(tmp, "mine.txt")+" mine.txt")
+	if out := smb(t, "pdropbox", other, "rename mine.txt collect.txt -f"); !strings.Contains(out, "NT_STATUS_") {
+		t.Errorf("an uploader replaced someone else's file:\n%s", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(base, "dropbox", "collect.txt")); string(got) != "collector" {
+		t.Errorf("collect.txt was replaced or removed: %q", got)
+	}
+	// Over SMB, Samba refuses renames by upload-only users anyway. The file
+	// manager acts through the kernel as the user, so check the kernel: the
+	// sticky bit stops the uploader replacing someone else's file, while
+	// their own file is still theirs to rename.
+	drop := filepath.Join(base, "dropbox")
+	asUploader := func(args ...string) error {
+		return exec.Command("sudo", append([]string{"-u", other}, args...)...).Run()
+	}
+	if err := asUploader("mv", "-f", filepath.Join(drop, "mine.txt"), filepath.Join(drop, "collect.txt")); err == nil {
+		t.Error("kernel: an uploader replaced someone else's file in the drop box")
+	}
+	if err := asUploader("rm", "-f", filepath.Join(drop, "collect.txt")); err == nil {
+		t.Error("kernel: an uploader deleted someone else's file in the drop box")
+	}
+	if got, _ := os.ReadFile(filepath.Join(drop, "collect.txt")); string(got) != "collector" {
+		t.Errorf("collect.txt was replaced or removed: %q", got)
+	}
+	if err := asUploader("mv", filepath.Join(drop, "mine.txt"), filepath.Join(drop, "renamed.txt")); err != nil {
+		t.Errorf("kernel: an uploader could not rename their own file: %v", err)
+	}
+
+	// --- 1.7: the share list only shows shares a user can open ---
+	list := func(user string) string {
+		args := []string{"-L", "//127.0.0.1", "-g"}
+		if user == "" {
+			args = append(args, "-N")
+		} else {
+			args = append(args, "-U", user+"%"+pw)
+		}
+		out, _ := exec.Command("smbclient", args...).CombinedOutput()
+		return string(out)
+	}
+	for _, c := range []struct {
+		user         string
+		see, dontSee []string
+	}{
+		{writer, []string{"pprivate", "pdropbox", "preadonly", "pmedia"}, nil},
+		{outsider, []string{"ppublicread", "pmedia"}, []string{"pprivate", "pteam", "pdropbox", "preadonly"}},
+		{"", []string{"ppublicread", "pmedia"}, []string{"pprivate", "pteam", "pdropbox", "preadonly"}},
+	} {
+		out := list(c.user)
+		for _, s := range c.see {
+			if !strings.Contains(out, "Disk|"+s+"|") {
+				t.Errorf("%q should see share %s:\n%s", c.user, s, out)
+			}
+		}
+		for _, s := range c.dontSee {
+			if strings.Contains(out, "Disk|"+s+"|") {
+				t.Errorf("%q must not see share %s:\n%s", c.user, s, out)
+			}
+		}
+	}
+
+	// --- 1.7: "hide unreadable" hides what the user cannot read ---
+	teamDir := filepath.Join(base, "team")
+	os.WriteFile(filepath.Join(teamDir, "salaries.txt"), []byte("secret"), 0o600) // root only, no ACL
+	if out := smb(t, "pteam", other, "ls"); !strings.Contains(out, "salaries.txt") {
+		t.Fatalf("without the switch the file is listed:\n%s", out)
+	}
+	if status, _ := admin.do("PATCH", "/shares/"+itoa(shareIDs[1]), map[string]any{"hideUnreadable": true}, nil); status != 200 {
+		t.Fatalf("turn on hide unreadable: status %d", status)
+	}
+	if out := smb(t, "pteam", other, "ls"); strings.Contains(out, "salaries.txt") || !strings.Contains(out, "seed.txt") {
+		t.Errorf("with hide unreadable, only readable files are listed:\n%s", out)
+	}
+
 	// A link a user planted inside a share is never given an ACL.
 	dir := filepath.Join(base, "private")
 	if err := os.Symlink("/etc/shadow", filepath.Join(dir, "shadow-link")); err != nil {

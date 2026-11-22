@@ -127,6 +127,7 @@ func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules) (E
 	if err != nil {
 		return EffectiveAccess{}, err
 	}
+	checkUploads(v, access, r)
 	if err := v.Err(); err != nil {
 		return EffectiveAccess{}, err
 	}
@@ -164,6 +165,7 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 	if _, err := s.checkAccess(ctx, v, in.Access); err != nil {
 		return Share{}, err
 	}
+	checkUploads(v, in.Access, in.Rules)
 	if err := v.Err(); err != nil {
 		return Share{}, err
 	}
@@ -220,17 +222,8 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 	if in.Preset != nil {
 		v.Check(validPreset(*in.Preset), "preset", "invalid_choice", "Unknown preset.")
 	}
-	if in.Access != nil {
-		if _, err := s.checkAccess(ctx, v, *in.Access); err != nil {
-			return Share{}, err
-		}
-	}
-	if err := v.Err(); err != nil {
-		return Share{}, err
-	}
-
 	rules := Rules{ReadOnly: before.ReadOnly, GuestAccess: before.GuestAccess}
-	preset := before.Preset
+	preset, hide := before.Preset, before.HideUnreadable
 	if in.ReadOnly != nil {
 		rules.ReadOnly = *in.ReadOnly
 	}
@@ -240,7 +233,22 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 	if in.Preset != nil {
 		preset = *in.Preset
 	}
-	settingsChanged := in.ReadOnly != nil || in.GuestAccess != nil || in.Preset != nil
+	if in.HideUnreadable != nil {
+		hide = *in.HideUnreadable
+	}
+	settingsChanged := in.ReadOnly != nil || in.GuestAccess != nil || in.Preset != nil || in.HideUnreadable != nil
+
+	access := accessOf(before)
+	if in.Access != nil {
+		if _, err := s.checkAccess(ctx, v, *in.Access); err != nil {
+			return Share{}, err
+		}
+		access = *in.Access
+	}
+	checkUploads(v, access, rules)
+	if err := v.Err(); err != nil {
+		return Share{}, err
+	}
 
 	err = s.change(ctx, func(tx *sql.Tx) (bool, error) {
 		if in.Comment != nil {
@@ -249,7 +257,7 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 			}
 		}
 		if settingsChanged {
-			if err := s.repo.UpdateSettings(ctx, tx, id, rules, preset, s.now()); err != nil {
+			if err := s.repo.UpdateSettings(ctx, tx, id, rules, preset, hide, s.now()); err != nil {
 				return false, err
 			}
 		}
@@ -535,6 +543,28 @@ func (s *Service) checkAccess(ctx context.Context, v *validate.Errors, access []
 		seen[a.UserID] = true
 	}
 	return byID, nil
+}
+
+// checkUploads refuses upload-only users on a guest share: everyone can read
+// a guest share, the uploads included, so "upload only" would hide nothing.
+func checkUploads(v *validate.Errors, access []AccessInput, r Rules) {
+	if !r.GuestAccess {
+		return
+	}
+	for i, a := range access {
+		if a.Level == LevelUpload {
+			v.Add(fmt.Sprintf("access[%d].level", i), "not_with_guest",
+				"Upload-only does not work on a share with guest access: everyone can read what is uploaded. Turn guest access off, or choose another level.")
+		}
+	}
+}
+
+func accessOf(sh Share) []AccessInput {
+	out := make([]AccessInput, len(sh.Access))
+	for i, a := range sh.Access {
+		out[i] = AccessInput{UserID: a.UserID, Level: a.Level}
+	}
+	return out
 }
 
 // checkOverlap refuses a folder inside (or containing) another share's: one

@@ -247,3 +247,64 @@ func TestShareAccessModes(t *testing.T) {
 	want(t, "unknown preset", status, 422)
 	want(t, "unknown preset field", fieldCodes(p)["preset"], "invalid_choice")
 }
+
+// Upload-only users on a guest share would be a false promise: everyone can
+// read a guest share, the uploads included.
+func TestUploadsRefusedOnGuestShares(t *testing.T) {
+	admin, fake, _ := newSystemServer(t)
+	jay := createUser(t, admin, "jay")
+	upload := []map[string]any{{"userId": jay.ID, "level": "upload"}}
+
+	for _, c := range []struct {
+		method, path string
+		body         map[string]any
+	}{
+		{"POST", "/shares", map[string]any{"name": "pub", "path": "/srv/pub", "guestAccess": true, "access": upload}},
+		{"POST", "/shares/effective-access", map[string]any{"guestAccess": true, "access": upload}},
+	} {
+		var p problem
+		status, _ := admin.do(c.method, c.path, c.body, &p)
+		if status != 422 || fieldCodes(p)["access[0].level"] != "not_with_guest" {
+			t.Errorf("%s %s: status %d, errors %+v", c.method, c.path, status, p.Errors)
+		}
+	}
+
+	// Turning guest access on for an existing drop box is refused too.
+	var inbox shareBody
+	admin.do("POST", "/shares", map[string]any{"name": "inbox", "path": "/srv/inbox", "access": upload}, &inbox)
+	var p problem
+	status, _ := admin.do("PATCH", "/shares/"+itoa(inbox.ID), map[string]any{"guestAccess": true}, &p)
+	want(t, "guest on a drop box", status, 422)
+	want(t, "guest on a drop box field", fieldCodes(p)["access[0].level"], "not_with_guest")
+	if strings.Contains(section(t, fake, "inbox"), "guest ok = yes") {
+		t.Error("a refused change reached the config")
+	}
+}
+
+// Step 1.7: shares are hidden from users who cannot open them, and "hide
+// unreadable" is a per-share switch.
+func TestShareVisibilitySettings(t *testing.T) {
+	admin, fake, _ := newSystemServer(t)
+	jay := createUser(t, admin, "jay")
+
+	var sh struct {
+		ID             int64
+		HideUnreadable bool
+	}
+	status, _ := admin.do("POST", "/shares", map[string]any{
+		"name": "hr", "path": "/srv/hr", "access": []map[string]any{{"userId": jay.ID, "level": "read"}},
+	}, &sh)
+	want(t, "create", status, 201)
+	want(t, "hide unreadable off by default", sh.HideUnreadable, false)
+	sec := section(t, fake, "hr")
+	if !strings.Contains(sec, "access based share enum = yes") || strings.Contains(sec, "hide unreadable") {
+		t.Errorf("config:\n%s", sec)
+	}
+
+	status, _ = admin.do("PATCH", "/shares/"+itoa(sh.ID), map[string]any{"hideUnreadable": true}, &sh)
+	want(t, "turn on", status, 200)
+	want(t, "hideUnreadable", sh.HideUnreadable, true)
+	if !strings.Contains(section(t, fake, "hr"), "hide unreadable = yes") {
+		t.Errorf("config:\n%s", fake.Config)
+	}
+}

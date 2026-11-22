@@ -15,7 +15,7 @@ type aclBackup struct{ path string }
 
 func (*aclBackup) restore([]string) error { return errors.ErrUnsupported }
 
-func setShareACL(sys.ShareSpec, identities, []string) (*aclBackup, error) {
+func setShareACL(sys.ShareSpec, identities, []string, bool) (*aclBackup, error) {
 	return nil, errors.ErrUnsupported
 }
 

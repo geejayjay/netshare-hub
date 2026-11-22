@@ -29,6 +29,9 @@ type ShareSpec struct {
 	// Guest lets anyone on the network read the share without a password,
 	// and every managed user read it with theirs. Guests never write.
 	Guest bool `json:"guest,omitempty"`
+	// HideUnreadable hides files and folders a user cannot read (over SMB
+	// and in the file manager). It slows down listing very big folders.
+	HideUnreadable bool `json:"hideUnreadable,omitempty"`
 }
 
 // Live reports whether anyone at all may use the share.
@@ -64,6 +67,11 @@ func (s ShareSpec) Check() error {
 		if slices.Contains(s.Readers, name) {
 			return fmt.Errorf("share %q: %q is both an uploader and a reader", s.Name, name)
 		}
+	}
+	// Everyone reads a guest share, uploads included: "upload only" would
+	// promise a privacy it cannot keep.
+	if s.Guest && len(s.Uploaders) > 0 {
+		return fmt.Errorf("share %q: a guest share cannot have upload-only users", s.Name)
 	}
 	return nil
 }
@@ -124,6 +132,12 @@ func RenderShares(shares []ShareSpec) (string, error) {
 		}
 		if len(s.Uploaders) > 0 {
 			fmt.Fprintf(&b, "   %s %s\n", uploadOnlyKey, strings.Join(s.Uploaders, ", "))
+		}
+		// Users only see (in the share list) shares they may open, and, when
+		// asked, only the files and folders they may read.
+		param(&b, "access based share enum", "yes")
+		if s.HideUnreadable {
+			param(&b, "hide unreadable", "yes")
 		}
 		// New files and folders take the folder's default ACL (so everyone
 		// with access keeps it), and the masks keep that ACL from being cut
@@ -215,6 +229,8 @@ func ParseShares(config string) []ShareSpec {
 			writeList = strings.Split(value, ", ")
 		case "guest ok":
 			current.Guest = value == "yes"
+		case "hide unreadable":
+			current.HideUnreadable = value == "yes"
 		case "available":
 			available = value != "no"
 		}

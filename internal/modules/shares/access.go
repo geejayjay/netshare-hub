@@ -144,7 +144,7 @@ func preview(access []AccessInput, byID map[int64]users.User, r Rules) Effective
 // account back on does not need the share to be rewritten.
 func spec(sh Share, byID map[int64]users.User) sys.ShareSpec {
 	r := Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess}
-	s := sys.ShareSpec{Name: sh.Name, Path: sh.Path, Comment: sh.Comment, Guest: r.GuestAccess}
+	s := sys.ShareSpec{Name: sh.Name, Path: sh.Path, Comment: sh.Comment, Guest: r.GuestAccess, HideUnreadable: sh.HideUnreadable}
 	for _, a := range sh.Access {
 		u, ok := byID[a.UserID]
 		if !ok || !u.SMBAccess {

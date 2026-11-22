@@ -26,12 +26,12 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-const columns = "id, name, path, comment, read_only, guest_access, preset, created_at, updated_at"
+const columns = "id, name, path, comment, read_only, guest_access, preset, hide_unreadable, created_at, updated_at"
 
 func scan(s interface{ Scan(...any) error }) (Share, error) {
 	var sh Share
 	var created, updated int64
-	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset, &created, &updated)
+	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset, &sh.HideUnreadable, &created, &updated)
 	sh.CreatedAt = time.Unix(created, 0).UTC()
 	sh.UpdatedAt = time.Unix(updated, 0).UTC()
 	sh.Access = []ShareAccess{}
@@ -162,9 +162,9 @@ func (r *Repo) query(ctx context.Context, q querier, query string, args ...any) 
 
 func (r *Repo) Insert(ctx context.Context, q querier, in CreateInput, now time.Time) (int64, error) {
 	res, err := q.ExecContext(ctx,
-		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, now.Unix(), now.Unix())
+		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, hide_unreadable, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, in.HideUnreadable, now.Unix(), now.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -177,9 +177,10 @@ func (r *Repo) UpdateComment(ctx context.Context, q querier, id int64, comment s
 }
 
 // UpdateSettings changes the share-wide settings.
-func (r *Repo) UpdateSettings(ctx context.Context, q querier, id int64, rules Rules, preset string, now time.Time) error {
-	_, err := q.ExecContext(ctx, "UPDATE shares SET read_only = ?, guest_access = ?, preset = ?, updated_at = ? WHERE id = ?",
-		rules.ReadOnly, rules.GuestAccess, preset, now.Unix(), id)
+func (r *Repo) UpdateSettings(ctx context.Context, q querier, id int64, rules Rules, preset string, hideUnreadable bool, now time.Time) error {
+	_, err := q.ExecContext(ctx,
+		"UPDATE shares SET read_only = ?, guest_access = ?, preset = ?, hide_unreadable = ?, updated_at = ? WHERE id = ?",
+		rules.ReadOnly, rules.GuestAccess, preset, hideUnreadable, now.Unix(), id)
 	return err
 }
 

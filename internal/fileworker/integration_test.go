@@ -207,6 +207,30 @@ func TestRealWorkers(t *testing.T) {
 	if _, err := c.Read(ctx, jay, "wkmedia", "root-only.txt", ""); !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("worker read a file the user may not read: %v (want fs.ErrPermission)", err)
 	}
+	// "Hide unreadable" (step 1.7): the file manager leaves it out of the
+	// listing, as Samba does, once the share asks for it.
+	names := func() string {
+		t.Helper()
+		res, err := c.List(ctx, jay, "wkmedia", "", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, e := range res.Entries {
+			out = append(out, e.Name)
+		}
+		return strings.Join(out, ",")
+	}
+	if !strings.Contains(names(), "root-only.txt") {
+		t.Error("without hide unreadable, the unreadable file is listed")
+	}
+	hidden := mediaShare
+	hidden.HideUnreadable = true
+	apply(hidden, sys.ShareSpec{Name: "wkprivate", Path: private, Readers: []string{jay}, Writers: []string{jay}})
+	if got := names(); strings.Contains(got, "root-only.txt") {
+		t.Errorf("hide unreadable: the file manager listed %q", got)
+	}
+	apply(mediaShare, sys.ShareSpec{Name: "wkprivate", Path: private, Readers: []string{jay}, Writers: []string{jay}})
 	// A symlink inside the share pointing at a system file.
 	if err := os.Symlink("/etc/shadow", filepath.Join(media, "shadow")); err != nil {
 		t.Fatal(err)

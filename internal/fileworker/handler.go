@@ -78,12 +78,14 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	root, err := h.open(q.Get("share"), false)
+	share := q.Get("share")
+	root, err := h.open(share, false)
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	defer root.Close()
+	hide := h.roots[share].HideUnreadable
 
 	f, err := root.Open(dir)
 	if err != nil {
@@ -119,6 +121,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		info, err := item.Info()
 		if err != nil {
 			continue // removed while listing
+		}
+		// Like Samba's "hide unreadable": the kernel says what the user
+		// (this process) may read; links are shown as they are.
+		if hide && (info.IsDir() || info.Mode().IsRegular()) && !readable(f, item.Name()) {
+			continue
 		}
 		result.Entries = append(result.Entries, entryOf(info))
 	}
