@@ -226,3 +226,21 @@ func managedGroupID(ctx context.Context, r Runner) (int, error) {
 	}
 	return strconv.Atoi(fields[2])
 }
+
+// disabled reports whether the account's Samba entry is disabled. A missing
+// Samba entry counts as disabled: such an account cannot use the shares.
+func (a *Accounts) disabled(ctx context.Context, name string) (bool, error) {
+	res, err := a.runner.Run(ctx, Command{Name: "pdbedit", Args: []string{"-u", name, "-w"}})
+	if err != nil {
+		return false, err
+	}
+	if res.ExitCode != 0 {
+		return true, nil
+	}
+	// name:uid:LM hash:NT hash:[account flags]:last change
+	fields := strings.Split(strings.TrimSpace(res.Stdout), ":")
+	if len(fields) < 5 || fields[0] != name {
+		return false, fmt.Errorf("unexpected pdbedit output for %q", name)
+	}
+	return strings.Contains(fields[4], "D"), nil
+}

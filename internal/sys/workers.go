@@ -41,9 +41,11 @@ type Workers interface {
 	// starting one if none is running. Workers stop on their own when idle,
 	// and are stopped when shares or the account change, so callers ask
 	// again (and retry once) when a connection fails.
+	// background asks for the account's separate background worker, which
+	// runs with the lowest IO and CPU priority (used by jobs).
 	// Errors: ErrInvalid, ErrNotFound (no such account, or it has no
-	// shares), ErrNotManaged.
-	Endpoint(ctx context.Context, account string) (WorkerEndpoint, error)
+	// shares), ErrNotManaged, ErrDisabled.
+	Endpoint(ctx context.Context, account string, background bool) (WorkerEndpoint, error)
 }
 
 // RootsFor returns the shares an account may reach, from a list of applied
@@ -66,4 +68,19 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+type backgroundKey struct{}
+
+// WithBackground marks work as background work (a job, not a click). File
+// operations made with such a context run in a separate worker with the
+// lowest IO priority, so they never slow down people using the shares.
+func WithBackground(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundKey{}, true)
+}
+
+// IsBackground reports whether ctx carries WithBackground.
+func IsBackground(ctx context.Context) bool {
+	b, _ := ctx.Value(backgroundKey{}).(bool)
+	return b
 }

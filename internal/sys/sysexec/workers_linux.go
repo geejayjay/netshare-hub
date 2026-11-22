@@ -48,10 +48,12 @@ type Workers struct {
 }
 
 type workerProc struct {
-	cmd    *exec.Cmd
-	socket string
-	roots  []sys.WorkerRoot // what the worker was started with
-	done   chan struct{}    // closed when the process has exited
+	account    string
+	background bool
+	cmd        *exec.Cmd
+	socket     string
+	roots      []sys.WorkerRoot // what the worker was started with
+	done       chan struct{}    // closed when the process has exited
 }
 
 func newWorkers(r Runner, accounts *Accounts, managedConfig, dir string, allowUID, allowGID int) *Workers {
@@ -62,11 +64,27 @@ func newWorkers(r Runner, accounts *Accounts, managedConfig, dir string, allowUI
 	}
 }
 
-func (w *Workers) Endpoint(ctx context.Context, account string) (sys.WorkerEndpoint, error) {
+// workerKey names one worker: each account has at most one normal and one
+// background worker.
+func workerKey(account string, background bool) string {
+	if background {
+		return account + ".bg"
+	}
+	return account
+}
+
+func (w *Workers) Endpoint(ctx context.Context, account string, background bool) (sys.WorkerEndpoint, error) {
 	// Only accounts NetShare Hub created can get a worker. This also
 	// validates the name, so nothing below handles unchecked input.
 	if err := w.accounts.managed(ctx, account); err != nil {
 		return sys.WorkerEndpoint{}, err
+	}
+	// A disabled account gets no new worker (its running ones were stopped
+	// when it was disabled). Jobs queued earlier then fail instead of acting.
+	if off, err := w.accounts.disabled(ctx, account); err != nil {
+		return sys.WorkerEndpoint{}, err
+	} else if off {
+		return sys.WorkerEndpoint{}, sys.ErrDisabled
 	}
 	roots, err := w.roots(account)
 	if err != nil {
@@ -76,9 +94,10 @@ func (w *Workers) Endpoint(ctx context.Context, account string) (sys.WorkerEndpo
 		return sys.WorkerEndpoint{}, fmt.Errorf("%w: account has no shares", sys.ErrNotFound)
 	}
 
+	key := workerKey(account, background)
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if p := w.procs[account]; p != nil {
+	if p := w.procs[key]; p != nil {
 		select {
 		case <-p.done: // exited (idle); start a new one below
 		default:
@@ -86,11 +105,11 @@ func (w *Workers) Endpoint(ctx context.Context, account string) (sys.WorkerEndpo
 		}
 	}
 
-	p, err := w.start(ctx, account, roots)
+	p, err := w.start(ctx, account, background, roots)
 	if err != nil {
 		return sys.WorkerEndpoint{}, err
 	}
-	w.procs[account] = p
+	w.procs[key] = p
 	return sys.WorkerEndpoint{Network: "unix", Address: p.socket}, nil
 }
 
@@ -108,7 +127,8 @@ func (w *Workers) roots(account string) ([]sys.WorkerRoot, error) {
 }
 
 // start launches a worker for the account. Callers hold w.mu.
-func (w *Workers) start(ctx context.Context, account string, roots []sys.WorkerRoot) (*workerProc, error) {
+func (w *Workers) start(ctx context.Context, account string, background bool, roots []sys.WorkerRoot) (*workerProc, error) {
+	key := workerKey(account, background)
 	uid, groups, err := w.identity(ctx, account)
 	if err != nil {
 		return nil, err
@@ -125,7 +145,7 @@ func (w *Workers) start(ctx context.Context, account string, roots []sys.WorkerR
 
 	// The root side creates the socket, so it has the right owner and mode
 	// from the first instant; the worker only inherits it.
-	listener, socket, err := w.listen(account)
+	listener, socket, err := w.listen(key)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +176,17 @@ func (w *Workers) start(ctx context.Context, account string, roots []sys.WorkerR
 	}
 
 	cmd := exec.Command(exe, "fileworker")
+	if background {
+		// Lowest IO priority ("idle": only uses the disk when nobody else
+		// does) and lower CPU priority. Started through ionice/nice so the
+		// priority is set before the worker's first thread exists and every
+		// thread inherits it.
+		if wrapped := lowPriority(exe); wrapped != nil {
+			cmd = wrapped
+		} else {
+			slog.WarnContext(ctx, "ionice or nice not found; background worker runs at normal priority")
+		}
+	}
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"} // nothing inherited from root's environment
 	cmd.Dir = "/"
 	cmd.Stdin = bytes.NewReader(config)
@@ -172,19 +203,20 @@ func (w *Workers) start(ctx context.Context, account string, roots []sys.WorkerR
 		os.Remove(socket)
 		return nil, fmt.Errorf("start file worker: %w", err)
 	}
-	slog.InfoContext(ctx, "file worker started", "account", account, "uid", uid, "pid", cmd.Process.Pid, "shares", len(roots))
+	slog.InfoContext(ctx, "file worker started", "account", account, "background", background,
+		"uid", uid, "pid", cmd.Process.Pid, "shares", len(roots))
 
-	p := &workerProc{cmd: cmd, socket: socket, roots: roots, done: make(chan struct{})}
+	p := &workerProc{account: account, background: background, cmd: cmd, socket: socket, roots: roots, done: make(chan struct{})}
 	go func() {
 		_ = cmd.Wait()
 		close(p.done)
 		w.mu.Lock()
-		if w.procs[account] == p {
-			delete(w.procs, account)
+		if w.procs[key] == p {
+			delete(w.procs, key)
 			os.Remove(socket)
 		}
 		w.mu.Unlock()
-		slog.Info("file worker exited", "account", account, "pid", cmd.Process.Pid)
+		slog.Info("file worker exited", "account", account, "background", background, "pid", cmd.Process.Pid)
 	}()
 	return p, nil
 }
@@ -216,7 +248,8 @@ func (w *Workers) identity(ctx context.Context, account string) (int, []uint32, 
 
 // listen creates the worker's socket: root:<web server group>, mode 0660,
 // inside a 0750 directory, so only root and the web server can connect.
-func (w *Workers) listen(account string) (*net.UnixListener, string, error) {
+// name is a worker key: a validated account name, optionally with ".bg".
+func (w *Workers) listen(name string) (*net.UnixListener, string, error) {
 	// Both the worker folder and its parent (NetShare Hub's runtime folder,
 	// shared with the agent's socket) must let the web server through, and
 	// nobody else. Set them up here rather than relying on the agent having
@@ -236,7 +269,7 @@ func (w *Workers) listen(account string) (*net.UnixListener, string, error) {
 		}
 	}
 
-	socket := filepath.Join(w.dir, account+".sock")
+	socket := filepath.Join(w.dir, name+".sock")
 	if info, err := os.Lstat(socket); err == nil {
 		if info.Mode()&fs.ModeSocket == 0 {
 			return nil, "", fmt.Errorf("%s exists and is not a socket; refusing to replace it", socket)
@@ -266,14 +299,19 @@ func (w *Workers) listen(account string) (*net.UnixListener, string, error) {
 	return listener, socket, nil
 }
 
-// Stop ends the account's worker, if one is running. It is called when the
-// account is disabled or deleted.
+// Stop ends the account's workers (normal and background), if any run. It
+// is called when the account is disabled or deleted.
 func (w *Workers) Stop(account string) {
 	w.mu.Lock()
-	p := w.procs[account]
-	delete(w.procs, account)
+	var stop []*workerProc
+	for _, key := range []string{workerKey(account, false), workerKey(account, true)} {
+		if p := w.procs[key]; p != nil {
+			stop = append(stop, p)
+			delete(w.procs, key)
+		}
+	}
 	w.mu.Unlock()
-	if p != nil {
+	for _, p := range stop {
 		w.kill(p)
 	}
 }
@@ -297,11 +335,11 @@ func (w *Workers) StopAll() {
 func (w *Workers) Refresh() {
 	w.mu.Lock()
 	var stale []*workerProc
-	for account, p := range w.procs {
-		now, err := w.roots(account)
+	for key, p := range w.procs {
+		now, err := w.roots(p.account)
 		if err != nil || !sameRoots(p.roots, now) {
 			stale = append(stale, p)
-			delete(w.procs, account)
+			delete(w.procs, key)
 		}
 	}
 	w.mu.Unlock()
@@ -355,4 +393,16 @@ func webIdentity(ctx context.Context, r Runner, name string) (uid, gid int, err 
 		return 0, 0, fmt.Errorf("unexpected id output for %q", name)
 	}
 	return uid, gid, nil
+}
+
+// lowPriority returns "ionice -c 3 nice -n 10 <exe> fileworker", or nil
+// when either tool is missing.
+func lowPriority(exe string) *exec.Cmd {
+	const ionice, nice = "/usr/bin/ionice", "/usr/bin/nice"
+	for _, tool := range []string{ionice, nice} {
+		if _, err := os.Stat(tool); err != nil {
+			return nil
+		}
+	}
+	return exec.Command(ionice, "-c", "3", nice, "-n", "10", exe, "fileworker")
 }

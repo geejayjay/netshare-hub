@@ -117,9 +117,9 @@ func (c *Client) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error 
 
 // --- sys.Workers ---
 
-func (c *Client) Endpoint(ctx context.Context, account string) (sys.WorkerEndpoint, error) {
+func (c *Client) Endpoint(ctx context.Context, account string, background bool) (sys.WorkerEndpoint, error) {
 	var res sys.WorkerEndpoint
-	err := c.call(ctx, opWorker, workerRequest{Name: account}, &res)
+	err := c.call(ctx, opWorker, workerRequest{Name: account, Background: background}, &res)
 	return res, err
 }
 

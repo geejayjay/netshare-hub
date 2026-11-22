@@ -47,10 +47,11 @@ func (s *scriptRunner) ran(prefix string) bool {
 
 // machine simulates a small Linux box: which accounts exist and their groups.
 type machine struct {
-	passwd map[string]int      // name -> uid
-	groups map[string][]string // name -> groups
-	group  bool                // does the managed group exist
-	fail   map[string]int      // program -> exit code to return
+	passwd   map[string]int      // name -> uid
+	groups   map[string][]string // name -> groups
+	group    bool                // does the managed group exist
+	fail     map[string]int      // program -> exit code to return
+	disabled map[string]bool     // accounts whose Samba entry is disabled
 }
 
 func (m *machine) answer(cmd Command) Result {
@@ -74,6 +75,16 @@ func (m *machine) answer(cmd Command) Result {
 		return Result{Stdout: strings.Join(m.groups[cmd.Args[1]], " ") + "\n"}
 	case "groupadd":
 		m.group = true
+	case "pdbedit":
+		name := cmd.Args[1]
+		if _, ok := m.passwd[name]; !ok {
+			return Result{ExitCode: 255}
+		}
+		flags := "[U          ]"
+		if m.disabled[name] {
+			flags = "[DU         ]"
+		}
+		return Result{Stdout: name + ":1000:XXX:" + "0123456789ABCDEF0123456789ABCDEF:" + flags + ":LCT-00000000:\n"}
 	}
 	return Result{}
 }
@@ -381,5 +392,16 @@ func TestApplyConfigReloadFailure(t *testing.T) {
 func TestRunnerRefusesUnknownPrograms(t *testing.T) {
 	if _, err := (ExecRunner{}).Run(ctx, Command{Name: "sh", Args: []string{"-c", "id"}}); err == nil {
 		t.Fatal("a program outside the allow-list must be refused")
+	}
+}
+
+func TestDisabledAccountDetection(t *testing.T) {
+	m := &machine{passwd: map[string]int{"jay": 1002, "ana": 1003}, disabled: map[string]bool{"ana": true}}
+	a, _ := newAccounts(m)
+	for name, want := range map[string]bool{"jay": false, "ana": true, "ghost": true} {
+		got, err := a.disabled(ctx, name)
+		if err != nil || got != want {
+			t.Errorf("disabled(%s) = %v, %v; want %v", name, got, err, want)
+		}
 	}
 }

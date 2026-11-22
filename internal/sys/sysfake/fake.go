@@ -236,14 +236,19 @@ func (f *Fake) ApplyShares(_ context.Context, shares []sys.ShareSpec) error {
 // Endpoint starts an in-process file worker for the account. It runs the
 // same handler as a real worker, but not as another user: the fake cannot
 // switch identity, so file ownership is not simulated.
-func (f *Fake) Endpoint(_ context.Context, account string) (sys.WorkerEndpoint, error) {
+// IO priority is not simulated: background requests use the same worker.
+func (f *Fake) Endpoint(_ context.Context, account string, _ bool) (sys.WorkerEndpoint, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !sys.ValidAccountName(account) {
 		return sys.WorkerEndpoint{}, fmt.Errorf("%w: account name", sys.ErrInvalid)
 	}
-	if _, err := f.managed(account); err != nil {
+	acc, err := f.managed(account)
+	if err != nil {
 		return sys.WorkerEndpoint{}, err
+	}
+	if !acc.Enabled {
+		return sys.WorkerEndpoint{}, sys.ErrDisabled
 	}
 	if w := f.workers[account]; w != nil {
 		return w.endpoint, nil

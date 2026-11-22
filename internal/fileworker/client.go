@@ -19,7 +19,9 @@ import (
 
 // Client is the web server's side: it runs file operations as a user by
 // sending them to that user's worker. Callers name an account and a share;
-// they never supply a path on the server.
+// they never supply a path on the server. A context marked with
+// sys.WithBackground (every job's context is) goes to the user's
+// low-priority background worker instead.
 type Client struct {
 	workers sys.Workers
 
@@ -67,7 +69,7 @@ func (c *Client) forget(ep sys.WorkerEndpoint) {
 func (c *Client) send(ctx context.Context, account, method, op string, query url.Values, newBody func() io.Reader, stream io.Reader) (*http.Response, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		ep, err := c.workers.Endpoint(ctx, account)
+		ep, err := c.workers.Endpoint(ctx, account, sys.IsBackground(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +219,7 @@ func (c *Client) Read(ctx context.Context, account, share, path, rangeHeader str
 	q := url.Values{"share": {share}, "path": {path}}
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		ep, err := c.workers.Endpoint(ctx, account)
+		ep, err := c.workers.Endpoint(ctx, account, sys.IsBackground(ctx))
 		if err != nil {
 			return nil, err
 		}

@@ -18,43 +18,68 @@ const (
 	keepaliveInterval = 25 * time.Second
 )
 
-// Hub manages active SSE subscribers and broadcasts events to them.
+// Hub manages active SSE subscribers and sends events to them.
 type Hub struct {
 	mu      sync.RWMutex
 	nextID  atomic.Uint64
 	seq     atomic.Uint64
-	clients map[uint64]chan []byte
+	clients map[uint64]*client
+}
+
+type client struct {
+	ch chan []byte
+	// who is the signed-in user on this connection; nil for subscribers
+	// that are not a browser (they only receive Publish broadcasts).
+	who *httpx.Principal
 }
 
 // NewHub creates an empty SSE hub.
 func NewHub() *Hub {
 	return &Hub{
-		clients: make(map[uint64]chan []byte),
+		clients: make(map[uint64]*client),
 	}
 }
 
 // Subscribe registers a new client channel and returns an unsubscribe function.
 func (h *Hub) Subscribe() (<-chan []byte, func()) {
+	return h.SubscribeAs(nil)
+}
+
+// SubscribeAs registers a client for a signed-in user, so PublishTo can
+// decide per user whether an event may be seen.
+func (h *Hub) SubscribeAs(who *httpx.Principal) (<-chan []byte, func()) {
 	id := h.nextID.Add(1)
 	ch := make(chan []byte, defaultBufferSize)
 
 	h.mu.Lock()
-	h.clients[id] = ch
+	h.clients[id] = &client{ch: ch, who: who}
 	h.mu.Unlock()
 
 	return ch, func() {
 		h.mu.Lock()
 		if existing, ok := h.clients[id]; ok {
 			delete(h.clients, id)
-			close(existing)
+			close(existing.ch)
 		}
 		h.mu.Unlock()
 	}
 }
 
-// Publish encodes payload as JSON and sends it to all connected clients.
+// Publish encodes payload as JSON and sends it to ALL connected clients.
+// Use it only for events every signed-in user may see; for anything that
+// belongs to one user (job progress, file names) use PublishTo.
 // Slow clients whose buffers are full drop the event rather than blocking.
 func (h *Hub) Publish(eventType string, payload any) {
+	h.publish(eventType, payload, nil)
+}
+
+// PublishTo sends an event only to signed-in users for whom allow returns
+// true. Subscribers without a user never receive it.
+func (h *Hub) PublishTo(eventType string, payload any, allow func(*httpx.Principal) bool) {
+	h.publish(eventType, payload, allow)
+}
+
+func (h *Hub) publish(eventType string, payload any, allow func(*httpx.Principal) bool) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return
@@ -64,9 +89,12 @@ func (h *Hub) Publish(eventType string, payload any) {
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	for _, ch := range h.clients {
+	for _, c := range h.clients {
+		if allow != nil && (c.who == nil || !allow(c.who)) {
+			continue
+		}
 		select {
-		case ch <- frame:
+		case c.ch <- frame:
 		default:
 		}
 	}
@@ -81,7 +109,8 @@ func (h *Hub) ClientCount() int {
 
 // ServeHTTP streams events to an authenticated browser tab.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if httpx.PrincipalFrom(r.Context()) == nil {
+	who := httpx.PrincipalFrom(r.Context())
+	if who == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -97,7 +126,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	ch, unsubscribe := h.Subscribe()
+	ch, unsubscribe := h.SubscribeAs(who)
 	defer unsubscribe()
 
 	_, _ = w.Write([]byte(": connected\n\n"))

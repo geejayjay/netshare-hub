@@ -36,6 +36,8 @@ var (
 	ErrNotFound = errors.New("account not found")
 	// ErrNotManaged means the account exists but NetShare Hub did not create it.
 	ErrNotManaged = errors.New("account is not managed by NetShare Hub")
+	// ErrDisabled means the account is disabled, so it may not act.
+	ErrDisabled = errors.New("account is disabled")
 	// ErrNotDir means the path exists but is not a directory.
 	ErrNotDir = errors.New("not a directory")
 	// ErrReloadFailed means the new config is valid and saved, but the running

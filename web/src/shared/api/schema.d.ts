@@ -72,6 +72,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List background jobs */
+        get: operations["listJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a background job */
+        get: operations["getJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a background job */
+        post: operations["cancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/my/shares": {
         parameters: {
             query?: never;
@@ -241,6 +292,48 @@ export interface components {
             /** @example 0.1.0 */
             version: string;
         };
+        Job: {
+            /**
+             * Format: int64
+             * @description How many times the job was started; more than 1 means it was resumed after a restart.
+             */
+            attempts: number;
+            cancelRequested: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description Units of work done (bytes, files...).
+             */
+            done: number;
+            errorCode?: string;
+            errorMessage?: string;
+            /** Format: date-time */
+            finishedAt?: string;
+            id: string;
+            /** @description What the job does, e.g. "files.copy". */
+            kind: string;
+            /** @description The current step, e.g. "Copying holiday.mp4". */
+            message: string;
+            /** Format: int64 */
+            ownerId: number;
+            /** Format: date-time */
+            startedAt?: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            /** @description Shown to the user, e.g. "Copy 3 items to Media". */
+            title: string;
+            /**
+             * Format: int64
+             * @description Units of work in total; 0 while unknown.
+             */
+            total: number;
+        };
+        ListJob: {
+            items: components["schemas"]["Job"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
         ListMyShare: {
             items: components["schemas"]["MyShare"][];
             /** @description Present only when the list is paginated. */
@@ -288,7 +381,7 @@ export interface components {
             name: string;
         };
         /** @enum {string} */
-        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read";
+        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage";
         Problem: {
             /** @description Stable machine-readable error code. */
             code: string;
@@ -510,6 +603,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listJobs: {
+        parameters: {
+            query?: {
+                /** @description Page number, starting at 1. */
+                page?: number;
+                /** @description Items per page. Each endpoint has its own default and maximum. */
+                pageSize?: number;
+                /** @description Field to sort by. Prefix with - for descending, e.g. -createdAt. */
+                sort?: string;
+                /** @description Free-text search. */
+                q?: string;
+                /** @description Everyone's jobs instead of your own. Needs the jobs:manage permission. */
+                all?: boolean;
+                /** @description Only jobs that are queued or running. */
+                active?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    cancelJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Error */

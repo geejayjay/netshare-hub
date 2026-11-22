@@ -100,3 +100,29 @@ func TestServeHTTPStreamsEvents(t *testing.T) {
 		t.Fatalf("unexpected content-type: %q", ct)
 	}
 }
+
+// Targeted events reach only the users they are meant for.
+func TestPublishToOnlyReachesAllowedUsers(t *testing.T) {
+	hub := NewHub()
+	jay, unsubJay := hub.SubscribeAs(&httpx.Principal{UserID: 2, Username: "jay", Role: rbac.RoleUser})
+	defer unsubJay()
+	ana, unsubAna := hub.SubscribeAs(&httpx.Principal{UserID: 3, Username: "ana", Role: rbac.RoleUser})
+	defer unsubAna()
+	anon, unsubAnon := hub.Subscribe()
+	defer unsubAnon()
+
+	hub.PublishTo("job", map[string]string{"title": "jay's secret.pdf"}, func(p *httpx.Principal) bool { return p.UserID == 2 })
+
+	select {
+	case <-jay:
+	case <-time.After(time.Second):
+		t.Fatal("the intended user did not get the event")
+	}
+	for name, ch := range map[string]<-chan []byte{"another user": ana, "a subscriber without a user": anon} {
+		select {
+		case msg := <-ch:
+			t.Errorf("%s received a targeted event: %q", name, msg)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}

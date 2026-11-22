@@ -134,6 +134,109 @@
         ],
         "type": "object"
       },
+      "Job": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "description": "How many times the job was started; more than 1 means it was resumed after a restart.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cancelRequested": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "done": {
+            "description": "Units of work done (bytes, files...).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "errorMessage": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "What the job does, e.g. \"files.copy\".",
+            "type": "string"
+          },
+          "message": {
+            "description": "The current step, e.g. \"Copying holiday.mp4\".",
+            "type": "string"
+          },
+          "ownerId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "description": "Shown to the user, e.g. \"Copy 3 items to Media\".",
+            "type": "string"
+          },
+          "total": {
+            "description": "Units of work in total; 0 while unknown.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "ownerId",
+          "title",
+          "status",
+          "done",
+          "total",
+          "message",
+          "attempts",
+          "cancelRequested",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "ListJob": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ListMyShare": {
         "additionalProperties": false,
         "properties": {
@@ -305,7 +408,8 @@
           "settings:read",
           "settings:write",
           "audit:read",
-          "system:read"
+          "system:read",
+          "jobs:manage"
         ],
         "type": "string"
       },
@@ -800,6 +904,210 @@
         "summary": "Health check",
         "tags": [
           "System"
+        ]
+      }
+    },
+    "/jobs": {
+      "get": {
+        "operationId": "listJobs",
+        "parameters": [
+          {
+            "description": "Page number, starting at 1.",
+            "explode": false,
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "description": "Page number, starting at 1.",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page. Each endpoint has its own default and maximum.",
+            "explode": false,
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "description": "Items per page. Each endpoint has its own default and maximum.",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text search.",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Free-text search.",
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Everyone's jobs instead of your own. Needs the jobs:manage permission.",
+            "explode": false,
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "description": "Everyone's jobs instead of your own. Needs the jobs:manage permission.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only jobs that are queued or running.",
+            "explode": false,
+            "in": "query",
+            "name": "active",
+            "schema": {
+              "description": "Only jobs that are queued or running.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListJob"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List background jobs",
+        "tags": [
+          "Jobs"
+        ]
+      }
+    },
+    "/jobs/{id}": {
+      "get": {
+        "operationId": "getJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-f0-9]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a background job",
+        "tags": [
+          "Jobs"
+        ]
+      }
+    },
+    "/jobs/{id}/cancel": {
+      "post": {
+        "operationId": "cancelJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-f0-9]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Cancel a background job",
+        "tags": [
+          "Jobs"
         ]
       }
     },

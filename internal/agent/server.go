@@ -91,8 +91,8 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 	// another user. The system layer only does it for accounts NetShare Hub
 	// created, and decides itself which shares the worker may reach.
 	register(s, opWorker, func(ctx context.Context, r workerRequest) (any, error) {
-		return system.Workers.Endpoint(ctx, r.Name)
-	}, func(r workerRequest) []any { return []any{"account", r.Name} })
+		return system.Workers.Endpoint(ctx, r.Name, r.Background)
+	}, func(r workerRequest) []any { return []any{"account", r.Name, "background", r.Background} })
 
 	return s
 }

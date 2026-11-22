@@ -350,3 +350,15 @@ func TestWorkerExitsWhenIdle(t *testing.T) {
 		t.Fatal("worker did not exit after being idle")
 	}
 }
+
+func TestDisabledAccountGetsNoWorker(t *testing.T) {
+	c, fake := setup(t)
+	write(t, c, "jay", "media", "a.txt", "x")
+	fake.SetEnabled(ctx, "jay", false)
+	if _, err := c.List(ctx, "jay", "media", "", "", 0); !errors.Is(err, sys.ErrDisabled) {
+		t.Errorf("disabled account: got %v, want sys.ErrDisabled", err)
+	}
+	if _, err := c.List(sys.WithBackground(ctx), "jay", "media", "", "", 0); !errors.Is(err, sys.ErrDisabled) {
+		t.Errorf("disabled account, background: got %v, want sys.ErrDisabled", err)
+	}
+}

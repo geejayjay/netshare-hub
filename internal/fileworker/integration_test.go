@@ -128,7 +128,7 @@ func TestRealWorkers(t *testing.T) {
 	c := fileworker.NewClient(system.Workers)
 
 	// --- only the web server's user may talk to a worker ---
-	ep, err := system.Workers.Endpoint(ctx, jay)
+	ep, err := system.Workers.Endpoint(ctx, jay, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +222,45 @@ func TestRealWorkers(t *testing.T) {
 		}
 	}
 
+	// --- background work (jobs) runs in a separate, low-priority worker ---
+	bgCtx := sys.WithBackground(ctx)
+	if _, err := c.Write(bgCtx, jay, "wkmedia", "films/bg.txt", strings.NewReader("background"), false); err != nil {
+		t.Fatalf("background write: %v", err)
+	}
+	if got := ownerOf(t, filepath.Join(media, "films", "bg.txt")); got != jay {
+		t.Errorf("background file owner = %s, want %s", got, jay)
+	}
+	bgEp, err := system.Workers.Endpoint(ctx, jay, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fgEp, _ := system.Workers.Endpoint(ctx, jay, false)
+	if bgEp.Address == fgEp.Address {
+		t.Error("background and normal work must use different workers")
+	}
+	bgPID, fgPID := "", ""
+	psOut, _ := exec.Command("ps", "-eo", "pid=,ni=,user:32=,args=").CombinedOutput()
+	for _, line := range strings.Split(string(psOut), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 5 || f[2] != jay || !strings.HasSuffix(line, "netshare-hub fileworker") {
+			continue
+		}
+		if f[1] == "10" {
+			bgPID = f[0]
+		} else {
+			fgPID = f[0]
+		}
+	}
+	if bgPID == "" || fgPID == "" {
+		t.Fatalf("want one normal and one background (nice 10) worker for %s:\n%s", jay, psOut)
+	}
+	if out, _ := exec.Command("ionice", "-p", bgPID).CombinedOutput(); !strings.Contains(string(out), "idle") {
+		t.Errorf("background worker IO class = %q, want idle", strings.TrimSpace(string(out)))
+	}
+	if out, _ := exec.Command("ionice", "-p", fgPID).CombinedOutput(); strings.Contains(string(out), "idle") {
+		t.Errorf("normal worker must not be idle priority: %q", strings.TrimSpace(string(out)))
+	}
+
 	// --- an unrelated share change leaves a running worker alone ---
 	before := workerProcesses(t)
 	apply(mediaShare,
@@ -246,6 +285,13 @@ func TestRealWorkers(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if procs := workerProcesses(t); strings.Contains(procs, jay) {
 		t.Errorf("worker still running after the account was disabled:\n%s", procs)
+	}
+	// ...and no new one starts, for normal or background work.
+	if _, err := c.List(ctx, jay, "wkmedia", "", "", 0); !errors.Is(err, sys.ErrDisabled) {
+		t.Errorf("disabled account got a worker: %v", err)
+	}
+	if _, err := c.List(sys.WithBackground(ctx), jay, "wkmedia", "", "", 0); !errors.Is(err, sys.ErrDisabled) {
+		t.Errorf("disabled account got a background worker: %v", err)
 	}
 	system.Accounts.SetEnabled(ctx, jay, true)
 	if _, err := c.List(ctx, jay, "wkmedia", "", "", 0); err != nil {

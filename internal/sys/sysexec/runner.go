@@ -45,6 +45,7 @@ var allowed = map[string][]string{
 	"getent":     {"/usr/bin/getent"},
 	"id":         {"/usr/bin/id"},
 	"smbpasswd":  {"/usr/bin/smbpasswd"},
+	"pdbedit":    {"/usr/bin/pdbedit"},
 	"testparm":   {"/usr/bin/testparm"},
 	"smbcontrol": {"/usr/bin/smbcontrol"},
 }

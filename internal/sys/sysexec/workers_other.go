@@ -19,7 +19,7 @@ type Workers struct{ exe string }
 
 func newWorkers(Runner, *Accounts, string, string, int, int) *Workers { return &Workers{} }
 
-func (*Workers) Endpoint(context.Context, string) (sys.WorkerEndpoint, error) {
+func (*Workers) Endpoint(context.Context, string, bool) (sys.WorkerEndpoint, error) {
 	return sys.WorkerEndpoint{}, errors.New("file workers need Linux")
 }
 

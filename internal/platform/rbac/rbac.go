@@ -24,6 +24,9 @@ const (
 	SettingsWrite Permission = "settings:write"
 	AuditRead     Permission = "audit:read"
 	SystemRead    Permission = "system:read"
+	// JobsManage lets a user see and cancel every user's background jobs.
+	// Without it, users only see and cancel their own.
+	JobsManage Permission = "jobs:manage"
 )
 
 // all lists every permission. Add new ones here too: the Admin role gets the
@@ -31,6 +34,7 @@ const (
 var all = []Permission{
 	UsersRead, UsersWrite, GroupsRead, GroupsWrite, SharesRead, SharesWrite,
 	FilesRead, FilesWrite, SettingsRead, SettingsWrite, AuditRead, SystemRead,
+	JobsManage,
 }
 
 // Role is a named bundle of permissions.

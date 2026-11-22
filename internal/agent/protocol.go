@@ -66,7 +66,8 @@ type applySharesRequest struct {
 }
 
 type workerRequest struct {
-	Name string `json:"name"`
+	Name       string `json:"name"`
+	Background bool   `json:"background,omitempty"`
 }
 
 type pathRequest struct {
@@ -95,6 +96,7 @@ const (
 	codeNotFound       = "not_found"
 	codeNotManaged     = "not_managed"
 	codeNotDir         = "not_dir"
+	codeDisabled       = "disabled"
 	codeNotExist       = "not_exist"
 	codeExist          = "exist"
 	codeConfigRejected = "config_rejected"
@@ -120,6 +122,8 @@ func encodeError(err error) (status int, res errorResponse) {
 		return http.StatusForbidden, errorResponse{codeNotManaged, err.Error()}
 	case errors.Is(err, sys.ErrNotDir):
 		return http.StatusUnprocessableEntity, errorResponse{codeNotDir, err.Error()}
+	case errors.Is(err, sys.ErrDisabled):
+		return http.StatusForbidden, errorResponse{codeDisabled, err.Error()}
 	case errors.Is(err, fs.ErrNotExist):
 		return http.StatusNotFound, errorResponse{codeNotExist, "does not exist"}
 	case errors.Is(err, fs.ErrExist):
@@ -147,6 +151,8 @@ func decodeError(res errorResponse) error {
 		return wrap(sys.ErrNotManaged)
 	case codeNotDir:
 		return wrap(sys.ErrNotDir)
+	case codeDisabled:
+		return wrap(sys.ErrDisabled)
 	case codeNotExist:
 		return wrap(fs.ErrNotExist)
 	case codeExist:
