@@ -43,7 +43,28 @@ var (
 	// ErrReloadFailed means the new config is valid and saved, but the running
 	// Samba could not be told to reload it.
 	ErrReloadFailed = errors.New("samba reload failed")
+	// ErrACLUnsupported means a share's folder is on a filesystem without
+	// POSIX ACLs (for example ZFS without acltype=posixacl). Nothing changed.
+	ErrACLUnsupported = errors.New("filesystem does not support ACLs")
 )
+
+// ACLError says which share's folder could not take its permissions.
+type ACLError struct {
+	Share string
+	Path  string
+	Err   error
+}
+
+func (e *ACLError) Error() string {
+	return "set permissions on share " + e.Share + " (" + e.Path + "): " + e.Err.Error()
+}
+func (e *ACLError) Unwrap() error { return e.Err }
+
+// PermissionStats reports what FixPermissions did.
+type PermissionStats struct {
+	Updated int `json:"updated"` // files and folders whose ACL was set
+	Skipped int `json:"skipped"` // symbolic links, devices, and files with several hard links
+}
 
 // ConfigError means Samba's own checker rejected a config. Nothing was changed.
 type ConfigError struct {
@@ -89,8 +110,20 @@ type Samba interface {
 	// checks every share against the rules, builds the config itself, lets
 	// Samba's own validator check it, atomically replaces the managed config
 	// file, and reloads Samba. If anything is refused, nothing changes.
-	// Errors: ErrInvalid, *ConfigError, ErrReloadFailed.
+	//
+	// It also sets the ACL of each share's top folder whose access changed,
+	// so the kernel enforces the same access as Samba (for the file manager
+	// too). Files already inside keep their ACL until FixPermissions runs.
+	// Only managed accounts may be named in a share.
+	// Errors: ErrInvalid, *ConfigError, ErrReloadFailed, *ACLError
+	// (wrapping ErrACLUnsupported when the filesystem has no ACLs).
 	ApplyShares(ctx context.Context, shares []ShareSpec) error
+	// FixPermissions re-applies a live share's access to every file and
+	// folder inside it. It takes the access from the applied config, never
+	// from the caller. It can run for a long time on a big share and stops
+	// when ctx is done. Symbolic links are never followed.
+	// Errors: ErrInvalid, ErrNotFound (no such live share), *ACLError.
+	FixPermissions(ctx context.Context, share string) (PermissionStats, error)
 }
 
 // Files answers questions about directories that are about to be shared.
@@ -99,8 +132,9 @@ type Files interface {
 	// symbolic link resolved, so policy checks cannot be dodged with a link.
 	// Errors: fs.ErrNotExist, ErrNotDir.
 	ResolveDir(ctx context.Context, path string) (string, error)
-	// CreateShareDir creates one new directory (its parent must exist) that
-	// members of ManagedGroup can read and write. It returns the real path.
+	// CreateShareDir creates one new directory (its parent must exist) owned
+	// by root that nobody else can enter until ApplyShares gives the share's
+	// users access through its ACL. It returns the real path.
 	// Errors: fs.ErrNotExist (parent), fs.ErrExist.
 	CreateShareDir(ctx context.Context, path string) (string, error)
 }

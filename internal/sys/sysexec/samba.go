@@ -46,9 +46,16 @@ func NewSamba(r Runner, managedConfig, mainConfig string, protected ...string) *
 // trust its caller: every share is checked here, against where its folder
 // really is right now, and the config is built here.
 func (s *Samba) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
-	for _, sh := range shares {
+	for i, sh := range shares {
 		if err := s.checkPath(sh); err != nil {
 			return err
+		}
+		// One folder, one set of permissions: shares may not overlap, or
+		// each would keep rewriting the other's ACL.
+		for _, other := range shares[:i] {
+			if sys.Overlaps(sh.Path, other.Path) {
+				return fmt.Errorf("%w: shares %q and %q overlap", sys.ErrInvalid, other.Name, sh.Name)
+			}
 		}
 	}
 	// RenderShares checks names, comments, account names and the path rules.
@@ -56,12 +63,133 @@ func (s *Samba) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
 	}
+
+	// Folder permissions first: only for shares whose access changed, and
+	// put back as they were if anything after this fails.
+	changed, removed := s.diff(shares)
+	var ids identities
+	if len(changed)+len(removed) > 0 {
+		if ids, err = loadIdentities(ctx, s.runner); err != nil {
+			return err
+		}
+	}
+	var backups []*aclBackup
+	undo := func() {
+		for i := len(backups) - 1; i >= 0; i-- {
+			if err := backups[i].restore(s.protected); err != nil {
+				slog.ErrorContext(ctx, "could not restore share folder permissions", "path", backups[i].path, "err", err)
+			}
+		}
+	}
+	for _, sh := range changed {
+		b, err := setShareACL(sh, ids, s.protected)
+		if err != nil {
+			undo()
+			return err
+		}
+		if b != nil {
+			backups = append(backups, b)
+		}
+	}
+
 	err = s.applyConfig(ctx, config)
 	// "Reload failed" still means the new config is in place.
-	if (err == nil || errors.Is(err, sys.ErrReloadFailed)) && s.afterApply != nil {
+	if err != nil && !errors.Is(err, sys.ErrReloadFailed) {
+		undo()
+		return err
+	}
+	// Folders no longer shared lose the entries NetShare Hub gave them.
+	for _, old := range removed {
+		if _, stripErr := setShareACL(sys.ShareSpec{Name: old.Name, Path: old.Path}, ids, s.protected); stripErr != nil {
+			slog.WarnContext(ctx, "could not remove permissions from a folder that is no longer shared", "path", old.Path, "err", stripErr)
+		}
+	}
+	if s.afterApply != nil {
 		s.afterApply()
 	}
 	return err
+}
+
+// applied returns the shares in the managed config now.
+func (s *Samba) applied() ([]sys.ShareSpec, error) {
+	config, err := os.ReadFile(s.managedConfig)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read managed config: %w", err)
+	}
+	return sys.ParseShares(string(config)), nil
+}
+
+// diff compares new shares with the applied ones: changed are the shares
+// whose folder needs new permissions, removed the folders no longer shared.
+func (s *Samba) diff(shares []sys.ShareSpec) (changed, removed []sys.ShareSpec) {
+	previous, err := s.applied()
+	if err != nil {
+		// Unknown starting point: set every folder.
+		return shares, nil
+	}
+	before := map[string]sys.ShareSpec{}
+	for _, p := range previous {
+		before[p.Name] = p
+	}
+	stillShared := map[string]bool{}
+	for _, sh := range shares {
+		stillShared[sh.Path] = true
+		if p, ok := before[sh.Name]; !ok || !sameAccess(p, sh) {
+			changed = append(changed, sh)
+		}
+	}
+	for _, p := range previous {
+		if !stillShared[p.Path] {
+			removed = append(removed, p)
+		}
+	}
+	return changed, removed
+}
+
+func (s *Samba) FixPermissions(ctx context.Context, name string) (sys.PermissionStats, error) {
+	if !sys.ValidShareName(name) {
+		return sys.PermissionStats{}, fmt.Errorf("%w: share name", sys.ErrInvalid)
+	}
+	shares, err := s.applied()
+	if err != nil {
+		return sys.PermissionStats{}, err
+	}
+	for _, sh := range shares {
+		if !strings.EqualFold(sh.Name, name) {
+			continue
+		}
+		if !sh.Live() {
+			break
+		}
+		if err := s.checkPath(sh); err != nil {
+			return sys.PermissionStats{}, err
+		}
+		ids, err := loadIdentities(ctx, s.runner)
+		if err != nil {
+			return sys.PermissionStats{}, err
+		}
+		return fixShareTree(ctx, sh, ids, s.protected)
+	}
+	return sys.PermissionStats{}, fmt.Errorf("%w: no live share named %q", sys.ErrNotFound, name)
+}
+
+// loadIdentities reads every account and the managed group's members.
+func loadIdentities(ctx context.Context, r Runner) (identities, error) {
+	if err := ensureManagedGroup(ctx, r); err != nil {
+		return identities{}, err
+	}
+	passwd, err := run(ctx, r, "getent", "passwd")
+	if err != nil {
+		return identities{}, err
+	}
+	group, err := run(ctx, r, "getent", "group", sys.ManagedGroup)
+	if err != nil {
+		return identities{}, err
+	}
+	return parseIdentities(passwd.Stdout, group.Stdout)
 }
 
 // checkPath refuses a share whose folder is, or has become, a way into a

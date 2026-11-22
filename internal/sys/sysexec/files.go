@@ -3,7 +3,6 @@ package sysexec
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -51,20 +50,18 @@ func (f *Files) CreateShareDir(ctx context.Context, path string) (string, error)
 		return "", fmt.Errorf("%w: folder would be inside a protected folder", sys.ErrInvalid)
 	}
 
-	gid, err := managedGroupID(ctx, f.runner)
-	if err != nil {
-		return "", err
-	}
-
 	// Mkdir (not MkdirAll) fails if the name already exists, including as a
 	// symlink, so we only ever chown a directory we just created ourselves.
-	if err := os.Mkdir(target, 0o770); err != nil {
+	if err := os.Mkdir(target, 0o700); err != nil {
 		return "", err // fs.ErrExist when taken
 	}
-	// root:netshare-hub, rwxrws---: managed users can read and write, new
-	// files inherit the group, and nobody else can enter.
-	if err := os.Chown(target, 0, gid); err == nil {
-		err = os.Chmod(target, 0o770|fs.ModeSetgid)
+	// root:root, rwx------: nobody else can enter until the share's ACL
+	// (set by ApplyShares) names who may. The owning group and "other" get
+	// nothing, and so nothing through the default ACL either: new files are
+	// reachable only through the share's own entries.
+	err = os.Chown(target, 0, 0)
+	if err == nil {
+		err = os.Chmod(target, 0o700)
 	}
 	if err != nil {
 		os.Remove(target)

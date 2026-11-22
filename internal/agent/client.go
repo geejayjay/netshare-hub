@@ -18,6 +18,7 @@ import (
 // server does not know (or care) that the system work happens elsewhere.
 type Client struct {
 	http *http.Client
+	long *http.Client // same connection, no overall timeout (long operations)
 	base string
 }
 
@@ -37,7 +38,9 @@ func Dial(socket string) *Client {
 
 // NewClient returns a client that reaches the agent at base. Tests use it.
 func NewClient(hc *http.Client, base string) *Client {
-	return &Client{http: hc, base: base}
+	long := *hc
+	long.Timeout = 0
+	return &Client{http: hc, long: &long, base: base}
 }
 
 // System returns the client as a sys.System.
@@ -53,6 +56,10 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 func (c *Client) call(ctx context.Context, op string, req, res any) error {
+	return c.callWith(c.http, ctx, op, req, res)
+}
+
+func (c *Client) callWith(hc *http.Client, ctx context.Context, op string, req, res any) error {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return err
@@ -63,7 +70,7 @@ func (c *Client) call(ctx context.Context, op string, req, res any) error {
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	httpRes, err := c.http.Do(httpReq)
+	httpRes, err := hc.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("agent unreachable: %w", err)
 	}
@@ -113,6 +120,15 @@ func (c *Client) ApplyShares(ctx context.Context, shares []sys.ShareSpec) error 
 		shares = []sys.ShareSpec{}
 	}
 	return c.call(ctx, opApplyShares, applySharesRequest{Shares: shares}, nil)
+}
+
+// FixPermissions can run for hours on a big share, so it is not bound by
+// the client's usual timeout: it ends when it is done or ctx is cancelled
+// (closing the connection makes the agent stop the walk).
+func (c *Client) FixPermissions(ctx context.Context, share string) (sys.PermissionStats, error) {
+	var res sys.PermissionStats
+	err := c.callWith(c.long, ctx, opFixPermissions, fixPermissionsRequest{Share: share}, &res)
+	return res, err
 }
 
 // --- sys.Workers ---

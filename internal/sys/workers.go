@@ -53,10 +53,17 @@ type Workers interface {
 func RootsFor(account string, shares []ShareSpec) []WorkerRoot {
 	var roots []WorkerRoot
 	for _, sh := range shares {
-		if !contains(sh.Readers, account) {
-			continue
+		switch {
+		case contains(sh.Readers, account):
+			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, Writable: contains(sh.Writers, account)})
+		case contains(sh.Uploaders, account):
+			// Writable, but the folder's ACL lets the user add files only:
+			// listing it is refused by the kernel.
+			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, Writable: true})
+		case sh.Guest:
+			// Anyone may read a guest share, so every managed user may too.
+			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path})
 		}
-		roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, Writable: contains(sh.Writers, account)})
 	}
 	return roots
 }

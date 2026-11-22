@@ -210,23 +210,6 @@ func ensureManagedGroup(ctx context.Context, r Runner) error {
 	}
 }
 
-// managedGroupID returns the numeric id of the marker group.
-func managedGroupID(ctx context.Context, r Runner) (int, error) {
-	if err := ensureManagedGroup(ctx, r); err != nil {
-		return 0, err
-	}
-	res, err := run(ctx, r, "getent", "group", sys.ManagedGroup)
-	if err != nil {
-		return 0, err
-	}
-	// name:x:gid:members
-	fields := strings.Split(strings.TrimSpace(res.Stdout), ":")
-	if len(fields) < 3 {
-		return 0, fmt.Errorf("unexpected getent output for group %q", sys.ManagedGroup)
-	}
-	return strconv.Atoi(fields[2])
-}
-
 // disabled reports whether the account's Samba entry is disabled. A missing
 // Samba entry counts as disabled: such an account cannot use the shares.
 func (a *Accounts) disabled(ctx context.Context, name string) (bool, error) {

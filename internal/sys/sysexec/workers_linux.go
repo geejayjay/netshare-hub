@@ -129,13 +129,7 @@ func (w *Workers) roots(account string) ([]sys.WorkerRoot, error) {
 // start launches a worker for the account. Callers hold w.mu.
 func (w *Workers) start(ctx context.Context, account string, background bool, roots []sys.WorkerRoot) (*workerProc, error) {
 	key := workerKey(account, background)
-	uid, groups, err := w.identity(ctx, account)
-	if err != nil {
-		return nil, err
-	}
-	// Same primary group Samba forces on the shares ("force group"), so a
-	// file made in the browser gets the same group as one made over SMB.
-	gid, err := managedGroupID(ctx, w.runner)
+	uid, gid, groups, err := w.identity(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -222,28 +216,39 @@ func (w *Workers) start(ctx context.Context, account string, background bool, ro
 }
 
 // identity returns the account's uid and all its group ids.
-func (w *Workers) identity(ctx context.Context, account string) (int, []uint32, error) {
-	res, err := run(ctx, w.runner, "id", "-u", account)
-	if err != nil {
-		return 0, nil, err
+// identity returns the account's UID, primary group and all its groups: the
+// same identity Samba uses for the account's SMB sessions, so a file made in
+// the browser gets the same owner and group as one made over SMB.
+func (w *Workers) identity(ctx context.Context, account string) (uid, gid int, groups []uint32, err error) {
+	number := func(flag string) (int, error) {
+		res, err := run(ctx, w.runner, "id", flag, account)
+		if err != nil {
+			return 0, err
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(res.Stdout))
+		if err != nil {
+			return 0, fmt.Errorf("unexpected id %s output for %q", flag, account)
+		}
+		return n, nil
 	}
-	uid, err := strconv.Atoi(strings.TrimSpace(res.Stdout))
-	if err != nil {
-		return 0, nil, fmt.Errorf("unexpected uid for %q", account)
+	if uid, err = number("-u"); err != nil {
+		return 0, 0, nil, err
 	}
-	res, err = run(ctx, w.runner, "id", "-G", account)
-	if err != nil {
-		return 0, nil, err
+	if gid, err = number("-g"); err != nil {
+		return 0, 0, nil, err
 	}
-	var groups []uint32
+	res, err := run(ctx, w.runner, "id", "-G", account)
+	if err != nil {
+		return 0, 0, nil, err
+	}
 	for _, f := range strings.Fields(res.Stdout) {
 		g, err := strconv.Atoi(f)
 		if err != nil {
-			return 0, nil, fmt.Errorf("unexpected group id for %q", account)
+			return 0, 0, nil, fmt.Errorf("unexpected group id for %q", account)
 		}
 		groups = append(groups, uint32(g))
 	}
-	return uid, groups, nil
+	return uid, gid, groups, nil
 }
 
 // listen creates the worker's socket: root:<web server group>, mode 0660,

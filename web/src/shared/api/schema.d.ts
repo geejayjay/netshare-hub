@@ -193,6 +193,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/shares/effective-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview who can do what on a share, before saving */
+        post: operations["previewShareAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shares/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List share presets */
+        get: operations["listSharePresets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shares/{id}": {
         parameters: {
             query?: never;
@@ -208,8 +242,25 @@ export interface paths {
         delete: operations["deleteShare"];
         options?: never;
         head?: never;
-        /** Update a share's comment or access list */
+        /** Update a share's comment, settings or access list */
         patch: operations["updateShare"];
+        trace?: never;
+    };
+    "/shares/{id}/fix-permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-apply the share's permissions to every file inside it (a background job) */
+        post: operations["fixSharePermissions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/users": {
@@ -254,11 +305,13 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         CreateShareRequest: {
-            /** @description Users who may use the share. Without any, nobody can connect. */
+            /** @description Users who may use the share. Without any (and without guest access), nobody can connect. */
             access?: components["schemas"]["ShareAccessInput"][] | null;
             comment?: string;
             /** @description Create the folder if it does not exist. Its parent must exist. */
             createDirectory?: boolean;
+            /** @description Anyone on the network can read without a password. */
+            guestAccess?: boolean;
             /** @example media */
             name: string;
             /**
@@ -266,6 +319,10 @@ export interface components {
              * @example /srv/media
              */
             path: string;
+            /** @description The preset used to set the share up (a label; see GET /shares/presets). Default "custom". */
+            preset?: string;
+            /** @description Nobody can change files, whatever their level. */
+            readOnly?: boolean;
         };
         CreateUserRequest: {
             /** @example Jay */
@@ -277,6 +334,26 @@ export interface components {
             smbAccess?: boolean;
             /** @example jay */
             username: string;
+        };
+        Effective: {
+            /** @enum {string} */
+            given: "read" | "upload" | "write";
+            /** @enum {string} */
+            level: "none" | "read" | "upload" | "write";
+            /** @description Why, in words for the user. */
+            reason: string;
+            /** Format: int64 */
+            userId: number;
+            username: string;
+        };
+        EffectiveAccess: {
+            /** @enum {string} */
+            guests: "none" | "read";
+            /** @description One sentence about everyone not listed. */
+            note: string;
+            /** @enum {string} */
+            others: "none" | "read";
+            users: components["schemas"]["Effective"][];
         };
         FieldError: {
             /** @description Machine-readable reason, e.g. "required" or "too_short". */
@@ -339,6 +416,11 @@ export interface components {
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
+        ListPreset: {
+            items: components["schemas"]["Preset"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
         ListRoleInfo: {
             items: components["schemas"]["RoleInfo"][];
             /** @description Present only when the list is paginated. */
@@ -376,12 +458,30 @@ export interface components {
             comment: string;
             /** Format: int64 */
             id: number;
-            /** @enum {string} */
-            level: "read" | "write";
+            /**
+             * @description What the user can effectively do.
+             * @enum {string}
+             */
+            level: "read" | "upload" | "write";
             name: string;
         };
         /** @enum {string} */
         Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage";
+        Preset: {
+            /** @enum {string} */
+            defaultLevel: "read" | "upload" | "write";
+            description: string;
+            guestAccess: boolean;
+            id: string;
+            levels: ("read" | "upload" | "write")[] | null;
+            name: string;
+            readOnly: boolean;
+        };
+        PreviewAccessRequest: {
+            access?: components["schemas"]["ShareAccessInput"][] | null;
+            guestAccess?: boolean;
+            readOnly?: boolean;
+        };
         Problem: {
             /** @description Stable machine-readable error code. */
             code: string;
@@ -427,36 +527,42 @@ export interface components {
             needsSetup: boolean;
         };
         Share: {
-            /** @description Users who may use the share. Nobody else can connect to it. */
+            /** @description Users given access. Nobody else can connect, unless guest access is on. */
             access: components["schemas"]["ShareAccess"][];
             comment: string;
             /** Format: date-time */
             createdAt: string;
+            /** @description Anyone on the network can read without a password, and every user with SMB access can read with theirs. */
+            guestAccess: boolean;
             /** Format: int64 */
             id: number;
             /** @description The name clients connect to: \\server\name. */
             name: string;
             /** @description The folder on the server, with symbolic links resolved. */
             path: string;
+            /** @description The preset the share was set up with, or "custom". A label only: the rules are the other fields. */
+            preset: string;
+            /** @description Nobody can change files, whatever their level. */
+            readOnly: boolean;
             /** Format: date-time */
             updatedAt: string;
         };
         ShareAccess: {
             /**
-             * @description "read" = read only, "write" = read and write.
+             * @description "read" = read only, "upload" = add files without seeing the folder (drop box), "write" = read and write.
              * @enum {string}
              */
-            level: "read" | "write";
+            level: "read" | "upload" | "write";
             /** Format: int64 */
             userId: number;
             username: string;
         };
         ShareAccessInput: {
             /**
-             * @description "read" = read only, "write" = read and write.
+             * @description "read" = read only, "upload" = add files without seeing the folder (drop box), "write" = read and write.
              * @enum {string}
              */
-            level: "read" | "write";
+            level: "read" | "upload" | "write";
             /** Format: int64 */
             userId: number;
         };
@@ -464,6 +570,9 @@ export interface components {
             /** @description Replaces the whole access list. */
             access?: components["schemas"]["ShareAccessInput"][];
             comment?: string;
+            guestAccess?: boolean;
+            preset?: string;
+            readOnly?: boolean;
         };
         UpdateUserRequest: {
             disabled?: boolean;
@@ -912,6 +1021,68 @@ export interface operations {
             };
         };
     };
+    previewShareAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffectiveAccess"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listSharePresets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListPreset"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getShare: {
         parameters: {
             query?: never;
@@ -994,6 +1165,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Share"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    fixSharePermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             /** @description Error */

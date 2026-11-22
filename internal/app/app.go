@@ -87,12 +87,12 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	// Services. Dependencies point one way: auth uses users, never the reverse.
 	userService := users.NewService(users.NewRepo(database), osLayer.Accounts)
 	authService := auth.NewService(auth.NewRepo(database), userService, auth.DefaultOptions())
-	shareService := shares.NewService(shares.NewRepo(database), userService, osLayer, cfg.ProtectedDirs()...)
-	// Users must be taken off every share before their system account goes away.
-	userService.SetAccessRevoker(shareService)
-
 	sseHub := sse.NewHub()
 	jobService := jobs.NewService(jobs.NewRepo(database), sseHub, opts.JobOptions)
+	shareService := shares.NewService(shares.NewRepo(database), userService, osLayer, jobService, cfg.ProtectedDirs()...)
+	// Users must be taken off every share before their system account goes away.
+	userService.SetAccessRevoker(shareService)
+	jobService.Register(shares.JobFixPermissions, shareService.RunFixPermissions)
 	for kind, h := range opts.JobKinds {
 		jobService.Register(kind, h)
 	}

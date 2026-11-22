@@ -69,6 +69,12 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 		return []any{"shares", names}
 	})
 
+	// Long-running (a whole share's tree), so it does not take the lock
+	// that serializes the other operations: see concurrent below.
+	register(s, opFixPermissions, func(ctx context.Context, r fixPermissionsRequest) (any, error) {
+		return system.Samba.FixPermissions(ctx, r.Share)
+	}, func(r fixPermissionsRequest) []any { return []any{"share", r.Share} })
+
 	register(s, opResolveDir, func(ctx context.Context, r pathRequest) (any, error) {
 		// Only answer for paths that could be shared at all, so the agent is
 		// not a way to probe which files exist anywhere on the system.
@@ -101,6 +107,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
+// concurrent operations run without the lock. Only operations that change
+// nothing but file permissions (no accounts, no config) belong here: a
+// permission walk can take hours, and must not block everything else.
+var concurrent = map[string]bool{opFixPermissions: true}
+
 // register adds one operation. Every operation goes through the same steps:
 // check the caller, read exactly the expected JSON, run it (one at a time),
 // and write an audit line. describe returns the fields to audit; it must
@@ -111,7 +122,7 @@ func register[Req any](s *Server, op string, run func(context.Context, Req) (any
 		peer, ok := s.authorize(r)
 		if !ok {
 			slog.WarnContext(r.Context(), "agent call refused: caller not allowed", "op", op, "peer_uid", peer.UID, "peer_pid", peer.PID)
-			writeJSON(w, http.StatusForbidden, errorResponse{codeForbidden, "caller is not allowed to use the agent"})
+			writeJSON(w, http.StatusForbidden, errorResponse{Code: codeForbidden, Message: "caller is not allowed to use the agent"})
 			return
 		}
 
@@ -120,13 +131,17 @@ func register[Req any](s *Server, op string, run func(context.Context, Req) (any
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&req); err != nil {
 			slog.WarnContext(r.Context(), "agent call refused: bad request", "op", op, "peer_uid", peer.UID, "err", err)
-			writeJSON(w, http.StatusBadRequest, errorResponse{codeBadRequest, "malformed request"})
+			writeJSON(w, http.StatusBadRequest, errorResponse{Code: codeBadRequest, Message: "malformed request"})
 			return
 		}
 
-		s.mu.Lock()
+		if !concurrent[op] {
+			s.mu.Lock()
+		}
 		res, err := run(r.Context(), req)
-		s.mu.Unlock()
+		if !concurrent[op] {
+			s.mu.Unlock()
+		}
 
 		// The audit trail: who asked for what, and how it ended.
 		attrs := []any{"op", op, "peer_uid", peer.UID, "peer_pid", peer.PID, "duration_ms", time.Since(start).Milliseconds()}

@@ -5,7 +5,7 @@
         "additionalProperties": false,
         "properties": {
           "access": {
-            "description": "Users who may use the share. Without any, nobody can connect.",
+            "description": "Users who may use the share. Without any (and without guest access), nobody can connect.",
             "items": {
               "$ref": "#/components/schemas/ShareAccessInput"
             },
@@ -21,6 +21,10 @@
           },
           "createDirectory": {
             "description": "Create the folder if it does not exist. Its parent must exist.",
+            "type": "boolean"
+          },
+          "guestAccess": {
+            "description": "Anyone on the network can read without a password.",
             "type": "boolean"
           },
           "name": {
@@ -39,6 +43,15 @@
             "maxLength": 1024,
             "minLength": 2,
             "type": "string"
+          },
+          "preset": {
+            "description": "The preset used to set the share up (a label; see GET /shares/presets). Default \"custom\".",
+            "maxLength": 32,
+            "type": "string"
+          },
+          "readOnly": {
+            "description": "Nobody can change files, whatever their level.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -86,6 +99,83 @@
           "username",
           "role",
           "password"
+        ],
+        "type": "object"
+      },
+      "Effective": {
+        "additionalProperties": false,
+        "properties": {
+          "given": {
+            "enum": [
+              "read",
+              "upload",
+              "write"
+            ],
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "none",
+              "read",
+              "upload",
+              "write"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, in words for the user.",
+            "type": "string"
+          },
+          "userId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "username",
+          "given",
+          "level",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "EffectiveAccess": {
+        "additionalProperties": false,
+        "properties": {
+          "guests": {
+            "enum": [
+              "none",
+              "read"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "description": "One sentence about everyone not listed.",
+            "type": "string"
+          },
+          "others": {
+            "enum": [
+              "none",
+              "read"
+            ],
+            "type": "string"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/Effective"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "users",
+          "guests",
+          "others",
+          "note"
         ],
         "type": "object"
       },
@@ -256,6 +346,25 @@
         ],
         "type": "object"
       },
+      "ListPreset": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Preset"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ListRoleInfo": {
         "additionalProperties": false,
         "properties": {
@@ -377,8 +486,10 @@
             "type": "integer"
           },
           "level": {
+            "description": "What the user can effectively do.",
             "enum": [
               "read",
+              "upload",
               "write"
             ],
             "type": "string"
@@ -412,6 +523,80 @@
           "jobs:manage"
         ],
         "type": "string"
+      },
+      "Preset": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultLevel": {
+            "enum": [
+              "read",
+              "upload",
+              "write"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "guestAccess": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "levels": {
+            "items": {
+              "enum": [
+                "read",
+                "upload",
+                "write"
+              ],
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "readOnly",
+          "guestAccess",
+          "defaultLevel",
+          "levels"
+        ],
+        "type": "object"
+      },
+      "PreviewAccessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "items": {
+              "$ref": "#/components/schemas/ShareAccessInput"
+            },
+            "maxItems": 500,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "guestAccess": {
+            "type": "boolean"
+          },
+          "readOnly": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
       },
       "Problem": {
         "additionalProperties": false,
@@ -562,7 +747,7 @@
         "additionalProperties": false,
         "properties": {
           "access": {
-            "description": "Users who may use the share. Nobody else can connect to it.",
+            "description": "Users given access. Nobody else can connect, unless guest access is on.",
             "items": {
               "$ref": "#/components/schemas/ShareAccess"
             },
@@ -574,6 +759,10 @@
           "createdAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "guestAccess": {
+            "description": "Anyone on the network can read without a password, and every user with SMB access can read with theirs.",
+            "type": "boolean"
           },
           "id": {
             "format": "int64",
@@ -587,6 +776,14 @@
             "description": "The folder on the server, with symbolic links resolved.",
             "type": "string"
           },
+          "preset": {
+            "description": "The preset the share was set up with, or \"custom\". A label only: the rules are the other fields.",
+            "type": "string"
+          },
+          "readOnly": {
+            "description": "Nobody can change files, whatever their level.",
+            "type": "boolean"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -597,6 +794,9 @@
           "name",
           "path",
           "comment",
+          "readOnly",
+          "guestAccess",
+          "preset",
           "access",
           "createdAt",
           "updatedAt"
@@ -607,9 +807,10 @@
         "additionalProperties": false,
         "properties": {
           "level": {
-            "description": "\"read\" = read only, \"write\" = read and write.",
+            "description": "\"read\" = read only, \"upload\" = add files without seeing the folder (drop box), \"write\" = read and write.",
             "enum": [
               "read",
+              "upload",
               "write"
             ],
             "type": "string"
@@ -633,9 +834,10 @@
         "additionalProperties": false,
         "properties": {
           "level": {
-            "description": "\"read\" = read only, \"write\" = read and write.",
+            "description": "\"read\" = read only, \"upload\" = add files without seeing the folder (drop box), \"write\" = read and write.",
             "enum": [
               "read",
+              "upload",
               "write"
             ],
             "type": "string"
@@ -666,6 +868,16 @@
           "comment": {
             "maxLength": 100,
             "type": "string"
+          },
+          "guestAccess": {
+            "type": "boolean"
+          },
+          "preset": {
+            "maxLength": 32,
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -1393,6 +1605,90 @@
         "x-permission": "shares:write"
       }
     },
+    "/shares/effective-access": {
+      "post": {
+        "operationId": "previewShareAccess",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewAccessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectiveAccess"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Preview who can do what on a share, before saving",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:read"
+      }
+    },
+    "/shares/presets": {
+      "get": {
+        "operationId": "listSharePresets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPreset"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List share presets",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:read"
+      }
+    },
     "/shares/{id}": {
       "delete": {
         "operationId": "deleteShare",
@@ -1532,7 +1828,56 @@
             "session": []
           }
         ],
-        "summary": "Update a share's comment or access list",
+        "summary": "Update a share's comment, settings or access list",
+        "tags": [
+          "Shares"
+        ],
+        "x-permission": "shares:write"
+      }
+    },
+    "/shares/{id}/fix-permissions": {
+      "post": {
+        "operationId": "fixSharePermissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Re-apply the share's permissions to every file inside it (a background job)",
         "tags": [
           "Shares"
         ],

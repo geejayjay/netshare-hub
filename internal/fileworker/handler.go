@@ -21,8 +21,9 @@ const (
 	defaultPageSize = 500
 	maxPageSize     = 1000
 	// Modes for what the worker creates. They match the Samba share settings
-	// ("create mask = 0660", "directory mask = 2770"), so a file made in the
-	// browser looks the same as one made over SMB.
+	// ("create mask = 0660", "directory mask = 0770"), so a file made in the
+	// browser looks the same as one made over SMB: the folder's default ACL
+	// applies, cut down to "rw" for files.
 	fileMode = 0o660
 	dirMode  = 0o770
 	// uploadPrefix marks files that are still being received.

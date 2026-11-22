@@ -32,6 +32,7 @@ const (
 	opSetEnabled     = "accounts.set-enabled"
 	opDeleteUser     = "accounts.delete"
 	opApplyShares    = "samba.apply-shares"
+	opFixPermissions = "samba.fix-permissions"
 	opResolveDir     = "files.resolve-dir"
 	opCreateShareDir = "files.create-share-dir"
 	opWorker         = "files.worker"
@@ -65,6 +66,12 @@ type applySharesRequest struct {
 	Shares []sys.ShareSpec `json:"shares"`
 }
 
+// fixPermissionsRequest names a share; the agent reads its folder and access
+// from the applied config, never from the request.
+type fixPermissionsRequest struct {
+	Share string `json:"share"`
+}
+
 type workerRequest struct {
 	Name       string `json:"name"`
 	Background bool   `json:"background,omitempty"`
@@ -87,6 +94,9 @@ type pingResponse struct {
 type errorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Share and Path say which share's folder failed (ACL errors only).
+	Share string `json:"share,omitempty"`
+	Path  string `json:"path,omitempty"`
 }
 
 // Error codes on the wire, one per error the sys interfaces document.
@@ -101,6 +111,8 @@ const (
 	codeExist          = "exist"
 	codeConfigRejected = "config_rejected"
 	codeReloadFailed   = "reload_failed"
+	codeACLUnsupported = "acl_unsupported"
+	codeACLFailed      = "acl_failed"
 	codeForbidden      = "forbidden"
 	codeBadRequest     = "bad_request"
 	codeInternal       = "internal"
@@ -109,29 +121,36 @@ const (
 // encodeError turns an error from the system layer into its wire form.
 func encodeError(err error) (status int, res errorResponse) {
 	var cfg *sys.ConfigError
+	var aclErr *sys.ACLError
 	switch {
 	case errors.As(err, &cfg):
-		return http.StatusUnprocessableEntity, errorResponse{codeConfigRejected, cfg.Output}
+		return http.StatusUnprocessableEntity, errorResponse{Code: codeConfigRejected, Message: cfg.Output}
+	case errors.As(err, &aclErr):
+		code, status := codeACLFailed, http.StatusInternalServerError
+		if errors.Is(err, sys.ErrACLUnsupported) {
+			code, status = codeACLUnsupported, http.StatusUnprocessableEntity
+		}
+		return status, errorResponse{Code: code, Message: aclErr.Err.Error(), Share: aclErr.Share, Path: aclErr.Path}
 	case errors.Is(err, sys.ErrInvalid):
-		return http.StatusUnprocessableEntity, errorResponse{codeInvalid, err.Error()}
+		return http.StatusUnprocessableEntity, errorResponse{Code: codeInvalid, Message: err.Error()}
 	case errors.Is(err, sys.ErrNameTaken):
-		return http.StatusConflict, errorResponse{codeNameTaken, err.Error()}
+		return http.StatusConflict, errorResponse{Code: codeNameTaken, Message: err.Error()}
 	case errors.Is(err, sys.ErrNotFound):
-		return http.StatusNotFound, errorResponse{codeNotFound, err.Error()}
+		return http.StatusNotFound, errorResponse{Code: codeNotFound, Message: err.Error()}
 	case errors.Is(err, sys.ErrNotManaged):
-		return http.StatusForbidden, errorResponse{codeNotManaged, err.Error()}
+		return http.StatusForbidden, errorResponse{Code: codeNotManaged, Message: err.Error()}
 	case errors.Is(err, sys.ErrNotDir):
-		return http.StatusUnprocessableEntity, errorResponse{codeNotDir, err.Error()}
+		return http.StatusUnprocessableEntity, errorResponse{Code: codeNotDir, Message: err.Error()}
 	case errors.Is(err, sys.ErrDisabled):
-		return http.StatusForbidden, errorResponse{codeDisabled, err.Error()}
+		return http.StatusForbidden, errorResponse{Code: codeDisabled, Message: err.Error()}
 	case errors.Is(err, fs.ErrNotExist):
-		return http.StatusNotFound, errorResponse{codeNotExist, "does not exist"}
+		return http.StatusNotFound, errorResponse{Code: codeNotExist, Message: "does not exist"}
 	case errors.Is(err, fs.ErrExist):
-		return http.StatusConflict, errorResponse{codeExist, "already exists"}
+		return http.StatusConflict, errorResponse{Code: codeExist, Message: "already exists"}
 	case errors.Is(err, sys.ErrReloadFailed):
-		return http.StatusServiceUnavailable, errorResponse{codeReloadFailed, err.Error()}
+		return http.StatusServiceUnavailable, errorResponse{Code: codeReloadFailed, Message: err.Error()}
 	default:
-		return http.StatusInternalServerError, errorResponse{codeInternal, err.Error()}
+		return http.StatusInternalServerError, errorResponse{Code: codeInternal, Message: err.Error()}
 	}
 }
 
@@ -141,6 +160,10 @@ func decodeError(res errorResponse) error {
 	switch res.Code {
 	case codeConfigRejected:
 		return &sys.ConfigError{Output: res.Message}
+	case codeACLUnsupported:
+		return &sys.ACLError{Share: res.Share, Path: res.Path, Err: wrap(sys.ErrACLUnsupported)}
+	case codeACLFailed:
+		return &sys.ACLError{Share: res.Share, Path: res.Path, Err: &remoteError{message: res.Message}}
 	case codeInvalid:
 		return wrap(sys.ErrInvalid)
 	case codeNameTaken:

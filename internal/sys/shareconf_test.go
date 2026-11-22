@@ -9,6 +9,8 @@ func TestRender(t *testing.T) {
 	got, err := RenderShares([]ShareSpec{
 		{Name: "media", Path: "/srv/media", Comment: "Films and music", Readers: []string{"ana", "jay"}, Writers: []string{"jay"}},
 		{Name: "Archive", Path: "/mnt/tank/Архив 2025", Readers: []string{"ana"}},
+		{Name: "inbox", Path: "/srv/inbox", Readers: []string{"jay"}, Writers: []string{"jay"}, Uploaders: []string{"ana", "bob"}},
+		{Name: "public", Path: "/srv/public", Readers: []string{"jay"}, Writers: []string{"jay"}, Guest: true},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -21,9 +23,21 @@ func TestRender(t *testing.T) {
    guest ok = no
    read only = yes
    valid users = ana
-   force group = netshare-hub
+   inherit acls = yes
    create mask = 0660
-   directory mask = 2770
+   directory mask = 0770
+
+[inbox]
+   path = /srv/inbox
+   browseable = yes
+   guest ok = no
+   read only = yes
+   valid users = jay, ana, bob
+   write list = jay, ana, bob
+   # upload only: ana, bob
+   inherit acls = yes
+   create mask = 0660
+   directory mask = 0770
 
 [media]
    path = /srv/media
@@ -33,9 +47,19 @@ func TestRender(t *testing.T) {
    read only = yes
    valid users = ana, jay
    write list = jay
-   force group = netshare-hub
+   inherit acls = yes
    create mask = 0660
-   directory mask = 2770
+   directory mask = 0770
+
+[public]
+   path = /srv/public
+   browseable = yes
+   guest ok = yes
+   read only = yes
+   write list = jay
+   inherit acls = yes
+   create mask = 0660
+   directory mask = 0770
 `
 	if got != want {
 		t.Errorf("config:\n%s\nwant:\n%s", got, want)
@@ -74,6 +98,9 @@ func TestRenderRefusesUnsafeValues(t *testing.T) {
 		"reserved name":          func(s *ShareSpec) { s.Name = "Global" },
 		"group syntax in user":   func(s *ShareSpec) { s.Readers = []string{"@wheel"} },
 		"list injection in user": func(s *ShareSpec) { s.Writers = []string{"jay, root"} },
+		"writer not a reader":    func(s *ShareSpec) { s.Writers = []string{"ana"} },
+		"uploader also a reader": func(s *ShareSpec) { s.Uploaders = []string{"jay"} },
+		"bad uploader name":      func(s *ShareSpec) { s.Uploaders = []string{"@wheel"} },
 	}
 	for name, breakIt := range cases {
 		s := ok
@@ -132,7 +159,11 @@ func TestParseSharesRoundTrip(t *testing.T) {
 	shares := []ShareSpec{
 		{Name: "Archive", Path: "/mnt/tank/Архив 2025", Readers: []string{"ana"}},
 		{Name: "empty", Path: "/srv/empty"},
+		{Name: "inbox", Path: "/srv/inbox", Readers: []string{"jay"}, Writers: []string{"jay"}, Uploaders: []string{"ana"}},
 		{Name: "media", Path: "/srv/media", Comment: "Films = music", Readers: []string{"ana", "jay"}, Writers: []string{"jay"}},
+		// A guest share does not record its plain readers (everyone reads).
+		{Name: "public", Path: "/srv/public", Readers: []string{"jay"}, Writers: []string{"jay"}, Guest: true},
+		{Name: "tv", Path: "/srv/tv", Guest: true},
 	}
 	config, err := RenderShares(shares)
 	if err != nil {
@@ -146,24 +177,50 @@ func TestParseSharesRoundTrip(t *testing.T) {
 		g := got[i]
 		if g.Name != want.Name || g.Path != want.Path || g.Comment != want.Comment ||
 			strings.Join(g.Readers, ",") != strings.Join(want.Readers, ",") ||
-			strings.Join(g.Writers, ",") != strings.Join(want.Writers, ",") {
+			strings.Join(g.Writers, ",") != strings.Join(want.Writers, ",") ||
+			strings.Join(g.Uploaders, ",") != strings.Join(want.Uploaders, ",") || g.Guest != want.Guest {
 			t.Errorf("share %d: got %+v, want %+v", i, g, want)
 		}
 	}
 
 	// Who reaches what, as a worker would see it.
-	roots := RootsFor("jay", got)
-	if len(roots) != 1 || roots[0].Share != "media" || !roots[0].Writable {
-		t.Errorf("roots for jay = %+v", roots)
+	describe := func(roots []WorkerRoot) string {
+		var parts []string
+		for _, r := range roots {
+			mode := "ro"
+			if r.Writable {
+				mode = "rw"
+			}
+			parts = append(parts, r.Share+":"+mode)
+		}
+		return strings.Join(parts, " ")
 	}
-	roots = RootsFor("ana", got)
-	if len(roots) != 2 || roots[0].Writable || roots[1].Writable {
-		t.Errorf("roots for ana = %+v (want two read-only shares)", roots)
-	}
-	if roots := RootsFor("nobody-here", got); len(roots) != 0 {
-		t.Errorf("a user without access got roots: %+v", roots)
+	for account, want := range map[string]string{
+		"jay": "inbox:rw media:rw public:rw tv:ro",
+		// ana: reader of Archive and media, uploader on inbox (writable, the
+		// kernel stops listing), and reader of the guest shares.
+		"ana": "Archive:ro inbox:rw media:ro public:ro tv:ro",
+		// Someone on no share still reads the guest shares.
+		"carol": "public:ro tv:ro",
+	} {
+		if got := describe(RootsFor(account, got)); got != want {
+			t.Errorf("roots for %s = %q, want %q", account, got, want)
+		}
 	}
 	if len(ParseShares("")) != 0 {
 		t.Error("an empty config has no shares")
+	}
+}
+
+func TestGuestShareHasNoUserList(t *testing.T) {
+	got, err := RenderShares([]ShareSpec{{Name: "tv", Path: "/srv/tv", Guest: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "available = no") || !strings.Contains(got, "guest ok = yes") {
+		t.Errorf("a guest share must be live:\n%s", got)
+	}
+	if strings.Contains(got, "valid users") || strings.Contains(got, "write list") {
+		t.Errorf("a guest share without writers has no user lists:\n%s", got)
 	}
 }

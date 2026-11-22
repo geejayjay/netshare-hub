@@ -26,12 +26,12 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-const columns = "id, name, path, comment, created_at, updated_at"
+const columns = "id, name, path, comment, read_only, guest_access, preset, created_at, updated_at"
 
 func scan(s interface{ Scan(...any) error }) (Share, error) {
 	var sh Share
 	var created, updated int64
-	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &created, &updated)
+	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset, &created, &updated)
 	sh.CreatedAt = time.Unix(created, 0).UTC()
 	sh.UpdatedAt = time.Unix(updated, 0).UTC()
 	sh.Access = []ShareAccess{}
@@ -63,28 +63,36 @@ func (r *Repo) All(ctx context.Context, q querier) ([]Share, error) {
 	return r.query(ctx, q, "SELECT "+columns+" FROM shares ORDER BY name")
 }
 
-// ListForUser returns the shares a specific user has access to.
-func (r *Repo) ListForUser(ctx context.Context, userID int64) ([]MyShare, error) {
+// ListForUser returns the shares a user is listed on, and every guest share,
+// with the user's configured level ("" for a guest share they are not on).
+// The service turns that into what the user can effectively do.
+func (r *Repo) ListForUser(ctx context.Context, userID int64) ([]Share, []Level, error) {
 	rows, err := r.db.Read.QueryContext(ctx, `
-		SELECT s.id, s.name, s.comment, sa.level
+		SELECT s.id, s.name, s.path, s.comment, s.read_only, s.guest_access, s.preset, s.created_at, s.updated_at,
+		       COALESCE(sa.level, '')
 		FROM shares s
-		JOIN share_access sa ON sa.share_id = s.id
-		WHERE sa.user_id = ?
+		LEFT JOIN share_access sa ON sa.share_id = s.id AND sa.user_id = ?
+		WHERE sa.user_id IS NOT NULL OR s.guest_access = 1
 		ORDER BY s.name ASC`, userID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
-	out := []MyShare{}
+	var shares []Share
+	var levels []Level
 	for rows.Next() {
-		var item MyShare
-		if err := rows.Scan(&item.ID, &item.Name, &item.Comment, &item.Level); err != nil {
-			return nil, err
+		var sh Share
+		var created, updated int64
+		var level Level
+		if err := rows.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset,
+			&created, &updated, &level); err != nil {
+			return nil, nil, err
 		}
-		out = append(out, item)
+		shares = append(shares, sh)
+		levels = append(levels, level)
 	}
-	return out, rows.Err()
+	return shares, levels, rows.Err()
 }
 
 // Get returns one share, or (Share{}, false, nil) when it does not exist.
@@ -154,8 +162,9 @@ func (r *Repo) query(ctx context.Context, q querier, query string, args ...any) 
 
 func (r *Repo) Insert(ctx context.Context, q querier, in CreateInput, now time.Time) (int64, error) {
 	res, err := q.ExecContext(ctx,
-		"INSERT INTO shares (name, path, comment, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-		in.Name, in.Path, in.Comment, now.Unix(), now.Unix())
+		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, now.Unix(), now.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -165,6 +174,31 @@ func (r *Repo) Insert(ctx context.Context, q querier, in CreateInput, now time.T
 func (r *Repo) UpdateComment(ctx context.Context, q querier, id int64, comment string, now time.Time) error {
 	_, err := q.ExecContext(ctx, "UPDATE shares SET comment = ?, updated_at = ? WHERE id = ?", comment, now.Unix(), id)
 	return err
+}
+
+// UpdateSettings changes the share-wide settings.
+func (r *Repo) UpdateSettings(ctx context.Context, q querier, id int64, rules Rules, preset string, now time.Time) error {
+	_, err := q.ExecContext(ctx, "UPDATE shares SET read_only = ?, guest_access = ?, preset = ?, updated_at = ? WHERE id = ?",
+		rules.ReadOnly, rules.GuestAccess, preset, now.Unix(), id)
+	return err
+}
+
+// Paths returns every share's folder, by share name.
+func (r *Repo) Paths(ctx context.Context) (map[string]string, error) {
+	rows, err := r.db.Read.QueryContext(ctx, "SELECT name, path FROM shares")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var name, path string
+		if err := rows.Scan(&name, &path); err != nil {
+			return nil, err
+		}
+		out[name] = path
+	}
+	return out, rows.Err()
 }
 
 // ReplaceAccess sets the whole access list of a share.

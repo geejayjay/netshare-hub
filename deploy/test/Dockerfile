@@ -32,4 +32,4 @@ WORKDIR /workspace
 EXPOSE 445 8080
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["go", "test", "-tags", "integration", "./internal/..."]
+CMD ["go", "test", "-p", "1", "-tags", "integration", "./internal/..."]

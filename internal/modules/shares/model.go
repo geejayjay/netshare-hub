@@ -1,11 +1,12 @@
 // Package shares manages SMB shares: what is shared, who may use it, and the
-// Samba configuration generated from that.
+// Samba configuration and folder permissions generated from that.
 package shares
 
 import (
 	"context"
 	"time"
 
+	"netshare-hub/internal/modules/jobs"
 	"netshare-hub/internal/modules/users"
 	"netshare-hub/internal/platform/errs"
 )
@@ -14,28 +15,34 @@ import (
 type Level string
 
 const (
-	LevelRead  Level = "read"
-	LevelWrite Level = "write"
+	LevelNone   Level = "none" // only in effective access, never stored
+	LevelRead   Level = "read"
+	LevelUpload Level = "upload"
+	LevelWrite  Level = "write"
 )
 
-func (l Level) Valid() bool { return l == LevelRead || l == LevelWrite }
+// Valid reports whether a level can be given to someone.
+func (l Level) Valid() bool { return l == LevelRead || l == LevelUpload || l == LevelWrite }
 
-// ShareAccess is one user's access to a share.
+// ShareAccess is one user's access to a share, as configured.
 type ShareAccess struct {
 	UserID   int64  `json:"userId"`
 	Username string `json:"username"`
-	Level    Level  `json:"level" enum:"read,write" doc:"\"read\" = read only, \"write\" = read and write."`
+	Level    Level  `json:"level" enum:"read,upload,write" doc:"\"read\" = read only, \"upload\" = add files without seeing the folder (drop box), \"write\" = read and write."`
 }
 
 // Share is a folder shared over SMB.
 type Share struct {
-	ID        int64         `json:"id"`
-	Name      string        `json:"name" doc:"The name clients connect to: \\\\server\\name."`
-	Path      string        `json:"path" doc:"The folder on the server, with symbolic links resolved."`
-	Comment   string        `json:"comment"`
-	Access    []ShareAccess `json:"access" nullable:"false" doc:"Users who may use the share. Nobody else can connect to it."`
-	CreatedAt time.Time     `json:"createdAt"`
-	UpdatedAt time.Time     `json:"updatedAt"`
+	ID          int64         `json:"id"`
+	Name        string        `json:"name" doc:"The name clients connect to: \\\\server\\name."`
+	Path        string        `json:"path" doc:"The folder on the server, with symbolic links resolved."`
+	Comment     string        `json:"comment"`
+	ReadOnly    bool          `json:"readOnly" doc:"Nobody can change files, whatever their level."`
+	GuestAccess bool          `json:"guestAccess" doc:"Anyone on the network can read without a password, and every user with SMB access can read with theirs."`
+	Preset      string        `json:"preset" doc:"The preset the share was set up with, or \"custom\". A label only: the rules are the other fields."`
+	Access      []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
+	CreatedAt   time.Time     `json:"createdAt"`
+	UpdatedAt   time.Time     `json:"updatedAt"`
 }
 
 // MyShare is a share visible to the signed-in user in their personal portal.
@@ -43,7 +50,7 @@ type MyShare struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`
 	Comment string `json:"comment"`
-	Level   Level  `json:"level" enum:"read,write"`
+	Level   Level  `json:"level" enum:"read,upload,write" doc:"What the user can effectively do."`
 }
 
 // AccessInput grants a user access.
@@ -52,18 +59,29 @@ type AccessInput struct {
 	Level  Level
 }
 
+// Rules are the share-wide settings that shape everyone's access.
+type Rules struct {
+	ReadOnly    bool
+	GuestAccess bool
+}
+
 // CreateInput is what the service needs to create a share.
 type CreateInput struct {
 	Name            string
 	Path            string
 	Comment         string
 	CreateDirectory bool
-	Access          []AccessInput
+	Rules
+	Preset string
+	Access []AccessInput
 }
 
 // UpdateInput changes only the fields that are set (non-nil).
 type UpdateInput struct {
-	Comment *string
+	Comment     *string
+	ReadOnly    *bool
+	GuestAccess *bool
+	Preset      *string
 	// Access, when set, replaces the whole access list.
 	Access *[]AccessInput
 }
@@ -73,10 +91,17 @@ type Users interface {
 	GetMany(ctx context.Context, ids []int64) (map[int64]users.User, error)
 }
 
+// Jobs is what shares needs from the jobs module.
+type Jobs interface {
+	Submit(ctx context.Context, in jobs.Submit) (jobs.Job, error)
+}
+
 // Error codes owned by this module.
 const (
-	CodeShareNotFound     errs.Code = "SHARE_NOT_FOUND"
-	CodeSambaReloadFailed errs.Code = "SAMBA_RELOAD_FAILED"
+	CodeShareNotFound          errs.Code = "SHARE_NOT_FOUND"
+	CodeSambaReloadFailed      errs.Code = "SAMBA_RELOAD_FAILED"
+	CodePermissionsUnsupported errs.Code = "SHARE_PERMISSIONS_UNSUPPORTED"
+	CodePermissionsFailed      errs.Code = "SHARE_PERMISSIONS_FAILED"
 )
 
 func errNotFound() error {

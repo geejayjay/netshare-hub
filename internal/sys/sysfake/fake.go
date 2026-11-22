@@ -42,6 +42,8 @@ type Fake struct {
 	Config string
 	// Applied counts successful ApplyShares calls.
 	Applied int
+	// fixed lists the shares FixPermissions ran for, in order.
+	fixed []string
 
 	// failures makes the next call of an operation fail. See FailNext.
 	failures map[string]error
@@ -94,7 +96,8 @@ func (f *Fake) System() sys.System {
 }
 
 // FailNext makes the next call of op fail with err. Operations:
-// "CreateUser", "SetPassword", "SetEnabled", "DeleteUser", "ApplyShares".
+// "CreateUser", "SetPassword", "SetEnabled", "DeleteUser", "ApplyShares",
+// "FixPermissions".
 func (f *Fake) FailNext(op string, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -216,6 +219,21 @@ func (f *Fake) ApplyShares(_ context.Context, shares []sys.ShareSpec) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
 	}
+	for i, sh := range shares {
+		for _, other := range shares[:i] {
+			if sys.Overlaps(sh.Path, other.Path) {
+				return fmt.Errorf("%w: shares %q and %q overlap", sys.ErrInvalid, other.Name, sh.Name)
+			}
+		}
+		// Like the real system: only managed accounts can be given access.
+		for _, list := range [][]string{sh.Readers, sh.Uploaders} {
+			for _, name := range list {
+				if _, ok := f.accounts[name]; !ok {
+					return fmt.Errorf("%w: %q is not an account NetShare Hub manages", sys.ErrInvalid, name)
+				}
+			}
+		}
+	}
 	if err := f.fail("ApplyShares"); err != nil {
 		return err
 	}
@@ -229,6 +247,33 @@ func (f *Fake) ApplyShares(_ context.Context, shares []sys.ShareSpec) error {
 		}
 	}
 	return nil
+}
+
+// FixPermissions only checks the share is live and counts the call: the
+// fake does not simulate folder permissions.
+func (f *Fake) FixPermissions(_ context.Context, share string) (sys.PermissionStats, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !sys.ValidShareName(share) {
+		return sys.PermissionStats{}, fmt.Errorf("%w: share name", sys.ErrInvalid)
+	}
+	if err := f.fail("FixPermissions"); err != nil {
+		return sys.PermissionStats{}, err
+	}
+	for _, sh := range f.shares {
+		if strings.EqualFold(sh.Name, share) && sh.Live() {
+			f.fixed = append(f.fixed, sh.Name)
+			return sys.PermissionStats{Updated: 1}, nil
+		}
+	}
+	return sys.PermissionStats{}, fmt.Errorf("%w: no live share named %q", sys.ErrNotFound, share)
+}
+
+// Fixed returns the shares FixPermissions ran for, in order.
+func (f *Fake) Fixed() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.fixed...)
 }
 
 // --- sys.Workers ---
