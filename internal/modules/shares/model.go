@@ -43,6 +43,7 @@ type Share struct {
 	// Users never see shares they cannot open (always on); this also hides
 	// the files and folders inside that they cannot read.
 	HideUnreadable bool          `json:"hideUnreadable" doc:"Hide files and folders a user cannot read, over SMB and in the file manager. Slows down listing very big folders."`
+	NetworkRules   []NetworkRule `json:"networkRules" nullable:"false" doc:"Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address."`
 	Access         []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
 	CreatedAt      time.Time     `json:"createdAt"`
 	UpdatedAt      time.Time     `json:"updatedAt"`
@@ -55,6 +56,17 @@ type MyShare struct {
 	Comment string `json:"comment"`
 	Level   Level  `json:"level" enum:"read,upload,write" doc:"What the user can effectively do."`
 }
+
+// NetworkRule lets in, or keeps out, one address or range of addresses.
+type NetworkRule struct {
+	Action  string `json:"action" enum:"allow,block"`
+	Address string `json:"address" doc:"An IP address (192.168.1.50) or a range in CIDR form (192.168.1.0/24). IPv4 or IPv6."`
+}
+
+const (
+	RuleAllow = "allow"
+	RuleBlock = "block"
+)
 
 // AccessInput grants a user access.
 type AccessInput struct {
@@ -77,6 +89,7 @@ type CreateInput struct {
 	Rules
 	Preset         string
 	HideUnreadable bool
+	NetworkRules   []NetworkRule
 	Access         []AccessInput
 }
 
@@ -87,8 +100,9 @@ type UpdateInput struct {
 	GuestAccess    *bool
 	Preset         *string
 	HideUnreadable *bool
-	// Access, when set, replaces the whole access list.
-	Access *[]AccessInput
+	// NetworkRules and Access, when set, replace the whole list.
+	NetworkRules *[]NetworkRule
+	Access       *[]AccessInput
 }
 
 // Users is what shares needs from the users module.

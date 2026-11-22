@@ -11,7 +11,9 @@ package app_test
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -308,4 +310,97 @@ func waitJobs(t *testing.T, c *client) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("jobs did not finish")
+}
+
+// localIPv4 returns the container's own network address: a client that is
+// NOT the loopback address, which Samba always lets in.
+func localIPv4(t *testing.T) netip.Addr {
+	t.Helper()
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok {
+			if ip, ok := netip.AddrFromSlice(ipnet.IP); ok && ip.Unmap().Is4() && !ip.IsLoopback() {
+				return ip.Unmap()
+			}
+		}
+	}
+	t.Skip("no non-loopback IPv4 address")
+	return netip.Addr{}
+}
+
+// Step 1.8: network rules, checked from an allowed and a blocked address.
+func TestNetworkRulesOverRealSMB(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	ip := localIPv4(t)
+	subnet := netip.PrefixFrom(ip, 16).Masked().String()
+
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.SecureCookies = false
+	cfg.Sys = "real"
+	application, err := app.New(context.Background(), cfg, app.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler)
+	admin := newClient(t, server.URL+app.APIPrefix)
+	var s session
+	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
+	admin.csrf = s.CSRFToken
+
+	user := fmt.Sprintf("nr%d", os.Getpid()%10000)
+	uid := createUser(t, admin, user).ID
+	base := fmt.Sprintf("/srv/shares/netrules-%d", os.Getpid())
+	os.MkdirAll(base, 0o755)
+	var ids []int64
+	t.Cleanup(func() {
+		for _, id := range ids {
+			admin.do("DELETE", "/shares/"+itoa(id), nil, nil)
+		}
+		admin.do("DELETE", "/users/"+itoa(uid), nil, nil)
+		server.Close()
+		application.Close()
+		os.RemoveAll(base)
+	})
+
+	connect := func(share string) bool {
+		out, _ := exec.Command("smbclient", "//"+ip.String()+"/"+share, "-U", user+"%"+pw, "-c", "pwd").CombinedOutput()
+		return strings.Contains(string(out), "Current directory")
+	}
+
+	for _, c := range []struct {
+		name  string
+		rules []map[string]any
+		in    bool
+	}{
+		{"nrnone", nil, true},
+		{"nrallowme", []map[string]any{{"action": "allow", "address": ip.String()}}, true},
+		{"nrallowother", []map[string]any{{"action": "allow", "address": "10.99.0.0/24"}}, false},
+		{"nrblockme", []map[string]any{{"action": "block", "address": ip.String()}}, false},
+		{"nrblockother", []map[string]any{{"action": "block", "address": "10.99.0.0/24"}}, true},
+		{"nrsubnet", []map[string]any{{"action": "allow", "address": subnet}}, true},
+		{"nrsubnetbutme", []map[string]any{
+			{"action": "allow", "address": subnet}, {"action": "block", "address": ip.String()},
+		}, false},
+	} {
+		dir := filepath.Join(base, c.name)
+		os.Mkdir(dir, 0o755)
+		var sh shareBody
+		status, body := admin.do("POST", "/shares", map[string]any{
+			"name": c.name, "path": dir, "networkRules": c.rules,
+			"access": []map[string]any{{"userId": uid, "level": "write"}},
+		}, &sh)
+		if status != 201 {
+			t.Fatalf("create %s: status %d: %s", c.name, status, body)
+		}
+		ids = append(ids, sh.ID)
+		if got := connect(c.name); got != c.in {
+			t.Errorf("%s (rules %v) from %s: connected = %v, want %v", c.name, c.rules, ip, got, c.in)
+		}
+	}
 }

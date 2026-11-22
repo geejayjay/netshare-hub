@@ -2,6 +2,7 @@ package shares
 
 import (
 	"slices"
+	"strings"
 
 	"netshare-hub/internal/modules/users"
 	"netshare-hub/internal/sys"
@@ -88,6 +89,34 @@ type EffectiveAccess struct {
 	Guests Level  `json:"guests" enum:"none,read"`
 	Others Level  `json:"others" enum:"none,read"`
 	Note   string `json:"note" doc:"One sentence about everyone not listed."`
+	// Network says from where people can connect, in words.
+	Network string `json:"network"`
+}
+
+// networkNote describes network rules in one sentence.
+func networkNote(rules []NetworkRule) string {
+	allow, block := splitRules(rules)
+	switch {
+	case len(allow) == 0 && len(block) == 0:
+		return "From any address on the network."
+	case len(allow) == 0:
+		return "From any address except " + strings.Join(block, ", ") + "."
+	case len(block) == 0:
+		return "Only from " + strings.Join(allow, ", ") + "."
+	default:
+		return "Only from " + strings.Join(allow, ", ") + ", except " + strings.Join(block, ", ") + "."
+	}
+}
+
+func splitRules(rules []NetworkRule) (allow, block []string) {
+	for _, r := range rules {
+		if r.Action == RuleAllow {
+			allow = append(allow, r.Address)
+		} else {
+			block = append(block, r.Address)
+		}
+	}
+	return allow, block
 }
 
 // configured is the level a share setting leaves of a given level. It is
@@ -145,6 +174,7 @@ func preview(access []AccessInput, byID map[int64]users.User, r Rules) Effective
 func spec(sh Share, byID map[int64]users.User) sys.ShareSpec {
 	r := Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess}
 	s := sys.ShareSpec{Name: sh.Name, Path: sh.Path, Comment: sh.Comment, Guest: r.GuestAccess, HideUnreadable: sh.HideUnreadable}
+	s.Allow, s.Block = splitRules(sh.NetworkRules)
 	for _, a := range sh.Access {
 		u, ok := byID[a.UserID]
 		if !ok || !u.SMBAccess {

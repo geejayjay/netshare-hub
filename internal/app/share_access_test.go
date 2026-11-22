@@ -308,3 +308,82 @@ func TestShareVisibilitySettings(t *testing.T) {
 		t.Errorf("config:\n%s", fake.Config)
 	}
 }
+
+// Step 1.8: per-share network rules, strictly validated.
+func TestShareNetworkRules(t *testing.T) {
+	admin, fake, _ := newSystemServer(t)
+	jay := createUser(t, admin, "jay")
+	access := []map[string]any{{"userId": jay.ID, "level": "write"}}
+
+	var sh struct {
+		ID           int64
+		NetworkRules []struct{ Action, Address string }
+	}
+	status, _ := admin.do("POST", "/shares", map[string]any{
+		"name": "finance", "path": "/srv/finance", "access": access,
+		"networkRules": []map[string]any{
+			{"action": "allow", "address": " 192.168.1.0/24 "},
+			{"action": "allow", "address": "10.0.0.7/32"},
+			{"action": "block", "address": "192.168.1.66"},
+		},
+	}, &sh)
+	want(t, "create", status, 201)
+	// Stored as Samba gets them: trimmed, a one-address range as an address.
+	want(t, "rule 0", sh.NetworkRules[0].Address, "192.168.1.0/24")
+	want(t, "rule 1", sh.NetworkRules[1].Address, "10.0.0.7")
+	if !strings.Contains(section(t, fake, "finance"), "hosts allow = 192.168.1.0/24, 10.0.0.7 EXCEPT 192.168.1.66") {
+		t.Errorf("config:\n%s", fake.Config)
+	}
+
+	applied := fake.Applied
+	for _, c := range []struct {
+		rules []map[string]any
+		field string
+		code  string
+	}{
+		{[]map[string]any{{"action": "allow", "address": "nas.local"}}, "networkRules[0].address", "invalid_format"},
+		{[]map[string]any{{"action": "allow", "address": "ALL"}}, "networkRules[0].address", "invalid_format"},
+		{[]map[string]any{{"action": "block", "address": "10.0.0.0/8 EXCEPT 10.0.0.1"}}, "networkRules[0].address", "invalid_format"},
+		{[]map[string]any{{"action": "allow", "address": "192.168.1.5/24"}}, "networkRules[0].address", "invalid_format"},
+		{[]map[string]any{{"action": "allow", "address": "10.0.0.1"}, {"action": "allow", "address": "10.0.0.1/32"}}, "networkRules[1].address", "duplicate"},
+		{[]map[string]any{{"action": "allow", "address": "10.0.0.1"}, {"action": "block", "address": "10.0.0.1"}}, "networkRules[1].address", "conflict"},
+	} {
+		var p problem
+		status, _ := admin.do("PATCH", "/shares/"+itoa(sh.ID), map[string]any{"networkRules": c.rules}, &p)
+		if status != 422 || fieldCodes(p)[c.field] != c.code {
+			t.Errorf("%v: status %d, errors %+v; want %s=%s", c.rules, status, p.Errors, c.field, c.code)
+		}
+	}
+	want(t, "config untouched by invalid rules", fake.Applied, applied)
+
+	// The error suggests the range that was probably meant.
+	var p problem
+	admin.do("PATCH", "/shares/"+itoa(sh.ID), map[string]any{
+		"networkRules": []map[string]any{{"action": "allow", "address": "192.168.1.5/24"}},
+	}, &p)
+	if len(p.Errors) == 0 || !strings.Contains(p.Errors[0].Message, "192.168.1.0/24") {
+		t.Errorf("want a suggestion, got %+v", p.Errors)
+	}
+
+	// Block-only rules become "hosts deny"; an empty list removes them.
+	admin.do("PATCH", "/shares/"+itoa(sh.ID), map[string]any{
+		"networkRules": []map[string]any{{"action": "block", "address": "2001:DB8::/32"}},
+	}, nil)
+	if !strings.Contains(section(t, fake, "finance"), "hosts deny = 2001:db8::/32") {
+		t.Errorf("config:\n%s", fake.Config)
+	}
+	admin.do("PATCH", "/shares/"+itoa(sh.ID), map[string]any{"networkRules": []map[string]any{}}, nil)
+	if strings.Contains(section(t, fake, "finance"), "hosts ") {
+		t.Errorf("rules should be gone:\n%s", fake.Config)
+	}
+
+	// The preview says it in words.
+	var withNetwork struct{ Network string }
+	admin.do("POST", "/shares/effective-access", map[string]any{
+		"access": access,
+		"networkRules": []map[string]any{
+			{"action": "allow", "address": "192.168.1.0/24"}, {"action": "block", "address": "192.168.1.66"},
+		},
+	}, &withNetwork)
+	want(t, "preview network", withNetwork.Network, "Only from 192.168.1.0/24, except 192.168.1.66.")
+}

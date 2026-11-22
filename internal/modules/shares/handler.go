@@ -41,6 +41,7 @@ type CreateShareRequest struct {
 	GuestAccess     bool               `json:"guestAccess,omitempty" doc:"Anyone on the network can read without a password."`
 	Preset          string             `json:"preset,omitempty" maxLength:"32" doc:"The preset used to set the share up (a label; see GET /shares/presets). Default \"custom\"."`
 	HideUnreadable  bool               `json:"hideUnreadable,omitempty" doc:"Hide files and folders a user cannot read. Slows down listing very big folders."`
+	NetworkRules    []NetworkRule      `json:"networkRules,omitempty" maxItems:"128" doc:"Which computers may connect (see Share.networkRules)."`
 	Access          []ShareAccessInput `json:"access,omitempty" maxItems:"500" doc:"Users who may use the share. Without any (and without guest access), nobody can connect."`
 }
 
@@ -51,14 +52,16 @@ type UpdateShareRequest struct {
 	GuestAccess    *bool               `json:"guestAccess,omitempty"`
 	Preset         *string             `json:"preset,omitempty" maxLength:"32"`
 	HideUnreadable *bool               `json:"hideUnreadable,omitempty"`
+	NetworkRules   *[]NetworkRule      `json:"networkRules,omitempty" maxItems:"128" doc:"Replaces the whole list of network rules."`
 	Access         *[]ShareAccessInput `json:"access,omitempty" maxItems:"500" doc:"Replaces the whole access list."`
 }
 
 // PreviewAccessRequest is a share's access settings, to preview.
 type PreviewAccessRequest struct {
-	ReadOnly    bool               `json:"readOnly,omitempty"`
-	GuestAccess bool               `json:"guestAccess,omitempty"`
-	Access      []ShareAccessInput `json:"access,omitempty" maxItems:"500"`
+	ReadOnly     bool               `json:"readOnly,omitempty"`
+	GuestAccess  bool               `json:"guestAccess,omitempty"`
+	NetworkRules []NetworkRule      `json:"networkRules,omitempty" maxItems:"128"`
+	Access       []ShareAccessInput `json:"access,omitempty" maxItems:"500"`
 }
 
 type listInput struct {
@@ -203,7 +206,7 @@ func (h *handler) presets(context.Context, *struct{}) (*presetsOutput, error) {
 
 func (h *handler) preview(ctx context.Context, in *previewInput) (*previewOutput, error) {
 	res, err := h.svc.Preview(ctx, accessInputs(in.Body.Access),
-		Rules{ReadOnly: in.Body.ReadOnly, GuestAccess: in.Body.GuestAccess})
+		Rules{ReadOnly: in.Body.ReadOnly, GuestAccess: in.Body.GuestAccess}, in.Body.NetworkRules)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +230,7 @@ func (h *handler) create(ctx context.Context, in *createInput) (*shareOutput, er
 		Rules:           Rules{ReadOnly: in.Body.ReadOnly, GuestAccess: in.Body.GuestAccess},
 		Preset:          in.Body.Preset,
 		HideUnreadable:  in.Body.HideUnreadable,
+		NetworkRules:    in.Body.NetworkRules,
 		Access:          accessInputs(in.Body.Access),
 	})
 	if err != nil {
@@ -237,7 +241,8 @@ func (h *handler) create(ctx context.Context, in *createInput) (*shareOutput, er
 
 func (h *handler) update(ctx context.Context, in *updateInput) (*shareOutput, error) {
 	update := UpdateInput{Comment: in.Body.Comment, ReadOnly: in.Body.ReadOnly,
-		GuestAccess: in.Body.GuestAccess, Preset: in.Body.Preset, HideUnreadable: in.Body.HideUnreadable}
+		GuestAccess: in.Body.GuestAccess, Preset: in.Body.Preset, HideUnreadable: in.Body.HideUnreadable,
+		NetworkRules: in.Body.NetworkRules}
 	if in.Body.Access != nil {
 		access := accessInputs(*in.Body.Access)
 		update.Access = &access

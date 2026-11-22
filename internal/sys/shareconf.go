@@ -32,6 +32,11 @@ type ShareSpec struct {
 	// HideUnreadable hides files and folders a user cannot read (over SMB
 	// and in the file manager). It slows down listing very big folders.
 	HideUnreadable bool `json:"hideUnreadable,omitempty"`
+	// Allow and Block are network rules (see hostrules.go): canonical IP
+	// addresses and CIDR ranges. With any Allow entry, only those may
+	// connect; Block entries never may.
+	Allow []string `json:"allow,omitempty"`
+	Block []string `json:"block,omitempty"`
 }
 
 // Live reports whether anyone at all may use the share.
@@ -67,6 +72,12 @@ func (s ShareSpec) Check() error {
 		if slices.Contains(s.Readers, name) {
 			return fmt.Errorf("share %q: %q is both an uploader and a reader", s.Name, name)
 		}
+	}
+	if err := checkHostList(s.Name, "allow", s.Allow); err != nil {
+		return err
+	}
+	if err := checkHostList(s.Name, "block", s.Block); err != nil {
+		return err
 	}
 	// Everyone reads a guest share, uploads included: "upload only" would
 	// promise a privacy it cannot keep.
@@ -114,6 +125,16 @@ func RenderShares(shares []ShareSpec) (string, error) {
 		}
 		param(&b, "browseable", "yes")
 		param(&b, "guest ok", yesNo(s.Guest))
+		// Network rules. "EXCEPT" keeps the meaning simple: with an allow
+		// list, only those addresses, minus the blocked ones.
+		switch {
+		case len(s.Allow) > 0 && len(s.Block) > 0:
+			param(&b, "hosts allow", strings.Join(s.Allow, ", ")+" EXCEPT "+strings.Join(s.Block, ", "))
+		case len(s.Allow) > 0:
+			param(&b, "hosts allow", strings.Join(s.Allow, ", "))
+		case len(s.Block) > 0:
+			param(&b, "hosts deny", strings.Join(s.Block, ", "))
+		}
 
 		if !s.Live() {
 			// IMPORTANT: an empty "valid users" means EVERY user may connect.
@@ -229,6 +250,14 @@ func ParseShares(config string) []ShareSpec {
 			writeList = strings.Split(value, ", ")
 		case "guest ok":
 			current.Guest = value == "yes"
+		case "hosts allow":
+			allow, block, _ := strings.Cut(value, " EXCEPT ")
+			current.Allow = strings.Split(allow, ", ")
+			if block != "" {
+				current.Block = strings.Split(block, ", ")
+			}
+		case "hosts deny":
+			current.Block = strings.Split(value, ", ")
 		case "hide unreadable":
 			current.HideUnreadable = value == "yes"
 		case "available":

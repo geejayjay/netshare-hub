@@ -316,6 +316,8 @@ export interface components {
             hideUnreadable?: boolean;
             /** @example media */
             name: string;
+            /** @description Which computers may connect (see Share.networkRules). */
+            networkRules?: components["schemas"]["NetworkRule"][] | null;
             /**
              * @description Full path of the folder on the server.
              * @example /srv/media
@@ -351,6 +353,7 @@ export interface components {
         EffectiveAccess: {
             /** @enum {string} */
             guests: "none" | "read";
+            network: string;
             /** @description One sentence about everyone not listed. */
             note: string;
             /** @enum {string} */
@@ -467,6 +470,12 @@ export interface components {
             level: "read" | "upload" | "write";
             name: string;
         };
+        NetworkRule: {
+            /** @enum {string} */
+            action: "allow" | "block";
+            /** @description An IP address (192.168.1.50) or a range in CIDR form (192.168.1.0/24). IPv4 or IPv6. */
+            address: string;
+        };
         /** @enum {string} */
         Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage";
         Preset: {
@@ -482,6 +491,7 @@ export interface components {
         PreviewAccessRequest: {
             access?: components["schemas"]["ShareAccessInput"][] | null;
             guestAccess?: boolean;
+            networkRules?: components["schemas"]["NetworkRule"][] | null;
             readOnly?: boolean;
         };
         Problem: {
@@ -542,6 +552,8 @@ export interface components {
             id: number;
             /** @description The name clients connect to: \\server\name. */
             name: string;
+            /** @description Which computers may connect. With any "allow" rule, only those addresses may; "block" rules never may. Empty: any address. */
+            networkRules: components["schemas"]["NetworkRule"][];
             /** @description The folder on the server, with symbolic links resolved. */
             path: string;
             /** @description The preset the share was set up with, or "custom". A label only: the rules are the other fields. */
@@ -576,6 +588,8 @@ export interface components {
             comment?: string;
             guestAccess?: boolean;
             hideUnreadable?: boolean;
+            /** @description Replaces the whole list of network rules. */
+            networkRules?: components["schemas"]["NetworkRule"][];
             preset?: string;
             readOnly?: boolean;
         };

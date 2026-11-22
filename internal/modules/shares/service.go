@@ -121,17 +121,20 @@ func (s *Service) Get(ctx context.Context, id int64) (Share, error) {
 
 // Preview returns the effective access a share would have with these
 // settings, without changing anything.
-func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules) (EffectiveAccess, error) {
+func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules, network []NetworkRule) (EffectiveAccess, error) {
 	v := validate.New()
 	byID, err := s.checkAccess(ctx, v, access)
 	if err != nil {
 		return EffectiveAccess{}, err
 	}
 	checkUploads(v, access, r)
+	network = checkNetworkRules(v, network)
 	if err := v.Err(); err != nil {
 		return EffectiveAccess{}, err
 	}
-	return preview(access, byID, r), nil
+	out := preview(access, byID, r)
+	out.Network = networkNote(network)
+	return out, nil
 }
 
 // Create shares a folder. actor is the user asking; they own the job that
@@ -166,6 +169,7 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 		return Share{}, err
 	}
 	checkUploads(v, in.Access, in.Rules)
+	in.NetworkRules = checkNetworkRules(v, in.NetworkRules)
 	if err := v.Err(); err != nil {
 		return Share{}, err
 	}
@@ -246,6 +250,9 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 		access = *in.Access
 	}
 	checkUploads(v, access, rules)
+	if in.NetworkRules != nil {
+		*in.NetworkRules = checkNetworkRules(v, *in.NetworkRules)
+	}
 	if err := v.Err(); err != nil {
 		return Share{}, err
 	}
@@ -261,12 +268,17 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 				return false, err
 			}
 		}
+		if in.NetworkRules != nil {
+			if err := s.repo.UpdateNetworkRules(ctx, tx, id, *in.NetworkRules, s.now()); err != nil {
+				return false, err
+			}
+		}
 		if in.Access != nil {
 			if err := s.repo.ReplaceAccess(ctx, tx, id, *in.Access, s.now()); err != nil {
 				return false, err
 			}
 		}
-		return in.Comment != nil || settingsChanged || in.Access != nil, nil
+		return in.Comment != nil || settingsChanged || in.NetworkRules != nil || in.Access != nil, nil
 	})
 	if err != nil && !errs.Is(err, CodeSambaReloadFailed) {
 		return Share{}, err
@@ -557,6 +569,45 @@ func checkUploads(v *validate.Errors, access []AccessInput, r Rules) {
 				"Upload-only does not work on a share with guest access: everyone can read what is uploaded. Turn guest access off, or choose another level.")
 		}
 	}
+}
+
+// checkNetworkRules validates network rules and returns them normalized
+// (canonical addresses), so what is stored is exactly what Samba gets.
+func checkNetworkRules(v *validate.Errors, rules []NetworkRule) []NetworkRule {
+	if len(rules) > 2*sys.MaxHostRules {
+		v.Add("networkRules", "too_many", fmt.Sprintf("At most %d rules of each kind.", sys.MaxHostRules))
+		return rules
+	}
+	out := make([]NetworkRule, len(rules))
+	seen := map[string]string{}
+	count := map[string]int{}
+	for i, r := range rules {
+		field := fmt.Sprintf("networkRules[%d]", i)
+		out[i] = r
+		if r.Action != RuleAllow && r.Action != RuleBlock {
+			v.Add(field+".action", "invalid_choice", "Must be \"allow\" or \"block\".")
+			continue
+		}
+		address, err := sys.ParseHostRule(r.Address)
+		if err != nil {
+			v.Add(field+".address", "invalid_format", err.Error())
+			continue
+		}
+		out[i].Address = address
+		if prev, ok := seen[address]; ok {
+			if prev == r.Action {
+				v.Add(field+".address", "duplicate", address+" is listed more than once.")
+			} else {
+				v.Add(field+".address", "conflict", address+" is both allowed and blocked.")
+			}
+			continue
+		}
+		seen[address] = r.Action
+		if count[r.Action]++; count[r.Action] == sys.MaxHostRules+1 {
+			v.Add("networkRules", "too_many", fmt.Sprintf("At most %d rules of each kind.", sys.MaxHostRules))
+		}
+	}
+	return out
 }
 
 func accessOf(sh Share) []AccessInput {

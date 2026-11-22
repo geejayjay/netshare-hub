@@ -3,6 +3,7 @@ package shares
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -26,12 +27,20 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-const columns = "id, name, path, comment, read_only, guest_access, preset, hide_unreadable, created_at, updated_at"
+const columns = "id, name, path, comment, read_only, guest_access, preset, hide_unreadable, network_rules, created_at, updated_at"
 
 func scan(s interface{ Scan(...any) error }) (Share, error) {
 	var sh Share
 	var created, updated int64
-	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset, &sh.HideUnreadable, &created, &updated)
+	var rules string
+	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset, &sh.HideUnreadable,
+		&rules, &created, &updated)
+	if err == nil {
+		err = json.Unmarshal([]byte(rules), &sh.NetworkRules)
+	}
+	if sh.NetworkRules == nil {
+		sh.NetworkRules = []NetworkRule{}
+	}
 	sh.CreatedAt = time.Unix(created, 0).UTC()
 	sh.UpdatedAt = time.Unix(updated, 0).UTC()
 	sh.Access = []ShareAccess{}
@@ -162,9 +171,10 @@ func (r *Repo) query(ctx context.Context, q querier, query string, args ...any) 
 
 func (r *Repo) Insert(ctx context.Context, q querier, in CreateInput, now time.Time) (int64, error) {
 	res, err := q.ExecContext(ctx,
-		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, hide_unreadable, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, in.HideUnreadable, now.Unix(), now.Unix())
+		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, hide_unreadable, network_rules, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, in.HideUnreadable, rulesJSON(in.NetworkRules),
+		now.Unix(), now.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -182,6 +192,20 @@ func (r *Repo) UpdateSettings(ctx context.Context, q querier, id int64, rules Ru
 		"UPDATE shares SET read_only = ?, guest_access = ?, preset = ?, hide_unreadable = ?, updated_at = ? WHERE id = ?",
 		rules.ReadOnly, rules.GuestAccess, preset, hideUnreadable, now.Unix(), id)
 	return err
+}
+
+// UpdateNetworkRules replaces a share's network rules.
+func (r *Repo) UpdateNetworkRules(ctx context.Context, q querier, id int64, rules []NetworkRule, now time.Time) error {
+	_, err := q.ExecContext(ctx, "UPDATE shares SET network_rules = ?, updated_at = ? WHERE id = ?", rulesJSON(rules), now.Unix(), id)
+	return err
+}
+
+func rulesJSON(rules []NetworkRule) string {
+	if len(rules) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(rules) // plain strings: cannot fail
+	return string(b)
 }
 
 // Paths returns every share's folder, by share name.

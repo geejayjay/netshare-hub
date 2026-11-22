@@ -39,6 +39,17 @@
             "minLength": 1,
             "type": "string"
           },
+          "networkRules": {
+            "description": "Which computers may connect (see Share.networkRules).",
+            "items": {
+              "$ref": "#/components/schemas/NetworkRule"
+            },
+            "maxItems": 128,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "path": {
             "description": "Full path of the folder on the server.",
             "examples": [
@@ -157,6 +168,9 @@
             ],
             "type": "string"
           },
+          "network": {
+            "type": "string"
+          },
           "note": {
             "description": "One sentence about everyone not listed.",
             "type": "string"
@@ -179,7 +193,8 @@
           "users",
           "guests",
           "others",
-          "note"
+          "note",
+          "network"
         ],
         "type": "object"
       },
@@ -510,6 +525,27 @@
         ],
         "type": "object"
       },
+      "NetworkRule": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "allow",
+              "block"
+            ],
+            "type": "string"
+          },
+          "address": {
+            "description": "An IP address (192.168.1.50) or a range in CIDR form (192.168.1.0/24). IPv4 or IPv6.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "address"
+        ],
+        "type": "object"
+      },
       "Permission": {
         "enum": [
           "users:read",
@@ -595,6 +631,16 @@
           },
           "guestAccess": {
             "type": "boolean"
+          },
+          "networkRules": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkRule"
+            },
+            "maxItems": 128,
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "readOnly": {
             "type": "boolean"
@@ -780,6 +826,13 @@
             "description": "The name clients connect to: \\\\server\\name.",
             "type": "string"
           },
+          "networkRules": {
+            "description": "Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address.",
+            "items": {
+              "$ref": "#/components/schemas/NetworkRule"
+            },
+            "type": "array"
+          },
           "path": {
             "description": "The folder on the server, with symbolic links resolved.",
             "type": "string"
@@ -806,6 +859,7 @@
           "guestAccess",
           "preset",
           "hideUnreadable",
+          "networkRules",
           "access",
           "createdAt",
           "updatedAt"
@@ -883,6 +937,14 @@
           },
           "hideUnreadable": {
             "type": "boolean"
+          },
+          "networkRules": {
+            "description": "Replaces the whole list of network rules.",
+            "items": {
+              "$ref": "#/components/schemas/NetworkRule"
+            },
+            "maxItems": 128,
+            "type": "array"
           },
           "preset": {
             "maxLength": 32,
