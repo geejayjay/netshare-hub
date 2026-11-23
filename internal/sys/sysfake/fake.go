@@ -63,6 +63,7 @@ type Fake struct {
 	NoAuditModule bool
 	disconnected  []netip.Addr
 	macs          map[netip.Addr]string
+	sessions      []sys.Session
 	// listeners are the open Events streams (EmitAudit feeds them).
 	listeners map[chan sambalog.Event]bool
 }
@@ -351,6 +352,36 @@ func (f *Fake) CurrentConfig() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.Config
+}
+
+// SetSessions sets what Sessions returns.
+func (f *Fake) SetSessions(s []sys.Session) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sessions = append([]sys.Session(nil), s...)
+}
+
+// Sessions returns what SetSessions set (minus disconnected ones).
+func (f *Fake) Sessions(context.Context) ([]sys.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]sys.Session{}, f.sessions...), nil
+}
+
+// DisconnectSession removes a session.
+func (f *Fake) DisconnectSession(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !sys.ValidSessionID(id) {
+		return fmt.Errorf("%w: session id", sys.ErrInvalid)
+	}
+	for i, s := range f.sessions {
+		if s.ID == id {
+			f.sessions = append(f.sessions[:i], f.sessions[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: no session %s", sys.ErrNotFound, id)
 }
 
 // SetMAC makes MAC return mac for ip (a computer on the local network).

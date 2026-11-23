@@ -139,6 +139,12 @@ type Samba interface {
 	// keep writing). The client may reconnect; what it may do then is
 	// whatever the config says. Errors: ErrInvalid.
 	DisconnectClient(ctx context.Context, ip netip.Addr) error
+	// Sessions lists the SMB sessions connected now.
+	Sessions(ctx context.Context) ([]Session, error)
+	// DisconnectSession ends one session: the process serving it, found
+	// again from Samba's own list (never a process id from the caller).
+	// Errors: ErrInvalid, ErrNotFound (no such session now).
+	DisconnectSession(ctx context.Context, id string) error
 }
 
 // Files answers questions about directories that are about to be shared.

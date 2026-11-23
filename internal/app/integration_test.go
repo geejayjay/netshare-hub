@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http/httptest"
 	"net/netip"
@@ -20,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -967,4 +969,131 @@ func TestBansOverRealSamba(t *testing.T) {
 	if out := try(pw); !strings.Contains(out, "Current directory") {
 		t.Errorf("after lifting the ban:\n%s", out)
 	}
+}
+
+// Step 2.7a against real Samba: two users connected at once; ending one
+// session leaves the other working.
+func TestDisconnectSessionOverRealSamba(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.SecureCookies = false
+	system, err := sysexec.New(sysexec.Options{Protected: cfg.ProtectedDirs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := app.New(context.Background(), cfg, app.Options{System: &system})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler)
+	admin := newClient(t, server.URL+app.APIPrefix)
+	var s session
+	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
+	admin.csrf = s.CSRFToken
+
+	suffix := fmt.Sprint(os.Getpid() % 10000)
+	alice, bob := "sa"+suffix, "sb"+suffix
+	aID, bID := createUser(t, admin, alice).ID, createUser(t, admin, bob).ID
+	dir := "/srv/shares/sessions-" + suffix
+	name := "ss" + suffix
+	var sh shareBody
+	admin.do("POST", "/shares", map[string]any{"name": name, "path": dir, "createDirectory": true,
+		"access": []map[string]any{{"userId": aID, "level": "write"}, {"userId": bID, "level": "write"}}}, &sh)
+	t.Cleanup(func() {
+		admin.do("DELETE", "/shares/"+itoa(sh.ID), nil, nil)
+		admin.do("DELETE", "/users/"+itoa(aID), nil, nil)
+		admin.do("DELETE", "/users/"+itoa(bID), nil, nil)
+		server.Close()
+		application.Close()
+		os.RemoveAll(dir)
+	})
+
+	// A long-lived session: smbclient reading commands as we send them.
+	type client struct {
+		cmd *exec.Cmd
+		in  io.WriteCloser
+		out *strings.Builder
+		mu  *sync.Mutex
+	}
+	open := func(user string) client {
+		// stdbuf: smbclient would hold its output in a buffer otherwise.
+		cmd := exec.Command("stdbuf", "-oL", "-eL", "smbclient", "//127.0.0.1/"+name, "-U", user+"%"+pw)
+		in, _ := cmd.StdinPipe()
+		c := client{cmd: cmd, in: in, out: &strings.Builder{}, mu: &sync.Mutex{}}
+		cmd.Stdout = lockedWriter{c.out, c.mu}
+		cmd.Stderr = cmd.Stdout
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintln(in, "pwd")
+		t.Cleanup(func() { in.Close(); cmd.Process.Kill(); cmd.Wait() })
+		return c
+	}
+	output := func(c client) string { c.mu.Lock(); defer c.mu.Unlock(); return c.out.String() }
+	a, b := open(alice), open(bob)
+
+	type sess struct{ ID, Username string }
+	list := func() []sess {
+		var l struct{ Items []sess }
+		admin.do("GET", "/system/sessions", nil, &l)
+		var out []sess
+		for _, x := range l.Items {
+			if x.Username == alice || x.Username == bob {
+				out = append(out, x)
+			}
+		}
+		return out
+	}
+	var sessions []sess
+	for i := 0; i < 50 && len(sessions) < 2; i++ {
+		time.Sleep(100 * time.Millisecond)
+		sessions = list()
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("sessions: %+v", sessions)
+	}
+	var aliceID string
+	for _, x := range sessions {
+		if x.Username == alice {
+			aliceID = x.ID
+		}
+	}
+	if status, _ := admin.do("POST", "/system/sessions/"+aliceID+"/disconnect", nil, nil); status != 204 {
+		t.Fatalf("disconnect: %d", status)
+	}
+
+	// Alice's smbclient was cut off (it says so on the next command and
+	// stays at its prompt); Bob's still works.
+	time.Sleep(500 * time.Millisecond)
+	fmt.Fprintln(a.in, "ls")
+	fmt.Fprintln(b.in, "pwd")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) &&
+		(!strings.Contains(output(a), "NT_STATUS_") || strings.Count(output(b), "Current directory") < 2) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !strings.Contains(output(a), "NT_STATUS_") {
+		t.Errorf("alice's session still works:\n%s", output(a))
+	}
+	if got := output(b); strings.Count(got, "Current directory") < 2 || strings.Contains(got, "NT_STATUS_") {
+		t.Errorf("bob's session should still work:\n%s", got)
+	}
+	if now := list(); len(now) != 1 || now[0].Username != bob {
+		t.Errorf("sessions after: %+v", now)
+	}
+}
+
+// lockedWriter lets the test read a command's output while it runs.
+type lockedWriter struct {
+	b  *strings.Builder
+	mu *sync.Mutex
+}
+
+func (w lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.b.Write(p)
 }

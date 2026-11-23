@@ -641,6 +641,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List who is connected over SMB now */
+        get: operations["listSMBSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/sessions/{id}/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End one SMB session (the computer may connect again) */
+        post: operations["disconnectSMBSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/tasks": {
         parameters: {
             query?: never;
@@ -1013,6 +1047,11 @@ export interface components {
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
+        ListSession: {
+            items: components["schemas"]["Session"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
         ListShare: {
             items: components["schemas"]["Share"][];
             /** @description Present only when the list is paginated. */
@@ -1073,7 +1112,7 @@ export interface components {
             next: number;
         };
         /** @enum {string} */
-        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage";
+        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage" | "sessions:manage";
         Preset: {
             /** @enum {string} */
             defaultLevel: "read" | "upload" | "write";
@@ -1160,6 +1199,30 @@ export interface components {
             updatedAt?: string;
             /** @description The Windows workgroup: 1-15 letters, digits or -. Empty: keep the system's (usually WORKGROUP). */
             workgroup: string;
+        };
+        Session: {
+            clientIp: string;
+            /** Format: int64 */
+            clientPort?: number;
+            /** Format: date-time */
+            connectedAt?: string;
+            /** @description The SMB version, e.g. SMB3_11. */
+            dialect: string;
+            encrypted: boolean;
+            /** @description Samba's session id. */
+            id: string;
+            /** @description The client's name or address as Samba knows it. */
+            machine?: string;
+            /** Format: int64 */
+            openFiles: number;
+            /**
+             * Format: int64
+             * @description The smbd process serving it.
+             */
+            pid: number;
+            shares: string[];
+            signed: boolean;
+            username: string;
         };
         SessionInfo: {
             /** @description Send this back in the X-CSRF-Token header on every POST, PATCH, PUT and DELETE. */
@@ -2794,6 +2857,64 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Job"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listSMBSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListSession"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    disconnectSMBSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

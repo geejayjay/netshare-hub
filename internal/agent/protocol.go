@@ -41,11 +41,15 @@ const (
 	// opDisconnectClient drops every SMB connection from one address (the
 	// ransomware guard). It takes only a validated IP address.
 	opDisconnectClient = "samba.disconnect-client"
-	opResolveDir       = "files.resolve-dir"
-	opCreateShareDir   = "files.create-share-dir"
-	opWorker           = "files.worker"
-	pathPrefix         = "/v1/"
-	maxRequestBytes    = 8 << 20
+	// opSessions lists SMB sessions; opDisconnectSession ends one, named
+	// by its session id only (the agent finds the process itself).
+	opSessions          = "samba.sessions"
+	opDisconnectSession = "samba.disconnect-session"
+	opResolveDir        = "files.resolve-dir"
+	opCreateShareDir    = "files.create-share-dir"
+	opWorker            = "files.worker"
+	pathPrefix          = "/v1/"
+	maxRequestBytes     = 8 << 20
 )
 
 // Request and response bodies. Each operation has its own type and unknown
@@ -82,6 +86,14 @@ type applyConfigRequest struct {
 // from the applied config, never from the request.
 type fixPermissionsRequest struct {
 	Share string `json:"share"`
+}
+
+type sessionRequest struct {
+	ID string `json:"id"`
+}
+
+type sessionsResponse struct {
+	Sessions []sys.Session `json:"sessions"`
 }
 
 type disconnectRequest struct {

@@ -48,6 +48,7 @@ var allowed = map[string][]string{
 	"pdbedit":    {"/usr/bin/pdbedit"},
 	"testparm":   {"/usr/bin/testparm"},
 	"smbcontrol": {"/usr/bin/smbcontrol"},
+	"smbstatus":  {"/usr/bin/smbstatus"},
 }
 
 const commandTimeout = 30 * time.Second

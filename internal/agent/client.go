@@ -136,6 +136,18 @@ func (c *Client) FixPermissions(ctx context.Context, share string) (sys.Permissi
 	return res, err
 }
 
+// Sessions lists the SMB sessions connected now.
+func (c *Client) Sessions(ctx context.Context) ([]sys.Session, error) {
+	var res sessionsResponse
+	err := c.call(ctx, opSessions, struct{}{}, &res)
+	return res.Sessions, err
+}
+
+// DisconnectSession ends one SMB session.
+func (c *Client) DisconnectSession(ctx context.Context, id string) error {
+	return c.call(ctx, opDisconnectSession, sessionRequest{ID: id}, nil)
+}
+
 // DisconnectClient drops every SMB connection from one address.
 func (c *Client) DisconnectClient(ctx context.Context, ip netip.Addr) error {
 	return c.call(ctx, opDisconnectClient, disconnectRequest{IP: ip.String()}, nil)

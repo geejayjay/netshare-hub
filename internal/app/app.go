@@ -27,6 +27,7 @@ import (
 	"netshare-hub/internal/modules/guard"
 	"netshare-hub/internal/modules/jobs"
 	"netshare-hub/internal/modules/scheduler"
+	"netshare-hub/internal/modules/sessions"
 	"netshare-hub/internal/modules/shares"
 	"netshare-hub/internal/modules/system"
 	"netshare-hub/internal/modules/users"
@@ -206,6 +207,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		activity.Register(api, activityService)
 		guard.Register(api, guardService)
 		guard.RegisterBans(api, banService)
+		sessions.Register(api, osLayer.Samba)
 		scheduler.Register(api, tasks)
 	})
 

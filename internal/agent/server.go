@@ -79,6 +79,15 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 
 	s.mux.HandleFunc("POST "+pathPrefix+opAuditEvents, s.auditEvents)
 
+	register(s, opSessions, func(ctx context.Context, _ struct{}) (any, error) {
+		sessions, err := system.Samba.Sessions(ctx)
+		return sessionsResponse{Sessions: sessions}, err
+	}, nil)
+
+	register(s, opDisconnectSession, func(ctx context.Context, r sessionRequest) (any, error) {
+		return nil, system.Samba.DisconnectSession(ctx, r.ID)
+	}, func(r sessionRequest) []any { return []any{"session", r.ID} })
+
 	register(s, opDisconnectClient, func(ctx context.Context, r disconnectRequest) (any, error) {
 		ip, err := netip.ParseAddr(r.IP)
 		if err != nil {

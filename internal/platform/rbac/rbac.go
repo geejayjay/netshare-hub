@@ -30,6 +30,8 @@ const (
 	// AlertsManage lets a user acknowledge and remove server alerts.
 	// Seeing them needs SystemRead.
 	AlertsManage Permission = "alerts:manage"
+	// SessionsManage lets a user end other people's SMB sessions.
+	SessionsManage Permission = "sessions:manage"
 )
 
 // all lists every permission. Add new ones here too: the Admin role gets the
@@ -37,7 +39,7 @@ const (
 var all = []Permission{
 	UsersRead, UsersWrite, GroupsRead, GroupsWrite, SharesRead, SharesWrite,
 	FilesRead, FilesWrite, SettingsRead, SettingsWrite, AuditRead, SystemRead,
-	JobsManage, AlertsManage,
+	JobsManage, AlertsManage, SessionsManage,
 }
 
 // Role is a named bundle of permissions.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"netshare-hub/internal/sys"
@@ -191,6 +192,47 @@ func (s *Samba) DisconnectClient(ctx context.Context, ip netip.Addr) error {
 	}
 	_, err := run(ctx, s.runner, "smbcontrol", "smbd", "kill-client-ip", ip.Unmap().String())
 	return err
+}
+
+// Sessions reads Samba's session list.
+func (s *Samba) Sessions(ctx context.Context) ([]sys.Session, error) {
+	res, err := run(ctx, s.runner, "smbstatus", "--json")
+	if err != nil {
+		return nil, err
+	}
+	return sys.ParseSessions([]byte(res.Stdout))
+}
+
+// DisconnectSession ends one session. The process is taken from Samba's
+// list at this moment and checked to be an smbd process; then smbd's own
+// "shutdown" message is sent to it. That message only reaches a Samba
+// process, so even if the process id was reused in between, nothing else
+// can be affected.
+func (s *Samba) DisconnectSession(ctx context.Context, id string) error {
+	if !sys.ValidSessionID(id) {
+		return fmt.Errorf("%w: session id", sys.ErrInvalid)
+	}
+	sessions, err := s.Sessions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, sess := range sessions {
+		if sess.ID != id {
+			continue
+		}
+		if !isSmbd(sess.PID) {
+			return fmt.Errorf("%w: process %d is not smbd", sys.ErrNotFound, sess.PID)
+		}
+		_, err := run(ctx, s.runner, "smbcontrol", strconv.Itoa(sess.PID), "shutdown")
+		return err
+	}
+	return fmt.Errorf("%w: no session %s", sys.ErrNotFound, id)
+}
+
+// isSmbd reports whether a process is Samba's smbd.
+func isSmbd(pid int) bool {
+	comm, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/comm")
+	return err == nil && strings.HasPrefix(strings.TrimSpace(string(comm)), "smbd")
 }
 
 // loadIdentities reads every account and the managed group's members.

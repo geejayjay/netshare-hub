@@ -933,6 +933,25 @@
         ],
         "type": "object"
       },
+      "ListSession": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ListShare": {
         "additionalProperties": false,
         "properties": {
@@ -1145,7 +1164,8 @@
           "audit:read",
           "system:read",
           "jobs:manage",
-          "alerts:manage"
+          "alerts:manage",
+          "sessions:manage"
         ],
         "type": "string"
       },
@@ -1424,6 +1444,70 @@
           "maxProtocol",
           "encryption",
           "multichannel"
+        ],
+        "type": "object"
+      },
+      "Session": {
+        "additionalProperties": false,
+        "properties": {
+          "clientIp": {
+            "type": "string"
+          },
+          "clientPort": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "connectedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dialect": {
+            "description": "The SMB version, e.g. SMB3_11.",
+            "type": "string"
+          },
+          "encrypted": {
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Samba's session id.",
+            "type": "string"
+          },
+          "machine": {
+            "description": "The client's name or address as Samba knows it.",
+            "type": "string"
+          },
+          "openFiles": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pid": {
+            "description": "The smbd process serving it.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "shares": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "signed": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "pid",
+          "username",
+          "clientIp",
+          "dialect",
+          "encrypted",
+          "signed",
+          "shares",
+          "openFiles"
         ],
         "type": "object"
       },
@@ -4445,6 +4529,84 @@
           "Shares"
         ],
         "x-permission": "shares:write"
+      }
+    },
+    "/system/sessions": {
+      "get": {
+        "operationId": "listSMBSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListSession"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List who is connected over SMB now",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "system:read"
+      }
+    },
+    "/system/sessions/{id}/disconnect": {
+      "post": {
+        "operationId": "disconnectSMBSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{1,20}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "End one SMB session (the computer may connect again)",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "sessions:manage"
       }
     },
     "/system/tasks": {
