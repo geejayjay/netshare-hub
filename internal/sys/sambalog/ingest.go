@@ -1,4 +1,4 @@
-package logingest
+package sambalog
 
 import (
 	"bytes"
@@ -52,6 +52,23 @@ func (in *Ingester) Subscribe(name string, buffer int) <-chan Event {
 	in.mu.Unlock()
 	return s.ch
 }
+
+// Unsubscribe ends a subscription and closes its channel.
+func (in *Ingester) Unsubscribe(ch <-chan Event) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	for i, s := range in.subs {
+		if s.ch == ch {
+			close(s.ch)
+			in.subs = append(in.subs[:i], in.subs[i+1:]...)
+			return
+		}
+	}
+}
+
+// Emit hands an event that was parsed elsewhere (received from the agent)
+// to the subscribers, with the same never-blocking rule.
+func (in *Ingester) Emit(ev Event) { in.emit(ev) }
 
 func (in *Ingester) Stats() Stats {
 	st := Stats{Lines: in.lines.Load(), Events: in.events.Load(), TooLong: in.tooLong.Load(), Dropped: map[string]uint64{}}
@@ -159,6 +176,12 @@ func (in *Ingester) Read(ctx context.Context, r io.Reader) error {
 // is truncated, and moves to the new file when it is rotated. A file that
 // does not exist yet is waited for. It returns when ctx is done.
 func (in *Ingester) Tail(ctx context.Context, path string, poll time.Duration) error {
+	return in.tail(ctx, path, poll, false)
+}
+
+// tail is Tail; fromStart reads an existing file from its beginning (a log
+// file that appeared after the reader started).
+func (in *Ingester) tail(ctx context.Context, path string, poll time.Duration, fromStart bool) error {
 	if poll <= 0 {
 		poll = 500 * time.Millisecond
 	}
@@ -167,7 +190,7 @@ func (in *Ingester) Tail(ctx context.Context, path string, poll time.Duration) e
 	var (
 		f      *os.File
 		offset int64
-		first  = true
+		first  = !fromStart
 	)
 	defer func() {
 		if f != nil {

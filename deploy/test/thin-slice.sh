@@ -83,6 +83,25 @@ echo "$out"
 has "$out" "hello.txt" || fail "jay could not write to the share"
 ls -l /srv/shares/slice
 
+step "the activity log: the agent reads Samba's logs, the web server shows them"
+if ls /usr/lib/*/samba/vfs/full_audit.so >/dev/null 2>&1; then
+  out=$(curl -s -X PUT -b "$JAR" -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+    -d '{"serverName":"","workgroup":"","minProtocol":"default","maxProtocol":"default","encryption":"default","multichannel":"default","activityLog":true}' \
+    "$API/settings/samba")
+  has "$out" '"activityLog":true' || fail "could not turn the activity log on: $out"
+  smb "$USER_PASS" 'put /etc/hostname audited.txt' >/dev/null
+  found=""
+  for _ in $(seq 1 50); do
+    out=$(curl -s -b "$JAR" "$API/activity?op=write")
+    if has "$out" "audited.txt"; then found=1; break; fi
+    sleep 0.2
+  done
+  [ -n "$found" ] || fail "the write over SMB is not in the activity log: $out"
+  echo "write over SMB seen in the activity log"
+else
+  echo "(skipped: samba-vfs-modules is not installed)"
+fi
+
 step "a wrong password is refused"
 out=$(smb "wrong-password" ls)
 has "$out" "NT_STATUS_LOGON_FAILURE" || fail "wrong password was accepted: $out"

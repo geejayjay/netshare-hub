@@ -1,11 +1,11 @@
 //go:build integration && linux
 
-package logingest
+package sambalog
 
 // Against real Samba: the events the parser makes from Samba's own log
 // lines. Run ONLY in the disposable test container, as root:
 //
-//	go test -p 1 -tags integration ./internal/modules/logingest/
+//	go test -p 1 -tags integration ./internal/sys/sambalog/
 
 import (
 	"context"

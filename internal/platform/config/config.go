@@ -43,6 +43,8 @@ type Config struct {
 	// MaxUploadBytes is the largest file the web file manager accepts in
 	// one upload. 0 means no limit (the disk is the limit).
 	MaxUploadBytes int64 `toml:"max_upload_bytes"`
+	// ActivityRetentionDays is how long the SMB activity log is kept.
+	ActivityRetentionDays int `toml:"activity_retention_days"`
 }
 
 // ProtectedDirs are folders a share must never expose: NetShare Hub's own
@@ -68,6 +70,8 @@ func Default() Config {
 		Sys:           "agent",
 		AgentSocket:   "/run/netshare-hub/agent.sock",
 		AgentUser:     "netshare",
+
+		ActivityRetentionDays: 90,
 	}
 }
 

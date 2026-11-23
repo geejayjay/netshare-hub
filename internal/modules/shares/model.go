@@ -111,6 +111,12 @@ type Users interface {
 	GetMany(ctx context.Context, ids []int64) (map[int64]users.User, error)
 }
 
+// Blocks says which users the ransomware guard stopped writing (the guard
+// module implements it).
+type Blocks interface {
+	BlockedUsers(ctx context.Context) (map[int64]bool, error)
+}
+
 // Alerts is what shares needs from the alerts module.
 type Alerts interface {
 	Raise(ctx context.Context, in alerts.Raise) (alerts.Alert, error)
@@ -129,6 +135,7 @@ const (
 	CodePermissionsUnsupported errs.Code = "SHARE_PERMISSIONS_UNSUPPORTED"
 	CodePermissionsFailed      errs.Code = "SHARE_PERMISSIONS_FAILED"
 	CodeSambaConfigRefused     errs.Code = "SAMBA_CONFIG_REFUSED"
+	CodeSambaModuleMissing     errs.Code = "SAMBA_MODULE_MISSING"
 )
 
 func errNotFound() error {

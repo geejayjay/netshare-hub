@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 
 	"netshare-hub/internal/fileworker"
 	"netshare-hub/internal/sys"
+	"netshare-hub/internal/sys/sambalog"
 )
 
 // Account is one fake Linux + Samba account.
@@ -56,6 +58,12 @@ type Fake struct {
 	// FilesDir holds one folder per share. It is created on first use;
 	// tests may set it to a temporary directory.
 	FilesDir string
+
+	// NoAuditModule pretends Samba's full_audit module is not installed.
+	NoAuditModule bool
+	disconnected  []netip.Addr
+	// listeners are the open Events streams (EmitAudit feeds them).
+	listeners map[chan sambalog.Event]bool
 }
 
 type fakeWorker struct {
@@ -93,7 +101,48 @@ func New() *Fake {
 
 // System returns the fake as a sys.System.
 func (f *Fake) System() sys.System {
-	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f}
+	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f}
+}
+
+// --- sys.Audit ---
+
+// Events streams what EmitAudit sends, until ctx is done.
+func (f *Fake) Events(ctx context.Context) (<-chan sambalog.Event, error) {
+	ch := make(chan sambalog.Event, 10000)
+	f.mu.Lock()
+	if f.listeners == nil {
+		f.listeners = map[chan sambalog.Event]bool{}
+	}
+	f.listeners[ch] = true
+	f.mu.Unlock()
+	go func() {
+		<-ctx.Done()
+		f.mu.Lock()
+		delete(f.listeners, ch)
+		close(ch)
+		f.mu.Unlock()
+	}()
+	return ch, nil
+}
+
+// EmitAudit sends an event to every open Events stream, as Samba's logs
+// would (a full stream drops it, like the real reader).
+func (f *Fake) EmitAudit(ev sambalog.Event) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for ch := range f.listeners {
+		select {
+		case ch <- ev:
+		default:
+		}
+	}
+}
+
+// AuditListeners says how many Events streams are open (tests wait for one).
+func (f *Fake) AuditListeners() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.listeners)
 }
 
 // FailNext makes the next call of op fail with err. Operations:
@@ -216,6 +265,9 @@ func (f *Fake) ApplyConfig(_ context.Context, cfg sys.SambaConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	shares := cfg.Shares
+	if cfg.Audit && f.NoAuditModule {
+		return fmt.Errorf("%w: full_audit (on Debian and Ubuntu: apt install samba-vfs-modules)", sys.ErrModuleMissing)
+	}
 	// Same rules and same renderer as the real system.
 	config, err := sys.RenderConfig(cfg)
 	if err != nil {
@@ -279,6 +331,24 @@ func (f *Fake) Fixed() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.fixed...)
+}
+
+// DisconnectClient records the address (Disconnected lists them).
+func (f *Fake) DisconnectClient(_ context.Context, ip netip.Addr) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !ip.IsValid() || ip.IsUnspecified() {
+		return fmt.Errorf("%w: client address", sys.ErrInvalid)
+	}
+	f.disconnected = append(f.disconnected, ip.Unmap())
+	return nil
+}
+
+// Disconnected lists the clients DisconnectClient dropped, in order.
+func (f *Fake) Disconnected() []netip.Addr {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]netip.Addr(nil), f.disconnected...)
 }
 
 // --- sys.Workers ---

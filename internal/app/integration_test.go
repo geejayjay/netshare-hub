@@ -669,3 +669,199 @@ func TestSambaSettingsOverRealSamba(t *testing.T) {
 		t.Errorf("a refused setting changed the running config:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
+
+// Step 2.2a against real Samba: turn the activity log on, use the share
+// over SMB, and read what happened in the feed.
+func TestActivityOverRealSamba(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	if m, _ := filepath.Glob("/usr/lib/*/samba/vfs/full_audit.so"); len(m) == 0 {
+		t.Skip("needs samba-vfs-modules")
+	}
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.SecureCookies = false
+	system, err := sysexec.New(sysexec.Options{Protected: cfg.ProtectedDirs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := app.New(context.Background(), cfg, app.Options{System: &system})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler)
+	admin := newClient(t, server.URL+app.APIPrefix)
+	var s session
+	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
+	admin.csrf = s.CSRFToken
+
+	user := fmt.Sprintf("ac%d", os.Getpid()%10000)
+	uid := createUser(t, admin, user).ID
+	dir := fmt.Sprintf("/srv/shares/activity-%d", os.Getpid())
+	name := "act" + fmt.Sprint(os.Getpid()%10000)
+	var sh shareBody
+	if status, body := admin.do("POST", "/shares", map[string]any{"name": name, "path": dir, "createDirectory": true,
+		"access": []map[string]any{{"userId": uid, "level": "write"}}}, &sh); status != 201 {
+		t.Fatalf("create share: %d %v", status, body)
+	}
+	t.Cleanup(func() {
+		admin.do("PUT", "/settings/samba", map[string]any{"serverName": "", "workgroup": "", "minProtocol": "default",
+			"maxProtocol": "default", "encryption": "default", "multichannel": "default", "activityLog": false}, nil)
+		admin.do("DELETE", "/shares/"+itoa(sh.ID), nil, nil)
+		admin.do("DELETE", "/users/"+itoa(uid), nil, nil)
+		server.Close()
+		application.Close()
+		os.RemoveAll(dir)
+	})
+	if status, _ := admin.do("PUT", "/settings/samba", map[string]any{"serverName": "", "workgroup": "", "minProtocol": "default",
+		"maxProtocol": "default", "encryption": "default", "multichannel": "default", "activityLog": true}, nil); status != 200 {
+		t.Fatalf("turn the activity log on: %d", status)
+	}
+
+	local := filepath.Join(t.TempDir(), "report.txt")
+	os.WriteFile(local, []byte("q3"), 0o644)
+	exec.Command("smbclient", "//127.0.0.1/"+name, "-U", user+"%"+pw, "-c",
+		`mkdir Reports; put `+local+` Reports/report.txt; rename Reports/report.txt Reports/final.txt; del Reports/final.txt`).Run()
+	exec.Command("smbclient", "//127.0.0.1/"+name, "-U", user+"%not-the-password", "-c", "ls").Run()
+
+	type entry struct{ User, Share, Op, Path, Path2 string }
+	want := map[string]bool{"create_folder Reports": false, "write Reports/report.txt": false,
+		"rename Reports/report.txt": false, "delete Reports/final.txt": false, "login_failed": false, "connect": false}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		var page struct{ Items []entry }
+		admin.do("GET", "/activity?user="+user+"&limit=500", nil, &page)
+		for _, e := range page.Items {
+			switch {
+			case e.Op == "login_failed" || e.Op == "connect":
+				want[e.Op] = true
+			case e.Share == name:
+				want[e.Op+" "+e.Path] = true
+			}
+		}
+		done := true
+		for _, ok := range want {
+			done = done && ok
+		}
+		if done {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Errorf("not in the activity log: %v", want)
+}
+
+// Step 2.3 against real Samba: normal work does not trigger the guard; a
+// simulated ransomware run does, and in protect mode the user is blocked
+// over real SMB until an admin restores access.
+func TestGuardOverRealSamba(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	if m, _ := filepath.Glob("/usr/lib/*/samba/vfs/full_audit.so"); len(m) == 0 {
+		t.Skip("needs samba-vfs-modules")
+	}
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.SecureCookies = false
+	system, err := sysexec.New(sysexec.Options{Protected: cfg.ProtectedDirs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := app.New(context.Background(), cfg, app.Options{System: &system})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler)
+	admin := newClient(t, server.URL+app.APIPrefix)
+	var s session
+	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
+	admin.csrf = s.CSRFToken
+
+	user := fmt.Sprintf("gd%d", os.Getpid()%10000)
+	uid := createUser(t, admin, user).ID
+	dir := fmt.Sprintf("/srv/shares/guard-%d", os.Getpid())
+	name := "gd" + fmt.Sprint(os.Getpid()%10000)
+	var sh shareBody
+	if status, _ := admin.do("POST", "/shares", map[string]any{"name": name, "path": dir, "createDirectory": true,
+		"access": []map[string]any{{"userId": uid, "level": "write"}}}, &sh); status != 201 {
+		t.Fatalf("create share: %d", status)
+	}
+	settings := map[string]any{"serverName": "", "workgroup": "", "minProtocol": "default", "maxProtocol": "default",
+		"encryption": "default", "multichannel": "default", "activityLog": true}
+	t.Cleanup(func() {
+		settings["activityLog"] = false
+		admin.do("PUT", "/settings/samba", settings, nil)
+		admin.do("DELETE", "/shares/"+itoa(sh.ID), nil, nil)
+		admin.do("DELETE", "/users/"+itoa(uid), nil, nil)
+		server.Close()
+		application.Close()
+		os.RemoveAll(dir)
+	})
+	if status, _ := admin.do("PUT", "/settings/samba", settings, nil); status != 200 {
+		t.Fatalf("activity log on: %d", status)
+	}
+	if status, _ := admin.do("PUT", "/guard/settings", map[string]any{"mode": "protect", "renames": 20, "noteFolders": 3}, nil); status != 200 {
+		t.Fatalf("protect mode: %d", status)
+	}
+	smbRun := func(commands string) string {
+		out, _ := exec.Command("smbclient", "//127.0.0.1/"+name, "-U", user+"%"+pw, "-c", commands).CombinedOutput()
+		return string(out)
+	}
+	incidents := func() []incidentBody {
+		var list struct{ Items []incidentBody }
+		admin.do("GET", "/guard/incidents", nil, &list)
+		return list.Items
+	}
+
+	// Normal work: 150 documents uploaded, then moved into another folder.
+	local := t.TempDir()
+	var put, move strings.Builder
+	put.WriteString("mkdir Inbox; mkdir Archive; ")
+	for i := 0; i < 150; i++ {
+		f := filepath.Join(local, fmt.Sprintf("doc%03d.docx", i))
+		os.WriteFile(f, []byte("report"), 0o644)
+		fmt.Fprintf(&put, "put %s Inbox/doc%03d.docx; ", f, i)
+		fmt.Fprintf(&move, "rename Inbox/doc%03d.docx Archive/doc%03d.docx; ", i, i)
+	}
+	smbRun(put.String())
+	smbRun(move.String())
+	time.Sleep(3 * time.Second) // the activity has been read by now
+	if got := incidents(); len(got) != 0 {
+		t.Fatalf("normal work triggered the guard: %+v", got)
+	}
+
+	// Ransomware: the same documents renamed to .locked, quickly.
+	var encrypt strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&encrypt, "rename Archive/doc%03d.docx Archive/doc%03d.docx.locked; ", i, i)
+	}
+	smbRun(encrypt.String())
+	var inc []incidentBody
+	for i := 0; i < 100 && len(inc) == 0; i++ {
+		time.Sleep(100 * time.Millisecond)
+		inc = incidents()
+	}
+	if len(inc) != 1 || !inc[0].Blocked || inc[0].Username != user {
+		t.Fatalf("incident: %+v", inc)
+	}
+	// The user can no longer write over SMB, but can still read.
+	time.Sleep(500 * time.Millisecond)
+	note := filepath.Join(local, "note.txt")
+	os.WriteFile(note, []byte("x"), 0o644)
+	if out := smbRun("put " + note + " blocked.txt"); !strings.Contains(out, "NT_STATUS_") {
+		t.Errorf("a blocked user could still write:\n%s", out)
+	}
+	if out := smbRun("ls Archive/doc100.docx"); !strings.Contains(out, "doc100.docx") {
+		t.Errorf("a blocked user should still read:\n%s", out)
+	}
+
+	// An admin restores access: writing works again.
+	if status, _ := admin.do("POST", "/guard/incidents/"+itoa(inc[0].ID)+"/restore", nil, nil); status != 200 {
+		t.Fatalf("restore: %d", status)
+	}
+	if out := smbRun("put " + note + " restored.txt"); strings.Contains(out, "NT_STATUS_") {
+		t.Errorf("writing after restore failed:\n%s", out)
+	}
+}

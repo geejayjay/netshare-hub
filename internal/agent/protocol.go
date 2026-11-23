@@ -33,11 +33,19 @@ const (
 	opDeleteUser     = "accounts.delete"
 	opApplyConfig    = "samba.apply-config"
 	opFixPermissions = "samba.fix-permissions"
-	opResolveDir     = "files.resolve-dir"
-	opCreateShareDir = "files.create-share-dir"
-	opWorker         = "files.worker"
-	pathPrefix       = "/v1/"
-	maxRequestBytes  = 8 << 20
+	// opAuditEvents streams the events read from Samba's logs (newline-
+	// separated JSON) for as long as the caller stays connected. It only
+	// reads; it is how the unprivileged web server gets the activity log
+	// without being able to read Samba's log files.
+	opAuditEvents = "samba.audit-events"
+	// opDisconnectClient drops every SMB connection from one address (the
+	// ransomware guard). It takes only a validated IP address.
+	opDisconnectClient = "samba.disconnect-client"
+	opResolveDir       = "files.resolve-dir"
+	opCreateShareDir   = "files.create-share-dir"
+	opWorker           = "files.worker"
+	pathPrefix         = "/v1/"
+	maxRequestBytes    = 8 << 20
 )
 
 // Request and response bodies. Each operation has its own type and unknown
@@ -65,12 +73,17 @@ type deleteUserRequest struct {
 type applyConfigRequest struct {
 	Server sys.ServerSettings `json:"server"`
 	Shares []sys.ShareSpec    `json:"shares"`
+	Audit  bool               `json:"audit,omitempty"`
 }
 
 // fixPermissionsRequest names a share; the agent reads its folder and access
 // from the applied config, never from the request.
 type fixPermissionsRequest struct {
 	Share string `json:"share"`
+}
+
+type disconnectRequest struct {
+	IP string `json:"ip"`
 }
 
 type workerRequest struct {
@@ -114,6 +127,7 @@ const (
 	codeReloadFailed   = "reload_failed"
 	codeACLUnsupported = "acl_unsupported"
 	codeACLFailed      = "acl_failed"
+	codeModuleMissing  = "module_missing"
 	codeForbidden      = "forbidden"
 	codeBadRequest     = "bad_request"
 	codeInternal       = "internal"
@@ -132,6 +146,8 @@ func encodeError(err error) (status int, res errorResponse) {
 			code, status = codeACLUnsupported, http.StatusUnprocessableEntity
 		}
 		return status, errorResponse{Code: code, Message: aclErr.Err.Error(), Share: aclErr.Share, Path: aclErr.Path}
+	case errors.Is(err, sys.ErrModuleMissing):
+		return http.StatusUnprocessableEntity, errorResponse{Code: codeModuleMissing, Message: err.Error()}
 	case errors.Is(err, sys.ErrInvalid):
 		return http.StatusUnprocessableEntity, errorResponse{Code: codeInvalid, Message: err.Error()}
 	case errors.Is(err, sys.ErrNameTaken):
@@ -165,6 +181,8 @@ func decodeError(res errorResponse) error {
 		return &sys.ACLError{Share: res.Share, Path: res.Path, Err: wrap(sys.ErrACLUnsupported)}
 	case codeACLFailed:
 		return &sys.ACLError{Share: res.Share, Path: res.Path, Err: &remoteError{message: res.Message}}
+	case codeModuleMissing:
+		return wrap(sys.ErrModuleMissing)
 	case codeInvalid:
 		return wrap(sys.ErrInvalid)
 	case codeNameTaken:

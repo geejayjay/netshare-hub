@@ -125,7 +125,7 @@ func RenderConfig(cfg SambaConfig) (string, error) {
 
 	var b strings.Builder
 	b.WriteString(ConfigHeader)
-	renderServer(&b, cfg.Server)
+	renderServer(&b, cfg.Server, cfg.Audit)
 
 	for _, s := range shares {
 		if err := s.Check(); err != nil {
@@ -184,6 +184,9 @@ func RenderConfig(cfg SambaConfig) (string, error) {
 		// not stop a folder from being deleted.
 		param(&b, "veto files", "/"+UploadTempPattern+"/")
 		param(&b, "delete veto files", "yes")
+		if cfg.Audit {
+			renderAudit(&b)
+		}
 	}
 	return b.String(), nil
 }

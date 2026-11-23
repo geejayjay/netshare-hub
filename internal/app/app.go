@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -18,9 +19,12 @@ import (
 	"netshare-hub/internal/agent"
 	"netshare-hub/internal/db/migrations"
 	"netshare-hub/internal/fileworker"
+	"netshare-hub/internal/modules/activity"
+	activitymigrations "netshare-hub/internal/modules/activity/migrations"
 	"netshare-hub/internal/modules/alerts"
 	"netshare-hub/internal/modules/auth"
 	"netshare-hub/internal/modules/files"
+	"netshare-hub/internal/modules/guard"
 	"netshare-hub/internal/modules/jobs"
 	"netshare-hub/internal/modules/scheduler"
 	"netshare-hub/internal/modules/shares"
@@ -31,6 +35,7 @@ import (
 	"netshare-hub/internal/platform/httpx"
 	"netshare-hub/internal/platform/sse"
 	"netshare-hub/internal/sys"
+	"netshare-hub/internal/sys/sambalog"
 	"netshare-hub/internal/sys/sysexec"
 	"netshare-hub/internal/sys/sysfake"
 )
@@ -51,10 +56,15 @@ type App struct {
 	Files *fileworker.Client
 	// Jobs runs long work in the background (step 1.3).
 	Jobs *jobs.Service
-	db   *db.DB
-	// stop ends the scheduled tasks and waits for them.
-	stop  func()
-	files *files.Service
+	// SMBEvents is the one fan-out of what happens over SMB (from Samba's
+	// audit log). The activity log subscribes; so will the ransomware guard
+	// and brute-force protection.
+	SMBEvents *sambalog.Ingester
+	db        *db.DB
+	// stop ends the scheduled tasks and background loops and waits for them.
+	stop       func()
+	files      *files.Service
+	activityDB *db.DB
 }
 
 // Options are the parts of the application a caller may supply.
@@ -72,6 +82,8 @@ type Options struct {
 	JobOptions jobs.Options
 	// UploadExpiry overrides how long an idle upload is kept (tests).
 	UploadExpiry time.Duration
+	// Activity tunes the activity log (tests use short batches).
+	Activity activity.Options
 }
 
 // New builds the application.
@@ -103,6 +115,37 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	jobService.Register(shares.JobFixPermissions, shareService.RunFixPermissions)
 	alertService := alerts.NewService(alerts.NewRepo(database), sseHub)
 	shareService.SetAlerts(alertService)
+
+	// The activity log has its own database file: heavy SMB activity never
+	// touches the main one.
+	activityDB, err := db.Open(filepath.Join(cfg.DataDir, "activity.db"))
+	if err != nil {
+		database.Close()
+		return nil, err
+	}
+	if err := activityDB.Migrate(ctx, activitymigrations.FS, filepath.Join(cfg.DataDir, "backups", "activity")); err != nil {
+		activityDB.Close()
+		database.Close()
+		return nil, err
+	}
+	activityOpts := opts.Activity
+	if activityOpts.Retention == 0 {
+		activityOpts.Retention = time.Duration(cfg.ActivityRetentionDays) * 24 * time.Hour
+	}
+	activityService := activity.NewService(activityDB, shareService, activityOpts)
+	smbEvents := sambalog.New()
+	activityEvents := smbEvents.Subscribe("activity", 50000)
+
+	// The ransomware guard watches the same events, and tells shares which
+	// users may only read.
+	guardService := guard.NewService(database, userService, shareService, osLayer.Samba, alertService)
+	if err := guardService.Start(ctx); err != nil {
+		activityDB.Close()
+		database.Close()
+		return nil, err
+	}
+	shareService.SetBlocks(guardService)
+	guardEvents := smbEvents.Subscribe("guard", 50000)
 	for kind, h := range opts.JobKinds {
 		jobService.Register(kind, h)
 	}
@@ -120,6 +163,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	}})
 	tasks.Add(scheduler.Task{Name: "jobs.cleanup", Every: time.Hour, Run: jobService.Cleanup})
 	tasks.Add(scheduler.Task{Name: "alerts.cleanup", Daily: 3*time.Hour + 30*time.Minute, Run: alertService.Prune})
+	tasks.Add(scheduler.Task{Name: "activity.cleanup", Daily: 4 * time.Hour, Run: activityService.Prune})
 
 	router := chi.NewRouter()
 	router.Use(httpx.RequestID, httpx.RealIP, httpx.AccessLog, httpx.Recover, httpx.SecurityHeaders)
@@ -143,6 +187,8 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		files.Register(api, fileService)
 		files.RegisterUploads(r, fileService)
 		alerts.Register(api, alertService)
+		activity.Register(api, activityService)
+		guard.Register(api, guardService)
 		scheduler.Register(api, tasks)
 	})
 
@@ -157,10 +203,21 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	}
 
 	tasks.Start()
-	stop := tasks.Stop
+	background, cancel := context.WithCancel(context.Background())
+	var loops sync.WaitGroup
+	loops.Add(3)
+	go func() { defer loops.Done(); activityService.Record(background, activityEvents) }()
+	go func() { defer loops.Done(); guardService.Run(background, guardEvents) }()
+	go func() { defer loops.Done(); feedSMBEvents(background, osLayer.Audit, smbEvents) }()
+	stop := func() {
+		tasks.Stop()
+		cancel()
+		loops.Wait()
+	}
 
 	slog.Info("application ready", "version", Version, "data_dir", cfg.DataDir)
-	return &App{Handler: router, API: api, Events: sseHub, Files: fileClient, Jobs: jobService, db: database, stop: stop, files: fileService}, nil
+	return &App{Handler: router, API: api, Events: sseHub, Files: fileClient, Jobs: jobService, db: database, stop: stop, files: fileService,
+		SMBEvents: smbEvents, activityDB: activityDB}, nil
 }
 
 // chooseSystem returns how this process reaches the operating system.
@@ -185,6 +242,33 @@ func chooseSystem(ctx context.Context, cfg config.Config, override *sys.System) 
 	}
 }
 
+// feedSMBEvents passes what the audit source reports (the agent's stream,
+// in production) to the fan-out, and reconnects when the source ends: the
+// agent restarted, or is not up yet. It waits longer after each failure.
+func feedSMBEvents(ctx context.Context, source sys.Audit, out *sambalog.Ingester) {
+	if source == nil {
+		return
+	}
+	wait := time.Second
+	for ctx.Err() == nil {
+		events, err := source.Events(ctx)
+		if err == nil {
+			wait = time.Second
+			for ev := range events {
+				out.Emit(ev)
+			}
+		} else {
+			slog.WarnContext(ctx, "cannot read the SMB activity yet; trying again", "err", err, "in", wait.String())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, time.Minute)
+	}
+}
+
 // SweepUploads throws away abandoned uploads now (it also runs every hour).
 func (a *App) SweepUploads(ctx context.Context) { a.files.SweepUploads(ctx) }
 
@@ -195,6 +279,7 @@ func (a *App) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	a.Jobs.Stop(ctx)
+	a.activityDB.Close()
 	return a.db.Close()
 }
 

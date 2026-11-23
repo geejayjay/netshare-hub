@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,9 +9,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
+	"strings"
 	"time"
 
 	"netshare-hub/internal/sys"
+	"netshare-hub/internal/sys/sambalog"
 )
 
 // Client is the web server's side of the agent. It implements the sys
@@ -45,7 +49,7 @@ func NewClient(hc *http.Client, base string) *Client {
 
 // System returns the client as a sys.System.
 func (c *Client) System() sys.System {
-	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c}
+	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c, Audit: c}
 }
 
 // Ping checks that the agent is reachable and accepts this process.
@@ -119,7 +123,7 @@ func (c *Client) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
 	if cfg.Shares == nil {
 		cfg.Shares = []sys.ShareSpec{}
 	}
-	return c.call(ctx, opApplyConfig, applyConfigRequest{Server: cfg.Server, Shares: cfg.Shares}, nil)
+	return c.call(ctx, opApplyConfig, applyConfigRequest{Server: cfg.Server, Shares: cfg.Shares, Audit: cfg.Audit}, nil)
 }
 
 // FixPermissions can run for hours on a big share, so it is not bound by
@@ -129,6 +133,56 @@ func (c *Client) FixPermissions(ctx context.Context, share string) (sys.Permissi
 	var res sys.PermissionStats
 	err := c.callWith(c.long, ctx, opFixPermissions, fixPermissionsRequest{Share: share}, &res)
 	return res, err
+}
+
+// DisconnectClient drops every SMB connection from one address.
+func (c *Client) DisconnectClient(ctx context.Context, ip netip.Addr) error {
+	return c.call(ctx, opDisconnectClient, disconnectRequest{IP: ip.String()}, nil)
+}
+
+// --- sys.Audit ---
+
+// Events streams Samba's audit events from the agent. The channel closes
+// when ctx is done or the connection breaks (the agent restarted); the
+// caller asks again.
+func (c *Client) Events(ctx context.Context) (<-chan sambalog.Event, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+pathPrefix+opAuditEvents, strings.NewReader("{}"))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.long.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("agent unreachable: %w", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		defer res.Body.Close()
+		var failure errorResponse
+		raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+		if err := json.Unmarshal(raw, &failure); err != nil || failure.Code == "" {
+			return nil, fmt.Errorf("agent: unexpected response (status %d)", res.StatusCode)
+		}
+		return nil, decodeError(failure)
+	}
+	out := make(chan sambalog.Event, 1000)
+	go func() {
+		defer close(out)
+		defer res.Body.Close()
+		sc := bufio.NewScanner(res.Body)
+		sc.Buffer(make([]byte, 64<<10), 1<<20)
+		for sc.Scan() {
+			var ev sambalog.Event
+			if json.Unmarshal(sc.Bytes(), &ev) != nil {
+				continue
+			}
+			select {
+			case out <- ev:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
 }
 
 // --- sys.Workers ---

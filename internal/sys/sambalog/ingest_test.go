@@ -1,7 +1,8 @@
-package logingest
+package sambalog
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,5 +147,41 @@ func TestTailWaitsForAMissingFile(t *testing.T) {
 	}
 	if len(out) != 1 {
 		t.Errorf("a file created later is read from its start: %d events", len(out))
+	}
+}
+
+func TestTailDirFollowsNewFilesAndCaps(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "log.old-client"), []byte(fileLine), 0o644) // there at start: from its end
+	os.WriteFile(filepath.Join(dir, "log.x.old"), []byte(fileLine), 0o644)      // a rotated copy: ignored
+
+	in := New()
+	out := in.Subscribe("test", 10000)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go in.TailDir(ctx, filepath.Join(dir, "log.*"), 10*time.Millisecond)
+	time.Sleep(80 * time.Millisecond)
+
+	// A new client's log appears: its first lines are not lost.
+	os.WriteFile(filepath.Join(dir, "log.new-client"), []byte(fileLine+fileLine), 0o644)
+	deadline := time.Now().Add(3 * time.Second)
+	for len(out) < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(out) != 2 {
+		t.Fatalf("new file: %d events, want 2", len(out))
+	}
+	for len(out) > 0 {
+		<-out
+	}
+
+	// Clients choose their names, so a flood of log files is capped.
+	for i := 0; i < MaxFiles+50; i++ {
+		os.WriteFile(filepath.Join(dir, fmt.Sprintf("log.client%04d", i)), []byte(fileLine), 0o644)
+	}
+	time.Sleep(500 * time.Millisecond)
+	cancel()
+	if n := len(out); n > MaxFiles || n < MaxFiles-10 {
+		t.Errorf("followed %d new files, want at most %d", n, MaxFiles)
 	}
 }

@@ -121,6 +121,37 @@ func TestAgentEndToEnd(t *testing.T) {
 	}
 	remote := client.System()
 
+	// --- the activity stream (2.2a): only for the web server, and it
+	// outlives the agent's 30-second read timeout ---
+	if got := curlAs(t, otherUser, socket, "samba.audit-events"); got != "403" {
+		t.Errorf("another user got the activity stream: status %s", got)
+	}
+	streamCtx, endStream := context.WithCancel(ctx)
+	defer endStream()
+	events, err := remote.Audit.Events(streamCtx)
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	time.Sleep(35 * time.Second)
+	logFile := fmt.Sprintf("/var/log/samba/log.nsh-stream-%d", os.Getpid())
+	t.Cleanup(func() { os.Remove(logFile) })
+	line := "  nshaudit|nsh-stream|192.168.1.77|media|PC|mkdirat|ok|/srv/media/after-35s\n"
+	if err := os.WriteFile(logFile, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev, ok := <-events:
+		if !ok {
+			t.Fatal("the activity stream ended before 35 seconds")
+		}
+		if ev.User != "nsh-stream" || ev.Path != "/srv/media/after-35s" {
+			t.Errorf("event over the stream: %+v", ev)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no event over the activity stream after 35 seconds")
+	}
+	endStream()
+
 	for _, u := range []string{rwUser, roUser, outsider} {
 		if err := remote.Accounts.CreateUser(ctx, u, password); err != nil {
 			t.Fatalf("CreateUser(%s): %v", u, err)

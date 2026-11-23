@@ -53,5 +53,6 @@ func New(opts Options) (sys.System, error) {
 		Samba:    samba,
 		Files:    NewFiles(runner, opts.Protected...),
 		Workers:  workers,
+		Audit:    NewAuditLog(runner, DefaultMainConfig),
 	}, nil
 }

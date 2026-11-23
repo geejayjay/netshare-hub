@@ -139,7 +139,8 @@ func configured(given Level, r Rules) (Level, string) {
 }
 
 // effective adds what the user's account allows on top of the share rules.
-func effective(a AccessInput, u users.User, r Rules) Effective {
+// blocked means the ransomware guard stopped the user writing.
+func effective(a AccessInput, u users.User, r Rules, blocked bool) Effective {
 	e := Effective{UserID: a.UserID, Username: u.Username, Given: a.Level}
 	switch {
 	case !u.SMBAccess:
@@ -148,12 +149,27 @@ func effective(a AccessInput, u users.User, r Rules) Effective {
 		e.Level, e.Reason = LevelNone, "No access while the account is disabled."
 	default:
 		e.Level, e.Reason = configured(a.Level, r)
+		if blocked {
+			e.Level, e.Reason = guardCap(e.Level, e.Reason)
+		}
 	}
 	return e
 }
 
+// guardCap is what a level becomes while the ransomware guard blocks the
+// user: they can still read, but change nothing.
+func guardCap(level Level, reason string) (Level, string) {
+	switch level {
+	case LevelWrite:
+		return LevelRead, "Read only: the ransomware guard stopped this user writing. An admin can restore access under Security."
+	case LevelUpload:
+		return LevelNone, "No access: the ransomware guard stopped this user writing. An admin can restore access under Security."
+	}
+	return level, reason
+}
+
 // preview computes the effective access of a whole share.
-func preview(access []AccessInput, byID map[int64]users.User, r Rules) EffectiveAccess {
+func preview(access []AccessInput, byID map[int64]users.User, r Rules, blocked map[int64]bool) EffectiveAccess {
 	out := EffectiveAccess{Users: []Effective{}, Guests: LevelNone, Others: LevelNone,
 		Note: "Nobody else can connect."}
 	if r.GuestAccess {
@@ -162,7 +178,7 @@ func preview(access []AccessInput, byID map[int64]users.User, r Rules) Effective
 	}
 	for _, a := range access {
 		if u, ok := byID[a.UserID]; ok {
-			out.Users = append(out.Users, effective(a, u, r))
+			out.Users = append(out.Users, effective(a, u, r, blocked[a.UserID]))
 		}
 	}
 	return out
@@ -170,8 +186,9 @@ func preview(access []AccessInput, byID map[int64]users.User, r Rules) Effective
 
 // spec turns a share into what the system layer applies. Disabled users
 // stay in it (Samba and the file workers refuse them anyway), so turning an
-// account back on does not need the share to be rewritten.
-func spec(sh Share, byID map[int64]users.User) sys.ShareSpec {
+// account back on does not need the share to be rewritten. Users the
+// ransomware guard blocked (blocked, may be nil) can only read.
+func spec(sh Share, byID map[int64]users.User, blocked map[int64]bool) sys.ShareSpec {
 	r := Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess}
 	s := sys.ShareSpec{Name: sh.Name, Path: sh.Path, Comment: sh.Comment, Guest: r.GuestAccess, HideUnreadable: sh.HideUnreadable}
 	s.Allow, s.Block = splitRules(sh.NetworkRules)
@@ -180,7 +197,10 @@ func spec(sh Share, byID map[int64]users.User) sys.ShareSpec {
 		if !ok || !u.SMBAccess {
 			continue // no Samba account to give access to
 		}
-		level, _ := configured(a.Level, r)
+		level, reason := configured(a.Level, r)
+		if blocked[a.UserID] {
+			level, _ = guardCap(level, reason)
+		}
 		switch level {
 		case LevelWrite:
 			s.Readers = append(s.Readers, u.Username)

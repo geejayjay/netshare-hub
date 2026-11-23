@@ -22,3 +22,6 @@ agent_user = "netshare"                         # NSH_AGENT_USER  the user the w
 # The largest file the web file manager accepts in one upload, in bytes.
 # 0 = no limit (the disk is the limit).
 max_upload_bytes = 0
+
+# How long the SMB activity log is kept, in days.
+activity_retention_days = 90

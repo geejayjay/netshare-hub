@@ -68,6 +68,12 @@ func (s *Service) GetMany(ctx context.Context, ids []int64) (map[int64]User, err
 	return s.repo.GetMany(ctx, ids)
 }
 
+// GetByUsername finds a user by name; ok is false when there is none.
+func (s *Service) GetByUsername(ctx context.Context, username string) (User, bool, error) {
+	u, _, ok, err := s.repo.GetByUsername(ctx, username)
+	return u, ok, err
+}
+
 func (s *Service) Count(ctx context.Context) (int, error) {
 	return s.repo.Count(ctx)
 }

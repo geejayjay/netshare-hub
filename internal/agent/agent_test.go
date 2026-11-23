@@ -9,11 +9,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"netshare-hub/internal/agent"
 	"netshare-hub/internal/sys"
+	"netshare-hub/internal/sys/sambalog"
 	"netshare-hub/internal/sys/sysfake"
 )
 
@@ -241,5 +244,72 @@ func TestAuditLogHasNoSecrets(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("audit log is missing %s:\n%s", want, out)
 		}
+	}
+}
+
+// The activity log's events stream from the agent to the web server, for as
+// long as it stays connected; nobody else gets them.
+func TestAuditEventStream(t *testing.T) {
+	client, fake, _ := start(t, true)
+	streamCtx, cancel := context.WithCancel(ctx)
+	events, err := client.System().Audit.Events(streamCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50 && fake.AuditListeners() == 0; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	ip := netip.MustParseAddr("192.168.1.20")
+	fake.EmitAudit(sambalog.Event{Kind: sambalog.KindFile, User: "jay", ClientIP: ip, Share: "media",
+		Op: "renameat", OK: true, Path: "/srv/media/a", Path2: "/srv/media/b"})
+	select {
+	case ev := <-events:
+		if ev.User != "jay" || ev.Op != "renameat" || ev.Path2 != "/srv/media/b" || ev.ClientIP != ip {
+			t.Errorf("event over the stream: %+v", ev)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no event over the stream")
+	}
+
+	// Hanging up ends the stream on both sides.
+	cancel()
+	for i := 0; i < 100 && fake.AuditListeners() != 0; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := fake.AuditListeners(); n != 0 {
+		t.Errorf("the agent kept %d streams after the caller left", n)
+	}
+
+	// A caller the agent does not accept gets nothing.
+	refused, _, _ := start(t, false)
+	if _, err := refused.System().Audit.Events(ctx); err == nil {
+		t.Error("a refused caller got the event stream")
+	}
+}
+
+// Everything in a Samba config must survive the trip to the agent: a field
+// the request drops would be silently ignored (the activity log's switch
+// once was). The agent's result must be exactly what rendering locally gives.
+func TestApplyConfigKeepsEveryField(t *testing.T) {
+	client, fake, _ := start(t, true)
+	if err := client.System().Accounts.CreateUser(ctx, "jay", "pass-word-1"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := sys.SambaConfig{
+		Server: sys.ServerSettings{NetbiosName: "NAS", Workgroup: "HOME", MinProtocol: "SMB3_00", MaxProtocol: "SMB3_11",
+			Encryption: "desired", Multichannel: "yes"},
+		Shares: []sys.ShareSpec{{Name: "media", Path: "/srv/media", Comment: "Films", Readers: []string{"jay"},
+			Writers: []string{"jay"}, Guest: true, HideUnreadable: true, Allow: []string{"192.168.1.0/24"}, Block: []string{"192.168.1.66"}}},
+		Audit: true,
+	}
+	if err := client.System().Samba.ApplyConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	local, err := sys.RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.Config != local {
+		t.Errorf("the agent applied a different config.\nagent:\n%s\nlocal:\n%s", fake.Config, local)
 	}
 }

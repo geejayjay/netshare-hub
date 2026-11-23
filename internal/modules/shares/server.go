@@ -29,6 +29,7 @@ type ServerSettings struct {
 	MaxProtocol  string    `json:"maxProtocol" enum:"default,SMB2_02,SMB2_10,SMB3_00,SMB3_02,SMB3_11" doc:"The newest SMB version clients may use."`
 	Encryption   string    `json:"encryption" enum:"default,off,if-supported,required" doc:"\"if-supported\" encrypts when the client can; \"required\" refuses clients that cannot (needs minProtocol SMB3_00 or newer)."`
 	Multichannel string    `json:"multichannel" enum:"default,on,off" doc:"Several network links per client, for speed."`
+	ActivityLog  bool      `json:"activityLog" required:"false" doc:"Record who did what over SMB (the activity log). Needs Samba's full_audit module (Debian, Ubuntu: samba-vfs-modules)."`
 	UpdatedAt    time.Time `json:"updatedAt,omitzero"`
 }
 
@@ -58,7 +59,7 @@ func (s ServerSettings) toSys() sys.ServerSettings {
 	return out
 }
 
-func fromSys(s sys.ServerSettings, updated time.Time) ServerSettings {
+func fromSys(s sys.ServerSettings, activity bool, updated time.Time) ServerSettings {
 	def := func(v string) string {
 		if v == "" {
 			return "default"
@@ -69,6 +70,7 @@ func fromSys(s sys.ServerSettings, updated time.Time) ServerSettings {
 		ServerName: s.NetbiosName, Workgroup: s.Workgroup,
 		MinProtocol: def(s.MinProtocol), MaxProtocol: def(s.MaxProtocol),
 		Encryption: def(s.Encryption), Multichannel: def(s.Multichannel),
+		ActivityLog: activity,
 	}
 	if out.Encryption == "desired" {
 		out.Encryption = "if-supported"
@@ -87,26 +89,30 @@ func fromSys(s sys.ServerSettings, updated time.Time) ServerSettings {
 
 // --- storage ---
 
-func (r *Repo) serverSettings(ctx context.Context, q querier) (sys.ServerSettings, time.Time, error) {
+// serverSettings returns the server-wide settings and whether the activity
+// log is on.
+func (r *Repo) serverSettings(ctx context.Context, q querier) (sys.ServerSettings, bool, time.Time, error) {
 	var s sys.ServerSettings
+	var activity bool
 	var updated int64
-	err := q.QueryRowContext(ctx, `SELECT netbios_name, workgroup, min_protocol, max_protocol, encryption, multichannel, updated_at
-		FROM samba_server_settings WHERE id = 1`).
-		Scan(&s.NetbiosName, &s.Workgroup, &s.MinProtocol, &s.MaxProtocol, &s.Encryption, &s.Multichannel, &updated)
+	err := q.QueryRowContext(ctx, `SELECT netbios_name, workgroup, min_protocol, max_protocol, encryption, multichannel,
+		activity_log, updated_at FROM samba_server_settings WHERE id = 1`).
+		Scan(&s.NetbiosName, &s.Workgroup, &s.MinProtocol, &s.MaxProtocol, &s.Encryption, &s.Multichannel, &activity, &updated)
 	if err == sql.ErrNoRows {
-		return sys.ServerSettings{}, time.Time{}, nil
+		return sys.ServerSettings{}, false, time.Time{}, nil
 	}
-	return s, time.Unix(updated, 0).UTC(), err
+	return s, activity, time.Unix(updated, 0).UTC(), err
 }
 
-func (r *Repo) saveServerSettings(ctx context.Context, q querier, s sys.ServerSettings, now time.Time) error {
+func (r *Repo) saveServerSettings(ctx context.Context, q querier, s sys.ServerSettings, activity bool, now time.Time) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO samba_server_settings
-		(id, netbios_name, workgroup, min_protocol, max_protocol, encryption, multichannel, updated_at)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+		(id, netbios_name, workgroup, min_protocol, max_protocol, encryption, multichannel, activity_log, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET netbios_name = excluded.netbios_name, workgroup = excluded.workgroup,
 			min_protocol = excluded.min_protocol, max_protocol = excluded.max_protocol,
-			encryption = excluded.encryption, multichannel = excluded.multichannel, updated_at = excluded.updated_at`,
-		s.NetbiosName, s.Workgroup, s.MinProtocol, s.MaxProtocol, s.Encryption, s.Multichannel, now.Unix())
+			encryption = excluded.encryption, multichannel = excluded.multichannel,
+			activity_log = excluded.activity_log, updated_at = excluded.updated_at`,
+		s.NetbiosName, s.Workgroup, s.MinProtocol, s.MaxProtocol, s.Encryption, s.Multichannel, activity, now.Unix())
 	return err
 }
 
@@ -114,11 +120,11 @@ func (r *Repo) saveServerSettings(ctx context.Context, q querier, s sys.ServerSe
 
 // ServerSettings returns the server-wide settings.
 func (s *Service) ServerSettings(ctx context.Context) (ServerSettings, error) {
-	settings, updated, err := s.repo.serverSettings(ctx, s.repo.db.Read)
+	settings, activity, updated, err := s.repo.serverSettings(ctx, s.repo.db.Read)
 	if err != nil {
 		return ServerSettings{}, err
 	}
-	return fromSys(settings, updated), nil
+	return fromSys(settings, activity, updated), nil
 }
 
 // UpdateServerSettings replaces the server-wide settings. They take effect
@@ -142,7 +148,7 @@ func (s *Service) UpdateServerSettings(ctx context.Context, in ServerSettings) (
 		return ServerSettings{}, err
 	}
 	err := s.change(ctx, func(tx *sql.Tx) (bool, error) {
-		return true, s.repo.saveServerSettings(ctx, tx, settings, s.now())
+		return true, s.repo.saveServerSettings(ctx, tx, settings, in.ActivityLog, s.now())
 	})
 	var refused *sys.ConfigError
 	if errors.As(err, &refused) {

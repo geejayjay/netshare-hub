@@ -1,4 +1,4 @@
-package logingest
+package sambalog
 
 import (
 	"strings"
@@ -160,7 +160,7 @@ func truncate(s string) string {
 }
 
 // FuzzParse: whatever a line holds, the parser returns. Run longer with
-// "go test -fuzz=FuzzParse ./internal/modules/logingest/".
+// "go test -fuzz=FuzzParse ./internal/sys/sambalog/".
 func FuzzParse(f *testing.F) {
 	for _, line := range strings.Split(realLog, "\n") {
 		f.Add(line)

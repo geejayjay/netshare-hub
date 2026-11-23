@@ -15,8 +15,11 @@ package sys
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"regexp"
 	"strings"
+
+	"netshare-hub/internal/sys/sambalog"
 )
 
 // ManagedGroup marks the Linux accounts NetShare Hub created. An account
@@ -46,6 +49,10 @@ var (
 	// ErrACLUnsupported means a share's folder is on a filesystem without
 	// POSIX ACLs (for example ZFS without acltype=posixacl). Nothing changed.
 	ErrACLUnsupported = errors.New("filesystem does not support ACLs")
+	// ErrModuleMissing means a Samba module the config needs is not
+	// installed (full_audit is in Debian's samba-vfs-modules). A share that
+	// names a missing module stops working, so nothing was changed.
+	ErrModuleMissing = errors.New("samba module not installed")
 )
 
 // ACLError says which share's folder could not take its permissions.
@@ -127,6 +134,11 @@ type Samba interface {
 	// when ctx is done. Symbolic links are never followed.
 	// Errors: ErrInvalid, ErrNotFound (no such live share), *ACLError.
 	FixPermissions(ctx context.Context, share string) (PermissionStats, error)
+	// DisconnectClient drops every SMB connection from one computer (the
+	// ransomware guard uses it so a blocked user's open connections cannot
+	// keep writing). The client may reconnect; what it may do then is
+	// whatever the config says. Errors: ErrInvalid.
+	DisconnectClient(ctx context.Context, ip netip.Addr) error
 }
 
 // Files answers questions about directories that are about to be shared.
@@ -142,10 +154,19 @@ type Files interface {
 	CreateShareDir(ctx context.Context, path string) (string, error)
 }
 
+// Audit reads what happens over SMB (the activity log's source).
+type Audit interface {
+	// Events streams the events parsed from Samba's logs until ctx is done
+	// or the source fails; the channel is closed then, and the caller asks
+	// again. Only events from after the call are sent.
+	Events(ctx context.Context) (<-chan sambalog.Event, error)
+}
+
 // System bundles the interfaces for wiring.
 type System struct {
 	Accounts Accounts
 	Samba    Samba
 	Files    Files
 	Workers  Workers
+	Audit    Audit
 }

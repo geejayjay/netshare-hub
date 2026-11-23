@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The SMB activity log, newest first (who did what, from where) */
+        get: operations["listActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The activity log as CSV (same filters; at most a million entries) */
+        get: operations["exportActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alerts": {
         parameters: {
             query?: never;
@@ -271,6 +305,58 @@ export interface paths {
         put?: never;
         /** Rename a file or folder */
         post: operations["renameFile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/guard/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List what the ransomware guard found, newest first */
+        get: operations["listGuardIncidents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/guard/incidents/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore access for the user of an incident (they may write again) */
+        post: operations["restoreGuardIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/guard/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the ransomware guard's settings */
+        get: operations["getGuardSettings"];
+        /** Change the ransomware guard's mode and thresholds */
+        put: operations["updateGuardSettings"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -561,6 +647,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ActivityEntry: {
+            /** Format: date-time */
+            at: string;
+            clientIp: string;
+            /** @description The computer's name on the network. */
+            clientName?: string;
+            error?: string;
+            /** Format: int64 */
+            id: number;
+            ok: boolean;
+            /** @enum {string} */
+            op: "connect" | "disconnect" | "create_folder" | "write" | "rename" | "delete" | "login" | "login_failed";
+            /** @description Inside the share. */
+            path?: string;
+            /** @description The new name, for a rename. */
+            path2?: string;
+            share?: string;
+            user: string;
+        };
         Alert: {
             /** Format: date-time */
             acknowledgedAt?: string;
@@ -679,6 +784,34 @@ export interface components {
             /** @example 0.1.0 */
             version: string;
         };
+        Incident: {
+            /** Format: date-time */
+            at: string;
+            /** @description The user was made read-only (until restored). */
+            blocked: boolean;
+            clientIp: string;
+            /** Format: int64 */
+            count: number;
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description The mode when it happened.
+             * @enum {string}
+             */
+            mode: "off" | "learning" | "protect";
+            /** Format: date-time */
+            restoredAt?: string;
+            /** Format: int64 */
+            restoredBy?: number;
+            /** @enum {string} */
+            rule: "renames" | "ransom_notes";
+            /** @description Some of the files involved. */
+            samples: string[];
+            shares: string[];
+            /** Format: int64 */
+            userId?: number;
+            username: string;
+        };
         Item: {
             /**
              * @description Inside the share, with / between folders. "" is the share's top folder.
@@ -730,6 +863,11 @@ export interface components {
         };
         ListAlert: {
             items: components["schemas"]["Alert"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListIncident: {
+            items: components["schemas"]["Incident"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
@@ -811,6 +949,11 @@ export interface components {
             /** @description An IP address (192.168.1.50) or a range in CIDR form (192.168.1.0/24). IPv4 or IPv6. */
             address: string;
         };
+        Page: {
+            items: components["schemas"]["ActivityEntry"][];
+            /** Format: int64 */
+            next: number;
+        };
         /** @enum {string} */
         Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage";
         Preset: {
@@ -871,6 +1014,8 @@ export interface components {
             permissions: components["schemas"]["Permission"][];
         };
         ServerSettings: {
+            /** @description Record who did what over SMB (the activity log). Needs Samba's full_audit module (Debian, Ubuntu: samba-vfs-modules). */
+            activityLog?: boolean;
             /**
              * @description "if-supported" encrypts when the client can; "required" refuses clients that cannot (needs minProtocol SMB3_00 or newer).
              * @enum {string}
@@ -904,6 +1049,25 @@ export interface components {
             /** @description Everything this user may do. Use it to show or hide UI; the server still checks every request. */
             permissions: components["schemas"]["Permission"][];
             user: components["schemas"]["User"];
+        };
+        Settings: {
+            /**
+             * @description "learning" only raises alerts (start here); "protect" also makes the user read-only on every share and disconnects their computer.
+             * @enum {string}
+             */
+            mode: "off" | "learning" | "protect";
+            /**
+             * Format: int64
+             * @description In how many folders a ransom note (HOW_TO_DECRYPT...) must appear within a minute.
+             */
+            noteFolders: number;
+            /**
+             * Format: int64
+             * @description Suspicious renames (to an unusual or known-bad extension) by one user from one computer within a minute that trigger the guard.
+             */
+            renames: number;
+            /** Format: date-time */
+            updatedAt?: string;
         };
         SetupRequest: {
             displayName?: string;
@@ -1032,6 +1196,94 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listActivity: {
+        parameters: {
+            query?: {
+                share?: string;
+                user?: string;
+                op?: "connect" | "disconnect" | "create_folder" | "write" | "rename" | "delete" | "login" | "login_failed";
+                clientIp?: string;
+                /** @description Only entries at or after this time (RFC 3339). */
+                from?: string;
+                /** @description Only entries before this time. */
+                to?: string;
+                /** @description Only entries whose path (or new name) contains this. */
+                path?: string;
+                /** @description The "next" value of the previous page. */
+                before?: number;
+                /** @description Entries per page (default 100). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    exportActivity: {
+        parameters: {
+            query?: {
+                share?: string;
+                user?: string;
+                op?: "connect" | "disconnect" | "create_folder" | "write" | "rename" | "delete" | "login" | "login_failed";
+                clientIp?: string;
+                /** @description Only entries at or after this time (RFC 3339). */
+                from?: string;
+                /** @description Only entries before this time. */
+                to?: string;
+                /** @description Only entries whose path (or new name) contains this. */
+                path?: string;
+                /** @description The "next" value of the previous page. */
+                before?: number;
+                /** @description Entries per page (default 100). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file's content. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listAlerts: {
         parameters: {
             query?: {
@@ -1584,6 +1836,137 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listGuardIncidents: {
+        parameters: {
+            query?: {
+                /** @description Page number, starting at 1. */
+                page?: number;
+                /** @description Items per page. Each endpoint has its own default and maximum. */
+                pageSize?: number;
+                /** @description Field to sort by. Prefix with - for descending, e.g. -createdAt. */
+                sort?: string;
+                /** @description Free-text search. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListIncident"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    restoreGuardIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getGuardSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateGuardSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Settings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
                 };
             };
             /** @description Error */

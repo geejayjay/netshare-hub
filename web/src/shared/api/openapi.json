@@ -1,6 +1,68 @@
 {
   "components": {
     "schemas": {
+      "ActivityEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "clientIp": {
+            "type": "string"
+          },
+          "clientName": {
+            "description": "The computer's name on the network.",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "op": {
+            "enum": [
+              "connect",
+              "disconnect",
+              "create_folder",
+              "write",
+              "rename",
+              "delete",
+              "login",
+              "login_failed"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "Inside the share.",
+            "type": "string"
+          },
+          "path2": {
+            "description": "The new name, for a rename.",
+            "type": "string"
+          },
+          "share": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "user",
+          "clientIp",
+          "op",
+          "ok"
+        ],
+        "type": "object"
+      },
       "Alert": {
         "additionalProperties": false,
         "properties": {
@@ -371,6 +433,87 @@
         ],
         "type": "object"
       },
+      "Incident": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "blocked": {
+            "description": "The user was made read-only (until restored).",
+            "type": "boolean"
+          },
+          "clientIp": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "The mode when it happened.",
+            "enum": [
+              "off",
+              "learning",
+              "protect"
+            ],
+            "type": "string"
+          },
+          "restoredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "restoredBy": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rule": {
+            "enum": [
+              "renames",
+              "ransom_notes"
+            ],
+            "type": "string"
+          },
+          "samples": {
+            "description": "Some of the files involved.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "shares": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "userId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "clientIp",
+          "rule",
+          "count",
+          "shares",
+          "samples",
+          "mode",
+          "blocked",
+          "at"
+        ],
+        "type": "object"
+      },
       "Item": {
         "additionalProperties": false,
         "properties": {
@@ -507,6 +650,25 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ListIncident": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Incident"
             },
             "type": "array"
           },
@@ -794,6 +956,26 @@
         ],
         "type": "object"
       },
+      "Page": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEntry"
+            },
+            "type": "array"
+          },
+          "next": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next"
+        ],
+        "type": "object"
+      },
       "Permission": {
         "enum": [
           "users:read",
@@ -1019,6 +1201,10 @@
       "ServerSettings": {
         "additionalProperties": false,
         "properties": {
+          "activityLog": {
+            "description": "Record who did what over SMB (the activity log). Needs Samba's full_audit module (Debian, Ubuntu: samba-vfs-modules).",
+            "type": "boolean"
+          },
           "encryption": {
             "description": "\"if-supported\" encrypts when the client can; \"required\" refuses clients that cannot (needs minProtocol SMB3_00 or newer).",
             "enum": [
@@ -1109,6 +1295,44 @@
           "user",
           "permissions",
           "csrfToken"
+        ],
+        "type": "object"
+      },
+      "Settings": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "description": "\"learning\" only raises alerts (start here); \"protect\" also makes the user read-only on every share and disconnects their computer.",
+            "enum": [
+              "off",
+              "learning",
+              "protect"
+            ],
+            "type": "string"
+          },
+          "noteFolders": {
+            "description": "In how many folders a ransom note (HOW_TO_DECRYPT...) must appear within a minute.",
+            "format": "int64",
+            "maximum": 1000,
+            "minimum": 2,
+            "type": "integer"
+          },
+          "renames": {
+            "description": "Suspicious renames (to an unusual or known-bad extension) by one user from one computer within a minute that trigger the guard.",
+            "format": "int64",
+            "maximum": 100000,
+            "minimum": 3,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "renames",
+          "noteFolders"
         ],
         "type": "object"
       },
@@ -1494,6 +1718,292 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/activity": {
+      "get": {
+        "operationId": "listActivity",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "share",
+            "schema": {
+              "maxLength": 32,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "user",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "op",
+            "schema": {
+              "enum": [
+                "connect",
+                "disconnect",
+                "create_folder",
+                "write",
+                "rename",
+                "delete",
+                "login",
+                "login_failed"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "clientIp",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only entries at or after this time (RFC 3339).",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "Only entries at or after this time (RFC 3339).",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only entries before this time.",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Only entries before this time.",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only entries whose path (or new name) contains this.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "Only entries whose path (or new name) contains this.",
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The \"next\" value of the previous page.",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "The \"next\" value of the previous page.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Entries per page (default 100).",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Entries per page (default 100).",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The SMB activity log, newest first (who did what, from where)",
+        "tags": [
+          "Activity"
+        ],
+        "x-permission": "audit:read"
+      }
+    },
+    "/activity/export": {
+      "get": {
+        "operationId": "exportActivity",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "share",
+            "schema": {
+              "maxLength": 32,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "user",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "op",
+            "schema": {
+              "enum": [
+                "connect",
+                "disconnect",
+                "create_folder",
+                "write",
+                "rename",
+                "delete",
+                "login",
+                "login_failed"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "clientIp",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only entries at or after this time (RFC 3339).",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "Only entries at or after this time (RFC 3339).",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only entries before this time.",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "Only entries before this time.",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only entries whose path (or new name) contains this.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "Only entries whose path (or new name) contains this.",
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The \"next\" value of the previous page.",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "The \"next\" value of the previous page.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Entries per page (default 100).",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Entries per page (default 100).",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The file's content."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "The activity log as CSV (same filters; at most a million entries)",
+        "tags": [
+          "Activity"
+        ],
+        "x-permission": "audit:read"
+      }
+    },
     "/alerts": {
       "get": {
         "operationId": "listAlerts",
@@ -2457,6 +2967,224 @@
           "Files"
         ],
         "x-permission": "files:write"
+      }
+    },
+    "/guard/incidents": {
+      "get": {
+        "operationId": "listGuardIncidents",
+        "parameters": [
+          {
+            "description": "Page number, starting at 1.",
+            "explode": false,
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "description": "Page number, starting at 1.",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page. Each endpoint has its own default and maximum.",
+            "explode": false,
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "description": "Items per page. Each endpoint has its own default and maximum.",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text search.",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Free-text search.",
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListIncident"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List what the ransomware guard found, newest first",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "system:read"
+      }
+    },
+    "/guard/incidents/{id}/restore": {
+      "post": {
+        "operationId": "restoreGuardIncident",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Incident"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Restore access for the user of an incident (they may write again)",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "alerts:manage"
+      }
+    },
+    "/guard/settings": {
+      "get": {
+        "operationId": "getGuardSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get the ransomware guard's settings",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "system:read"
+      },
+      "put": {
+        "operationId": "updateGuardSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Settings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Settings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change the ransomware guard's mode and thresholds",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "settings:write"
       }
     },
     "/health": {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,6 +59,10 @@ func (s *Samba) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
 				return fmt.Errorf("%w: shares %q and %q overlap", sys.ErrInvalid, other.Name, sh.Name)
 			}
 		}
+	}
+	// A share naming a missing module stops working: check first.
+	if err := checkAuditModule(cfg); err != nil {
+		return err
 	}
 	// RenderConfig checks the server settings, and the shares' names,
 	// comments, account names and path rules.
@@ -177,6 +182,15 @@ func (s *Samba) FixPermissions(ctx context.Context, name string) (sys.Permission
 		return fixShareTree(ctx, sh, ids, s.protected)
 	}
 	return sys.PermissionStats{}, fmt.Errorf("%w: no live share named %q", sys.ErrNotFound, name)
+}
+
+// DisconnectClient asks smbd to drop every connection from ip.
+func (s *Samba) DisconnectClient(ctx context.Context, ip netip.Addr) error {
+	if !ip.IsValid() || ip.IsUnspecified() || ip.Zone() != "" {
+		return fmt.Errorf("%w: client address", sys.ErrInvalid)
+	}
+	_, err := run(ctx, s.runner, "smbcontrol", "smbd", "kill-client-ip", ip.Unmap().String())
+	return err
 }
 
 // loadIdentities reads every account and the managed group's members.

@@ -175,5 +175,5 @@ func TestScheduledTasksAreListed(t *testing.T) {
 		names = append(names, task.Name+" ("+task.Schedule+")")
 	}
 	want(t, "tasks", strings.Join(names, ", "),
-		"alerts.cleanup (daily at 03:30), jobs.cleanup (every 1h0m0s), uploads.cleanup (every 1h0m0s)")
+		"activity.cleanup (daily at 04:00), alerts.cleanup (daily at 03:30), jobs.cleanup (every 1h0m0s), uploads.cleanup (every 1h0m0s)")
 }

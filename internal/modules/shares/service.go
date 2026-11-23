@@ -44,6 +44,7 @@ type Service struct {
 	files  sys.Files
 	jobs   Jobs
 	alerts Alerts
+	blocks Blocks
 	now    func() time.Time
 	// protected are folders that must never be exposed through a share, on
 	// top of the system folders: NetShare Hub's own data (the database holds
@@ -59,8 +60,29 @@ func NewService(repo *Repo, u Users, system sys.System, j Jobs, protected ...str
 	return &Service{repo: repo, users: u, samba: system.Samba, files: system.Files, jobs: j, now: time.Now, protected: protected}
 }
 
+// Paths returns every share's folder by name (the activity log shows paths
+// inside the share).
+func (s *Service) Paths(ctx context.Context) (map[string]string, error) { return s.repo.Paths(ctx) }
+
 // SetAlerts connects the alerts module (wired after both exist).
 func (s *Service) SetAlerts(a Alerts) { s.alerts = a }
+
+// SetBlocks connects the ransomware guard (wired after both exist).
+func (s *Service) SetBlocks(b Blocks) { s.blocks = b }
+
+// blocked returns the users the ransomware guard stopped writing.
+func (s *Service) blocked(ctx context.Context) (map[int64]bool, error) {
+	if s.blocks == nil {
+		return nil, nil
+	}
+	return s.blocks.BlockedUsers(ctx)
+}
+
+// Reapply writes the Samba config again from the database (the guard calls
+// it after blocking a user or restoring them).
+func (s *Service) Reapply(ctx context.Context) error {
+	return s.change(ctx, func(*sql.Tx) (bool, error) { return true, nil })
+}
 
 // alertReloadFailed is the alert kind for a Samba that did not reload.
 const alertReloadFailed = "samba.reload_failed"
@@ -118,12 +140,16 @@ func (s *Service) ListForUser(ctx context.Context, userID int64) ([]MyShare, err
 	if err != nil {
 		return nil, err
 	}
+	blocked, err := s.blocked(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for i, sh := range shares {
 		given := levels[i]
 		if given == "" {
 			given = LevelRead // a guest share the user is not listed on
 		}
-		e := effective(AccessInput{UserID: userID, Level: given}, u, Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess})
+		e := effective(AccessInput{UserID: userID, Level: given}, u, Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess}, blocked[userID])
 		if e.Level == LevelNone {
 			continue
 		}
@@ -170,7 +196,11 @@ func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules, ne
 	if err := v.Err(); err != nil {
 		return EffectiveAccess{}, err
 	}
-	out := preview(access, byID, r)
+	blocked, err := s.blocked(ctx)
+	if err != nil {
+		return EffectiveAccess{}, err
+	}
+	out := preview(access, byID, r, blocked)
 	out.Network = networkNote(network)
 	return out, nil
 }
@@ -393,18 +423,22 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 	if err != nil {
 		return err
 	}
-	server, _, err := s.repo.serverSettings(ctx, tx)
+	server, activity, _, err := s.repo.serverSettings(ctx, tx)
 	if err != nil {
 		return err
 	}
 
-	applyErr := s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs})
+	applyErr := s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs, Audit: activity})
 	var aclErr *sys.ACLError
 	switch {
 	case applyErr == nil:
 	case errors.Is(applyErr, sys.ErrReloadFailed):
 		// The config is valid and on disk; only the running Samba did not
 		// pick it up yet. Keep database and config in step, and say so.
+	case errors.Is(applyErr, sys.ErrModuleMissing):
+		return errs.Invalid(CodeSambaModuleMissing,
+			"The activity log needs Samba's full_audit module, which is not installed (on Debian and Ubuntu: apt install samba-vfs-modules). Install it, or turn the activity log off. Nothing was changed.").
+			WithCause(applyErr)
 	case errors.As(applyErr, &aclErr) && errors.Is(applyErr, sys.ErrACLUnsupported):
 		return errs.Invalid(CodePermissionsUnsupported, fmt.Sprintf(
 			"The folder of share %q (%s) is on a filesystem without access lists (ACLs), so its permissions cannot be set. "+
@@ -443,8 +477,9 @@ func (s *Service) restoreConfig(ctx context.Context) {
 		var specs []sys.ShareSpec
 		if specs, err = s.specs(ctx, shares); err == nil {
 			var server sys.ServerSettings
-			if server, _, err = s.repo.serverSettings(ctx, s.repo.db.Read); err == nil {
-				err = s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs})
+			var activity bool
+			if server, activity, _, err = s.repo.serverSettings(ctx, s.repo.db.Read); err == nil {
+				err = s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs, Audit: activity})
 			}
 		}
 	}
@@ -459,9 +494,13 @@ func (s *Service) specs(ctx context.Context, shares []Share) ([]sys.ShareSpec, e
 	if err != nil {
 		return nil, err
 	}
+	blocked, err := s.blocked(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]sys.ShareSpec, 0, len(shares))
 	for _, sh := range shares {
-		out = append(out, spec(sh, byID))
+		out = append(out, spec(sh, byID, blocked))
 	}
 	return out, nil
 }
@@ -473,7 +512,7 @@ func (s *Service) accessChanged(ctx context.Context, before, after Share) (bool,
 	if err != nil {
 		return false, err
 	}
-	a, b := spec(before, byID), spec(after, byID)
+	a, b := spec(before, byID, nil), spec(after, byID, nil)
 	return a.Guest != b.Guest || !slices.Equal(a.Readers, b.Readers) ||
 		!slices.Equal(a.Writers, b.Writers) || !slices.Equal(a.Uploaders, b.Uploaders), nil
 }

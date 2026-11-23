@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -60,13 +61,13 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 	}, func(r deleteUserRequest) []any { return []any{"account", r.Name} })
 
 	register(s, opApplyConfig, func(ctx context.Context, r applyConfigRequest) (any, error) {
-		return nil, system.Samba.ApplyConfig(ctx, sys.SambaConfig{Server: r.Server, Shares: r.Shares})
+		return nil, system.Samba.ApplyConfig(ctx, sys.SambaConfig{Server: r.Server, Shares: r.Shares, Audit: r.Audit})
 	}, func(r applyConfigRequest) []any {
 		names := make([]string, len(r.Shares))
 		for i, sh := range r.Shares {
 			names[i] = sh.Name
 		}
-		return []any{"shares", names, "server", r.Server}
+		return []any{"shares", names, "server", r.Server, "audit", r.Audit}
 	})
 
 	// Long-running (a whole share's tree), so it does not take the lock
@@ -74,6 +75,16 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 	register(s, opFixPermissions, func(ctx context.Context, r fixPermissionsRequest) (any, error) {
 		return system.Samba.FixPermissions(ctx, r.Share)
 	}, func(r fixPermissionsRequest) []any { return []any{"share", r.Share} })
+
+	s.mux.HandleFunc("POST "+pathPrefix+opAuditEvents, s.auditEvents)
+
+	register(s, opDisconnectClient, func(ctx context.Context, r disconnectRequest) (any, error) {
+		ip, err := netip.ParseAddr(r.IP)
+		if err != nil {
+			return nil, sys.ErrInvalid
+		}
+		return nil, system.Samba.DisconnectClient(ctx, ip)
+	}, func(r disconnectRequest) []any { return []any{"ip", r.IP} })
 
 	register(s, opResolveDir, func(ctx context.Context, r pathRequest) (any, error) {
 		// Only answer for paths that could be shared at all, so the agent is
@@ -166,6 +177,42 @@ func register[Req any](s *Server, op string, run func(context.Context, Req) (any
 		}
 		writeJSON(w, http.StatusOK, res)
 	})
+}
+
+// auditEvents streams Samba's audit events to the caller. It takes no
+// arguments and changes nothing, so it does not take the lock.
+func (s *Server) auditEvents(w http.ResponseWriter, r *http.Request) {
+	peer, ok := s.authorize(r)
+	if !ok {
+		slog.WarnContext(r.Context(), "agent call refused: caller not allowed", "op", opAuditEvents, "peer_uid", peer.UID, "peer_pid", peer.PID)
+		writeJSON(w, http.StatusForbidden, errorResponse{Code: codeForbidden, Message: "caller is not allowed to use the agent"})
+		return
+	}
+	if s.system.Audit == nil {
+		writeJSON(w, http.StatusNotFound, errorResponse{Code: codeNotFound, Message: "no audit source"})
+		return
+	}
+	events, err := s.system.Audit.Events(r.Context())
+	if err != nil {
+		status, body := encodeError(err)
+		slog.WarnContext(r.Context(), "agent call failed", "op", opAuditEvents, "peer_uid", peer.UID, "err", err)
+		writeJSON(w, status, body)
+		return
+	}
+	slog.InfoContext(r.Context(), "agent call", "op", opAuditEvents, "peer_uid", peer.UID, "peer_pid", peer.PID, "stream", "started")
+	defer slog.InfoContext(r.Context(), "agent call", "op", opAuditEvents, "peer_uid", peer.UID, "stream", "ended")
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.WriteHeader(http.StatusOK)
+	flush := http.NewResponseController(w)
+	_ = flush.Flush()
+	enc := json.NewEncoder(w)
+	for ev := range events {
+		if err := enc.Encode(ev); err != nil {
+			return // the caller went away; the source ends with r.Context()
+		}
+		_ = flush.Flush()
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

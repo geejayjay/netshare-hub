@@ -14,7 +14,21 @@ import (
 type SambaConfig struct {
 	Server ServerSettings `json:"server"`
 	Shares []ShareSpec    `json:"shares"`
+	// Audit turns on the activity log: Samba's full_audit module on every
+	// share, and the audit log levels (see AuditOptions).
+	Audit bool `json:"audit,omitempty"`
 }
+
+// The activity log's Samba settings. Only the operations the activity log
+// and the ransomware guard use are logged (Samba cannot log only the
+// "open for writing" kind of openat, so reads are dropped by the reader).
+// Logins come from auth_json_audit (brute-force protection, 2.4).
+const (
+	AuditPrefix   = "nshaudit|%u|%I|%S|%m"
+	AuditSuccess  = "connect disconnect mkdirat renameat unlinkat openat"
+	AuditFailure  = "connect mkdirat renameat unlinkat"
+	AuditLogLevel = "0 full_audit:1 auth_json_audit:3"
+)
 
 // ServerSettings are the server-wide Samba settings NetShare Hub manages.
 // An empty value means "not managed": the admin's smb.conf (or Samba's
@@ -84,10 +98,10 @@ func (s ServerSettings) Check() error {
 
 func (s ServerSettings) empty() bool { return s == ServerSettings{} }
 
-// renderServer writes the [global] part of the managed config ("" when no
-// server setting is managed).
-func renderServer(b *strings.Builder, s ServerSettings) {
-	if s.empty() {
+// renderServer writes the [global] part of the managed config (nothing
+// when no server setting is managed and the activity log is off).
+func renderServer(b *strings.Builder, s ServerSettings, audit bool) {
+	if s.empty() && !audit {
 		return
 	}
 	// The managed config is included from smb.conf's [global] section, but
@@ -106,4 +120,19 @@ func renderServer(b *strings.Builder, s ServerSettings) {
 			param(b, p.key, p.value)
 		}
 	}
+	if audit {
+		// Each connection's process reads the config again, so the log
+		// level must be here (setting it at runtime does not last). It
+		// replaces a log level set in smb.conf while the activity log is on.
+		param(b, "log level", AuditLogLevel)
+	}
+}
+
+// renderAudit adds the activity log to one share.
+func renderAudit(b *strings.Builder) {
+	param(b, "vfs objects", "full_audit")
+	param(b, "full_audit:prefix", AuditPrefix)
+	param(b, "full_audit:success", AuditSuccess)
+	param(b, "full_audit:failure", AuditFailure)
+	param(b, "full_audit:syslog", "no")
 }

@@ -1,4 +1,4 @@
-// Package logingest reads Samba's logs and turns them into events for the
+// Package sambalog reads Samba's logs and turns them into events for the
 // features that react to what happens over SMB: the activity log (2.2a),
 // the ransomware guard (2.3) and brute-force protection (2.4). There is ONE
 // parser and ONE reader; features subscribe instead of reading logs
@@ -8,7 +8,7 @@
 // log in with, and file names. So the parser never panics (it also recovers,
 // as a second guard), never allocates more than a bounded amount for a line,
 // keeps only printable text, and refuses a line rather than guessing.
-package logingest
+package sambalog
 
 import (
 	"encoding/json"
@@ -32,27 +32,28 @@ const (
 
 // Event is one thing that happened over SMB.
 type Event struct {
-	Time time.Time
-	Kind Kind
+	Time time.Time `json:"time"`
+	Kind Kind      `json:"kind"`
 	// User is the account: the Unix name for file events, the name the
 	// client sent for logins (anything, for a failed one).
-	User       string
-	ClientIP   netip.Addr
-	ClientName string // the client's NetBIOS name (file events)
-	Share      string
+	User       string     `json:"user,omitempty"`
+	ClientIP   netip.Addr `json:"clientIp"`
+	ClientName string     `json:"clientName,omitempty"` // the client's NetBIOS name (file events)
+	Share      string     `json:"share,omitempty"`
 	// Op is the operation (file events): openat, mkdirat, renameat,
 	// unlinkat, pwrite...
-	Op    string
-	OK    bool
-	Error string // why it failed, as Samba said it
+	Op    string `json:"op,omitempty"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"` // why it failed, as Samba said it
 	// Write is true for an openat that opened for writing.
-	Write bool
+	Write bool `json:"write,omitempty"`
 	// Path is absolute, as Samba logs it; Path2 is the new name of a rename.
-	Path, Path2 string
+	Path  string `json:"path,omitempty"`
+	Path2 string `json:"path2,omitempty"`
 	// AuthStatus is Samba's NT status for a login ("NT_STATUS_OK",
 	// "NT_STATUS_WRONG_PASSWORD"...).
-	AuthStatus string
-	Service    string // for logins: "SMB2", "SMB", ...
+	AuthStatus string `json:"authStatus,omitempty"`
+	Service    string `json:"service,omitempty"` // for logins: "SMB2", "SMB", ...
 }
 
 // AuditMarker starts every line vfs_full_audit writes for NetShare Hub. The
