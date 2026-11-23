@@ -1,2 +1,2 @@
 export { MySharesPage } from './components/MySharesPage'
-export type { MyShare } from './api'
+export { mySharesQuery, type MyShare } from './api'

@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { Check, Copy, FolderOpen } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Check, Copy, FolderOpen, HardDrive, Terminal } from 'lucide-react'
 import { useState } from 'react'
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '@/shared/components'
+import { cn } from '@/shared/lib/cn'
 import { useSession } from '@/shared/session/session'
 import { Badge, Button, Card } from '@/shared/ui'
 import { mySharesQuery, type MyShare } from '../api'
@@ -18,12 +20,12 @@ function connectionDetails(os: OsTab, host: string, shareName: string, username:
     case 'macos':
       return {
         address: `smb://${host}/${shareName}`,
-        steps: `In Finder press Cmd+K (Connect to Server), enter smb://${host}/${shareName}, and sign in as ${username}.`,
+        steps: `In Finder press ⌘K (Connect to Server), enter smb://${host}/${shareName}, and sign in as ${username}.`,
       }
     case 'linux':
       return {
         address: `smb://${host}/${shareName}`,
-        steps: `Use your file manager with smb://${host}/${shareName}, or run: mount -t cifs //${host}/${shareName} /mnt/${shareName} -o username=${username}`,
+        steps: `Open smb://${host}/${shareName} in your file manager, or run: mount -t cifs //${host}/${shareName} /mnt/${shareName} -o username=${username}`,
       }
   }
 }
@@ -36,47 +38,71 @@ function ShareCard({ share, host, username }: { share: MyShare; host: string; us
   function copyAddress() {
     void navigator.clipboard?.writeText(info.address).then(() => {
       setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
+      window.setTimeout(() => setCopied(false), 1600)
     })
   }
 
   return (
-    <Card className="p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <FolderOpen className="size-5 text-accent" />
-          <div>
-            <h2 className="text-base font-semibold text-fg">{share.name}</h2>
-            {share.comment && <p className="text-sm text-fg-muted">{share.comment}</p>}
+    <Card className="flex flex-col justify-between p-5 transition-colors hover:border-border-strong">
+      <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary">
+              <HardDrive className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold tracking-tight text-fg">{share.name}</h2>
+              {share.comment ? (
+                <p className="truncate text-xs text-fg-muted">{share.comment}</p>
+              ) : (
+                <p className="text-xs text-fg-subtle">SMB network folder</p>
+              )}
+            </div>
           </div>
+          <Badge tone={share.level === 'write' ? 'info' : share.level === 'upload' ? 'warning' : 'neutral'} dot>
+            {share.level === 'write' ? 'Read & write' : share.level === 'upload' ? 'Drop box' : 'Read only'}
+          </Badge>
         </div>
-        <Badge tone={share.level === 'write' ? 'info' : 'neutral'}>
-          {share.level === 'write' ? 'Read & write' : 'Read only'}
-        </Badge>
-      </div>
 
-      <div className="mt-4 flex flex-col gap-3 border-t border-border pt-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(['windows', 'macos', 'linux'] as const).map((tab) => (
-            <Button
-              key={tab}
-              size="sm"
-              variant={os === tab ? 'primary' : 'ghost'}
-              onClick={() => setOs(tab)}
+        <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex rounded-lg border border-border bg-surface-2 p-0.5">
+              {(['windows', 'macos', 'linux'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setOs(tab)}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                    os === tab ? 'bg-surface text-fg shadow-xs ring-1 ring-border' : 'text-fg-muted hover:text-fg',
+                  )}
+                >
+                  {tab === 'windows' ? 'Windows' : tab === 'macos' ? 'macOS' : 'Linux'}
+                </button>
+              ))}
+            </div>
+            <Link
+              to="/files"
+              search={{ share: share.name, path: '' }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg shadow-xs transition-colors hover:bg-surface-2"
             >
-              {tab === 'windows' ? 'Windows' : tab === 'macos' ? 'macOS' : 'Linux'}
+              <FolderOpen className="size-3.5 text-primary" />
+              Browse
+            </Link>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <Terminal className="size-3.5 shrink-0 text-fg-subtle" />
+              <code className="truncate text-xs font-medium text-fg">{info.address}</code>
+            </div>
+            <Button size="icon" variant="ghost" className="size-7 shrink-0" aria-label={`Copy ${share.name} address`} onClick={copyAddress}>
+              {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
             </Button>
-          ))}
-        </div>
+          </div>
 
-        <div className="flex items-center justify-between gap-2 rounded-md bg-surface-muted px-3 py-2">
-          <code className="truncate text-xs text-fg">{info.address}</code>
-          <Button size="icon" variant="ghost" aria-label={`Copy ${share.name} address`} onClick={copyAddress}>
-            {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
-          </Button>
+          <p className="text-xs leading-relaxed text-fg-muted">{info.steps}</p>
         </div>
-
-        <p className="text-xs text-fg-muted">{info.steps}</p>
       </div>
     </Card>
   )
@@ -88,10 +114,10 @@ export function MySharesPage() {
   const host = typeof window !== 'undefined' ? window.location.hostname : 'server'
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="My Shares"
-        description="Network folders you can connect to and how to mount them."
+        description="Network folders assigned to your account, with quick browser access and OS mount commands."
       />
 
       {shares.isLoading ? (
@@ -99,10 +125,10 @@ export function MySharesPage() {
       ) : shares.error ? (
         <ErrorState error={shares.error} onRetry={() => void shares.refetch()} />
       ) : !shares.data?.items.length ? (
-        <Card className="p-6">
+        <Card className="p-8">
           <EmptyState
             title="No shares assigned"
-            description="Ask an administrator to grant your account access to a share."
+            description="Ask an administrator to grant your account access to an SMB share."
           />
         </Card>
       ) : (
@@ -112,6 +138,6 @@ export function MySharesPage() {
           ))}
         </div>
       )}
-    </>
+    </div>
   )
 }

@@ -1,12 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Shield, Trash2, UserCheck, Users as UsersIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { notify } from '@/features/notifications'
 import type { ListParams } from '@/shared/api'
 import { DataTable, EmptyState, PageHeader, PermissionGate, SearchInput, type ColumnDef } from '@/shared/components'
 import { formatDateTime } from '@/shared/lib/format'
 import { useSession } from '@/shared/session/session'
-import { Badge, Button, Card } from '@/shared/ui'
+import { Badge, Button, Card, StatCard } from '@/shared/ui'
 import { rolesQuery, useDeleteUser, usersQuery, type User } from '../api'
 import { CreateUserDialog } from './CreateUserDialog'
 
@@ -23,16 +23,24 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
   const session = useSession()
   const [creating, setCreating] = useState(false)
 
+  const items = users.data?.items ?? []
+  const activeCount = items.filter((u) => !u.disabled).length
+  const adminCount = items.filter((u) => u.role === 'admin').length
+
   const columns = useMemo<ColumnDef<User>[]>(() => {
     const roleName = (id: string) => roles.data?.items.find((r) => r.id === id)?.name ?? id
     return [
       {
         id: 'username',
-        header: 'Username',
+        header: 'User',
         enableSorting: true,
-        cell: ({ row }) => <span className="font-medium">{row.original.username}</span>,
+        cell: ({ row }) => (
+          <div className="flex flex-col">
+            <span className="font-medium text-fg">{row.original.username}</span>
+            {row.original.displayName && <span className="text-xs text-fg-muted">{row.original.displayName}</span>}
+          </div>
+        ),
       },
-      { id: 'displayName', header: 'Name', enableSorting: true, cell: ({ row }) => row.original.displayName || '—' },
       {
         id: 'role',
         header: 'Role',
@@ -40,6 +48,16 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
         cell: ({ row }) => (
           <Badge tone={row.original.role === 'admin' ? 'info' : 'neutral'}>{roleName(row.original.role)}</Badge>
         ),
+      },
+      {
+        id: 'smbAccess',
+        header: 'SMB Access',
+        cell: ({ row }) =>
+          row.original.smbAccess ? (
+            <Badge tone="success">Enabled</Badge>
+          ) : (
+            <Badge tone="neutral">Web only</Badge>
+          ),
       },
       {
         id: 'status',
@@ -59,7 +77,7 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
         id: 'createdAt',
         header: 'Created',
         enableSorting: true,
-        cell: ({ row }) => <span className="text-fg-muted">{formatDateTime(row.original.createdAt)}</span>,
+        cell: ({ row }) => <span className="text-xs text-fg-muted">{formatDateTime(row.original.createdAt)}</span>,
       },
       {
         id: 'actions',
@@ -67,30 +85,33 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
         cell: ({ row }) =>
           session.can('users:write') &&
           row.original.id !== session.user.id && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Delete ${row.original.username}`}
-              onClick={() => {
-                if (!window.confirm(`Delete user "${row.original.username}"?`)) return
-                deleteUser.mutate(row.original.id, {
-                  onSuccess: () => notify.success('User deleted'),
-                  onError: (error) => notify.error(error),
-                })
-              }}
-            >
-              <Trash2 className="size-4" />
-            </Button>
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-fg-muted hover:text-danger"
+                aria-label={`Delete ${row.original.username}`}
+                onClick={() => {
+                  if (!window.confirm(`Delete user "${row.original.username}"?`)) return
+                  deleteUser.mutate(row.original.id, {
+                    onSuccess: () => notify.success('User deleted'),
+                    onError: (error) => notify.error(error),
+                  })
+                }}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
           ),
       },
     ]
   }, [roles.data, session, deleteUser])
 
   return (
-    <>
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Users"
-        description="People who can log in to NetShare Hub."
+        description="Manage accounts, roles, and SMB network access credentials."
         actions={
           <PermissionGate permission="users:write">
             <Button onClick={() => setCreating(true)}>
@@ -101,13 +122,40 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
         }
       />
 
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Total users"
+          value={users.data?.page?.total ?? items.length}
+          detail="Registered accounts"
+          icon={<UsersIcon />}
+          tone="info"
+        />
+        <StatCard
+          label="Active accounts"
+          value={activeCount}
+          detail="Enabled on this page"
+          icon={<UserCheck />}
+          tone="success"
+        />
+        <StatCard
+          label="Administrators"
+          value={adminCount}
+          detail="Full server access"
+          icon={<Shield />}
+          tone="warning"
+        />
+      </div>
+
       <Card>
-        <div className="border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <SearchInput
             value={params.q ?? ''}
             onChange={(q) => onParamsChange({ ...params, q: q || undefined, page: undefined })}
             placeholder="Search users…"
           />
+          <span className="text-xs text-fg-subtle tabular-nums">
+            {users.data?.page?.total ?? items.length} accounts
+          </span>
         </div>
         <DataTable
           columns={columns}
@@ -123,6 +171,6 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
       </Card>
 
       <CreateUserDialog open={creating} onClose={() => setCreating(false)} />
-    </>
+    </div>
   )
 }
