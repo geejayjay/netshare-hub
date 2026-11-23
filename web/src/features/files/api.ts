@@ -1,0 +1,83 @@
+import { keepPreviousData, queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
+import { API_BASE, api, unwrap, type Schema } from '@/shared/api'
+
+export type FileEntry = Schema<'Entry'>
+export type FileItem = Schema<'Item'>
+export type TransferRequest = Schema<'TransferRequest'>
+
+export function fileEntriesQuery(share: string, path: string, sort?: string) {
+  return queryOptions({
+    queryKey: ['files', 'entries', share, path, sort ?? 'name'],
+    queryFn: () =>
+      unwrap(
+        api.GET('/files/{share}/entries', {
+          params: { path: { share }, query: { path: path || undefined, sort: sort || undefined, pageSize: 500 } },
+        }),
+      ),
+    enabled: Boolean(share),
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function fileDownloadUrl(share: string, path: string, inline = false) {
+  const qs = new URLSearchParams({ path })
+  if (inline) qs.set('inline', 'true')
+  return `${API_BASE}/files/${encodeURIComponent(share)}/download?${qs.toString()}`
+}
+
+export function useCreateFolder() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ share, path }: { share: string; path: string }) =>
+      unwrap(api.POST('/files/{share}/folders', { params: { path: { share } }, body: { path } })),
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['files', 'entries', vars.share] }),
+  })
+}
+
+export function useRenameFile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ share, path, name }: { share: string; path: string; name: string }) =>
+      unwrap(api.POST('/files/{share}/rename', { params: { path: { share } }, body: { path, name } })),
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['files', 'entries', vars.share] }),
+  })
+}
+
+export function useDeleteFiles() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (items: FileItem[]) => unwrap(api.POST('/files/delete', { body: { items } })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['files', 'entries'] })
+      void qc.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
+}
+
+export function useCopyFiles() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: TransferRequest) => unwrap(api.POST('/files/copy', { body })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['files', 'entries'] })
+      void qc.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
+}
+
+export function useMoveFiles() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: TransferRequest) => unwrap(api.POST('/files/move', { body })),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['files', 'entries'] })
+      void qc.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
+}
+
+export function usePrepareZip() {
+  return useMutation({
+    mutationFn: (items: FileItem[]) => unwrap(api.POST('/files/zip', { body: { items } })),
+  })
+}
