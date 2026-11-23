@@ -162,11 +162,20 @@ type Audit interface {
 	Events(ctx context.Context) (<-chan sambalog.Event, error)
 }
 
+// Neighbors finds the hardware (MAC) address of a computer on the local
+// network, from the server's own neighbour table. It only knows computers
+// on the same network segment (behind a router, every client looks like the
+// router), and only IPv4.
+type Neighbors interface {
+	MAC(ip netip.Addr) (string, bool)
+}
+
 // System bundles the interfaces for wiring.
 type System struct {
-	Accounts Accounts
-	Samba    Samba
-	Files    Files
-	Workers  Workers
-	Audit    Audit
+	Accounts  Accounts
+	Samba     Samba
+	Files     Files
+	Workers   Workers
+	Audit     Audit
+	Neighbors Neighbors
 }

@@ -45,6 +45,7 @@ type Service struct {
 	jobs   Jobs
 	alerts Alerts
 	blocks Blocks
+	logins Logins
 	now    func() time.Time
 	// protected are folders that must never be exposed through a share, on
 	// top of the system folders: NetShare Hub's own data (the database holds
@@ -69,6 +70,31 @@ func (s *Service) SetAlerts(a Alerts) { s.alerts = a }
 
 // SetBlocks connects the ransomware guard (wired after both exist).
 func (s *Service) SetBlocks(b Blocks) { s.blocks = b }
+
+// SetLogins connects brute-force protection (wired after both exist).
+func (s *Service) SetLogins(l Logins) { s.logins = l }
+
+// sambaConfig builds the whole config to apply.
+func (s *Service) sambaConfig(ctx context.Context, q querier, shares []Share) (sys.SambaConfig, error) {
+	specs, err := s.specs(ctx, shares)
+	if err != nil {
+		return sys.SambaConfig{}, err
+	}
+	server, activity, _, err := s.repo.serverSettings(ctx, q)
+	if err != nil {
+		return sys.SambaConfig{}, err
+	}
+	cfg := sys.SambaConfig{Server: server, Shares: specs, Audit: activity}
+	if s.logins != nil {
+		if cfg.Banned, err = s.logins.BannedAddresses(ctx); err != nil {
+			return sys.SambaConfig{}, err
+		}
+		if cfg.LoginAudit, err = s.logins.LoginAudit(ctx); err != nil {
+			return sys.SambaConfig{}, err
+		}
+	}
+	return cfg, nil
+}
 
 // blocked returns the users the ransomware guard stopped writing.
 func (s *Service) blocked(ctx context.Context) (map[int64]bool, error) {
@@ -419,16 +445,12 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 	if err != nil {
 		return err
 	}
-	specs, err := s.specs(ctx, shares)
-	if err != nil {
-		return err
-	}
-	server, activity, _, err := s.repo.serverSettings(ctx, tx)
+	cfg, err := s.sambaConfig(ctx, tx, shares)
 	if err != nil {
 		return err
 	}
 
-	applyErr := s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs, Audit: activity})
+	applyErr := s.samba.ApplyConfig(ctx, cfg)
 	var aclErr *sys.ACLError
 	switch {
 	case applyErr == nil:
@@ -474,13 +496,9 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 func (s *Service) restoreConfig(ctx context.Context) {
 	shares, err := s.repo.All(ctx, s.repo.db.Read)
 	if err == nil {
-		var specs []sys.ShareSpec
-		if specs, err = s.specs(ctx, shares); err == nil {
-			var server sys.ServerSettings
-			var activity bool
-			if server, activity, _, err = s.repo.serverSettings(ctx, s.repo.db.Read); err == nil {
-				err = s.samba.ApplyConfig(ctx, sys.SambaConfig{Server: server, Shares: specs, Audit: activity})
-			}
+		var cfg sys.SambaConfig
+		if cfg, err = s.sambaConfig(ctx, s.repo.db.Read, shares); err == nil {
+			err = s.samba.ApplyConfig(ctx, cfg)
 		}
 	}
 	if err != nil {

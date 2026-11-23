@@ -84,13 +84,13 @@ func TestActivityLogSetting(t *testing.T) {
 	jay := createUser(t, admin, "jay")
 	admin.do("POST", "/shares", map[string]any{"name": "media", "path": "/srv/media",
 		"access": []map[string]any{{"userId": jay.ID, "level": "write"}}}, nil)
-	if strings.Contains(fake.Config, "full_audit") {
+	if strings.Contains(fake.CurrentConfig(), "full_audit") {
 		t.Fatal("the activity log is off until an admin turns it on")
 	}
 
 	// Without the module, turning it on is refused and nothing changes.
 	fake.NoAuditModule = true
-	before := fake.Config
+	before := fake.CurrentConfig()
 	var p problem
 	status, _ := admin.do("PUT", "/settings/samba", defaultsWithActivity, &p)
 	want(t, "module missing", status, 422)
@@ -98,7 +98,7 @@ func TestActivityLogSetting(t *testing.T) {
 	if !strings.Contains(p.Detail, "samba-vfs-modules") {
 		t.Errorf("the message should say what to install: %q", p.Detail)
 	}
-	want(t, "config untouched", fake.Config, before)
+	want(t, "config untouched", fake.CurrentConfig(), before)
 
 	fake.NoAuditModule = false
 	var s struct{ ActivityLog bool }
@@ -111,8 +111,8 @@ func TestActivityLogSetting(t *testing.T) {
 			t.Errorf("share config is missing %q:\n%s", line, sec)
 		}
 	}
-	if !strings.Contains(fake.Config, "log level = 0 full_audit:1 auth_json_audit:3") {
-		t.Errorf("the audit log level is missing:\n%s", fake.Config)
+	if !strings.Contains(fake.CurrentConfig(), "log level = 0 full_audit:1 auth_json_audit:3") {
+		t.Errorf("the audit log level is missing:\n%s", fake.CurrentConfig())
 	}
 }
 

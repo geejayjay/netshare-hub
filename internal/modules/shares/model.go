@@ -117,6 +117,13 @@ type Blocks interface {
 	BlockedUsers(ctx context.Context) (map[int64]bool, error)
 }
 
+// Logins is SMB brute-force protection (the guard module): who Samba must
+// refuse, and whether it must log logins.
+type Logins interface {
+	BannedAddresses(ctx context.Context) ([]string, error)
+	LoginAudit(ctx context.Context) (bool, error)
+}
+
 // Alerts is what shares needs from the alerts module.
 type Alerts interface {
 	Raise(ctx context.Context, in alerts.Raise) (alerts.Alert, error)

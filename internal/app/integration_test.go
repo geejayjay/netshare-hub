@@ -865,3 +865,106 @@ func TestGuardOverRealSamba(t *testing.T) {
 		t.Errorf("writing after restore failed:\n%s", out)
 	}
 }
+
+// Step 2.4 against real Samba: an allow-listed address is never banned;
+// repeated failures from another get it refused before it can even try a
+// password; lifting the ban lets it in again.
+func TestBansOverRealSamba(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	ip := localIPv4(t) // not loopback: the server itself is never banned
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.SecureCookies = false
+	system, err := sysexec.New(sysexec.Options{Protected: cfg.ProtectedDirs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := app.New(context.Background(), cfg, app.Options{System: &system})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler)
+	admin := newClient(t, server.URL+app.APIPrefix)
+	var s session
+	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
+	admin.csrf = s.CSRFToken
+
+	user := fmt.Sprintf("bf%d", os.Getpid()%10000)
+	uid := createUser(t, admin, user).ID
+	dir := fmt.Sprintf("/srv/shares/bans-%d", os.Getpid())
+	name := "bf" + fmt.Sprint(os.Getpid()%10000)
+	var sh shareBody
+	admin.do("POST", "/shares", map[string]any{"name": name, "path": dir, "createDirectory": true,
+		"access": []map[string]any{{"userId": uid, "level": "write"}}}, &sh)
+	settings := map[string]any{"enabled": true, "failures": 10, "windowMinutes": 10, "banMinutes": 15, "maxBanHours": 168,
+		"followDevice": true, "allowList": []string{ip.String()}}
+	t.Cleanup(func() {
+		var list struct{ Items []banBody }
+		admin.do("GET", "/guard/bans?active=true", nil, &list)
+		for _, b := range list.Items {
+			admin.do("POST", "/guard/bans/"+itoa(b.ID)+"/lift", nil, nil)
+		}
+		admin.do("DELETE", "/shares/"+itoa(sh.ID), nil, nil)
+		admin.do("DELETE", "/users/"+itoa(uid), nil, nil)
+		server.Close()
+		application.Close()
+		os.RemoveAll(dir)
+	})
+	if status, _ := admin.do("PUT", "/guard/bans/settings", settings, nil); status != 200 {
+		t.Fatalf("settings: %d", status)
+	}
+	try := func(password string) string {
+		out, _ := exec.Command("smbclient", "//"+ip.String()+"/"+name, "-U", user+"%"+password, "-c", "pwd").CombinedOutput()
+		return string(out)
+	}
+	bans := func() []banBody {
+		var list struct{ Items []banBody }
+		admin.do("GET", "/guard/bans?active=true", nil, &list)
+		return list.Items
+	}
+	if out := try(pw); !strings.Contains(out, "Current directory") {
+		t.Fatalf("the user cannot connect to begin with:\n%s", out)
+	}
+
+	// Allow-listed: as many mistakes as it takes, never banned.
+	for i := 0; i < 25; i++ {
+		try("wrong-password")
+	}
+	time.Sleep(2 * time.Second)
+	if b := bans(); len(b) != 0 {
+		t.Fatalf("an allow-listed address was banned: %+v", b)
+	}
+
+	// Not allow-listed: 10 failures and it is out.
+	settings["allowList"] = []string{}
+	admin.do("PUT", "/guard/bans/settings", settings, nil)
+	for i := 0; i < 10; i++ {
+		try("wrong-password")
+	}
+	var b []banBody
+	for i := 0; i < 100 && len(b) == 0; i++ {
+		time.Sleep(100 * time.Millisecond)
+		b = bans()
+	}
+	if len(b) != 1 || b[0].Address != ip.String() {
+		t.Fatalf("bans: %+v", b)
+	}
+	// Even the right password does not get in: Samba refuses the address
+	// when it connects, before any login.
+	if out := try(pw); strings.Contains(out, "Current directory") {
+		t.Errorf("a banned address still got in:\n%s", out)
+	}
+	if out, _ := exec.Command("testparm", "-s", "--parameter-name", "hosts deny").CombinedOutput(); !strings.Contains(string(out), ip.String()) {
+		t.Errorf("hosts deny: %s", out)
+	}
+
+	// Lifted: in again.
+	if status, _ := admin.do("POST", "/guard/bans/"+itoa(b[0].ID)+"/lift", nil, nil); status != 200 {
+		t.Fatalf("lift: %d", status)
+	}
+	if out := try(pw); !strings.Contains(out, "Current directory") {
+		t.Errorf("after lifting the ban:\n%s", out)
+	}
+}

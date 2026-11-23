@@ -49,10 +49,11 @@ func New(opts Options) (sys.System, error) {
 	samba.afterApply = workers.Refresh
 
 	return sys.System{
-		Accounts: accounts,
-		Samba:    samba,
-		Files:    NewFiles(runner, opts.Protected...),
-		Workers:  workers,
-		Audit:    NewAuditLog(runner, DefaultMainConfig),
+		Accounts:  accounts,
+		Samba:     samba,
+		Files:     NewFiles(runner, opts.Protected...),
+		Workers:   workers,
+		Audit:     NewAuditLog(runner, DefaultMainConfig),
+		Neighbors: NewNeighbors(),
 	}, nil
 }

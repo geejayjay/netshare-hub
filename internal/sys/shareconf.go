@@ -120,12 +120,18 @@ func RenderConfig(cfg SambaConfig) (string, error) {
 	if err := cfg.Server.Check(); err != nil {
 		return "", fmt.Errorf("refusing to render: %w", err)
 	}
+	if len(cfg.Banned) > MaxBans {
+		return "", fmt.Errorf("refusing to render: more than %d banned addresses", MaxBans)
+	}
+	if err := checkHostEntries("global", "ban", cfg.Banned); err != nil {
+		return "", fmt.Errorf("refusing to render: %w", err)
+	}
 	shares := append([]ShareSpec(nil), cfg.Shares...) // do not reorder the caller's slice
 	sort.Slice(shares, func(i, j int) bool { return strings.ToLower(shares[i].Name) < strings.ToLower(shares[j].Name) })
 
 	var b strings.Builder
 	b.WriteString(ConfigHeader)
-	renderServer(&b, cfg.Server, cfg.Audit)
+	renderServer(&b, cfg)
 
 	for _, s := range shares {
 		if err := s.Check(); err != nil {

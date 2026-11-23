@@ -139,7 +139,7 @@ func TestGuardProtectModeBlocksAndRestores(t *testing.T) {
 		t.Error("restoredAt not set")
 	}
 	if !strings.Contains(section(t, fake, "docs"), "write list = jay") {
-		t.Errorf("jay should write again:\n%s", fake.Config)
+		t.Errorf("jay should write again:\n%s", fake.CurrentConfig())
 	}
 	if len(activeAlerts(t, admin)) != 0 {
 		t.Error("the alert should be resolved after restoring")

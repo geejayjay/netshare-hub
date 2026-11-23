@@ -71,9 +71,11 @@ type deleteUserRequest struct {
 }
 
 type applyConfigRequest struct {
-	Server sys.ServerSettings `json:"server"`
-	Shares []sys.ShareSpec    `json:"shares"`
-	Audit  bool               `json:"audit,omitempty"`
+	Server     sys.ServerSettings `json:"server"`
+	Shares     []sys.ShareSpec    `json:"shares"`
+	Audit      bool               `json:"audit,omitempty"`
+	LoginAudit bool               `json:"loginAudit,omitempty"`
+	Banned     []string           `json:"banned,omitempty"`
 }
 
 // fixPermissionsRequest names a share; the agent reads its folder and access

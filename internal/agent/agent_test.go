@@ -300,7 +300,9 @@ func TestApplyConfigKeepsEveryField(t *testing.T) {
 			Encryption: "desired", Multichannel: "yes"},
 		Shares: []sys.ShareSpec{{Name: "media", Path: "/srv/media", Comment: "Films", Readers: []string{"jay"},
 			Writers: []string{"jay"}, Guest: true, HideUnreadable: true, Allow: []string{"192.168.1.0/24"}, Block: []string{"192.168.1.66"}}},
-		Audit: true,
+		Audit:      true,
+		LoginAudit: true,
+		Banned:     []string{"192.168.1.66", "2001:db8:1:2::/64"},
 	}
 	if err := client.System().Samba.ApplyConfig(ctx, cfg); err != nil {
 		t.Fatal(err)

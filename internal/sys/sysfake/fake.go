@@ -62,6 +62,7 @@ type Fake struct {
 	// NoAuditModule pretends Samba's full_audit module is not installed.
 	NoAuditModule bool
 	disconnected  []netip.Addr
+	macs          map[netip.Addr]string
 	// listeners are the open Events streams (EmitAudit feeds them).
 	listeners map[chan sambalog.Event]bool
 }
@@ -101,7 +102,7 @@ func New() *Fake {
 
 // System returns the fake as a sys.System.
 func (f *Fake) System() sys.System {
-	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f}
+	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f, Neighbors: f}
 }
 
 // --- sys.Audit ---
@@ -342,6 +343,32 @@ func (f *Fake) DisconnectClient(_ context.Context, ip netip.Addr) error {
 	}
 	f.disconnected = append(f.disconnected, ip.Unmap())
 	return nil
+}
+
+// CurrentConfig returns Config under the lock: for tests that read it while
+// background work (bans, the ransomware guard) may be applying a new one.
+func (f *Fake) CurrentConfig() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Config
+}
+
+// SetMAC makes MAC return mac for ip (a computer on the local network).
+func (f *Fake) SetMAC(ip netip.Addr, mac string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.macs == nil {
+		f.macs = map[netip.Addr]string{}
+	}
+	f.macs[ip] = mac
+}
+
+// MAC returns what SetMAC set.
+func (f *Fake) MAC(ip netip.Addr) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	mac, ok := f.macs[ip.Unmap()]
+	return mac, ok
 }
 
 // Disconnected lists the clients DisconnectClient dropped, in order.

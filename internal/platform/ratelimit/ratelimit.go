@@ -38,16 +38,46 @@ func (l *Limiter) Blocked(key string) (bool, int) {
 	return true, int(e.resetAt.Sub(l.now()).Seconds()) + 1
 }
 
+// MaxKeys bounds memory: at most this many keys are counted at once. An
+// attacker trying from many addresses cannot make the counter grow without
+// end; when it is full, expired keys go first, then an arbitrary one.
+const MaxKeys = 100000
+
 // Fail records one failed attempt.
 func (l *Limiter) Fail(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	e := l.live(key)
 	if e == nil {
+		if len(l.entries) >= MaxKeys {
+			l.purge()
+			for k := range l.entries {
+				if len(l.entries) < MaxKeys {
+					break
+				}
+				delete(l.entries, k)
+			}
+		}
 		e = &entry{resetAt: l.now().Add(l.window)}
 		l.entries[key] = e
 	}
 	e.failures++
+}
+
+// Purge forgets every key whose window has passed.
+func (l *Limiter) Purge() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.purge()
+}
+
+func (l *Limiter) purge() {
+	now := l.now()
+	for k, e := range l.entries {
+		if !now.Before(e.resetAt) {
+			delete(l.entries, k)
+		}
+	}
 }
 
 // Reset clears the counter after a success.

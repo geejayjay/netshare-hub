@@ -123,7 +123,8 @@ func (c *Client) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
 	if cfg.Shares == nil {
 		cfg.Shares = []sys.ShareSpec{}
 	}
-	return c.call(ctx, opApplyConfig, applyConfigRequest{Server: cfg.Server, Shares: cfg.Shares, Audit: cfg.Audit}, nil)
+	return c.call(ctx, opApplyConfig, applyConfigRequest{Server: cfg.Server, Shares: cfg.Shares, Audit: cfg.Audit,
+		LoginAudit: cfg.LoginAudit, Banned: cfg.Banned}, nil)
 }
 
 // FixPermissions can run for hours on a big share, so it is not bound by

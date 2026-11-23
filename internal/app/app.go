@@ -146,6 +146,20 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	}
 	shareService.SetBlocks(guardService)
 	guardEvents := smbEvents.Subscribe("guard", 50000)
+
+	// SMB brute-force protection: failed logins from the same events.
+	banService := guard.NewBans(database, shareService, osLayer.Samba, osLayer.Neighbors, alertService)
+	if err := banService.Start(ctx); err != nil {
+		activityDB.Close()
+		database.Close()
+		return nil, err
+	}
+	shareService.SetLogins(banService)
+	banEvents := smbEvents.Subscribe("bans", 50000)
+	// Write the config once at start: login logging on, ended bans gone.
+	if err := shareService.Reapply(ctx); err != nil {
+		slog.WarnContext(ctx, "could not write the Samba config at start", "err", err)
+	}
 	for kind, h := range opts.JobKinds {
 		jobService.Register(kind, h)
 	}
@@ -164,6 +178,8 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	tasks.Add(scheduler.Task{Name: "jobs.cleanup", Every: time.Hour, Run: jobService.Cleanup})
 	tasks.Add(scheduler.Task{Name: "alerts.cleanup", Daily: 3*time.Hour + 30*time.Minute, Run: alertService.Prune})
 	tasks.Add(scheduler.Task{Name: "activity.cleanup", Daily: 4 * time.Hour, Run: activityService.Prune})
+	tasks.Add(scheduler.Task{Name: "smb-bans.expire", Every: time.Minute, Run: banService.Expire})
+	tasks.Add(scheduler.Task{Name: "smb-bans.forget", Every: 10 * time.Minute, Run: banService.Purge})
 
 	router := chi.NewRouter()
 	router.Use(httpx.RequestID, httpx.RealIP, httpx.AccessLog, httpx.Recover, httpx.SecurityHeaders)
@@ -189,6 +205,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		alerts.Register(api, alertService)
 		activity.Register(api, activityService)
 		guard.Register(api, guardService)
+		guard.RegisterBans(api, banService)
 		scheduler.Register(api, tasks)
 	})
 
@@ -205,9 +222,10 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	tasks.Start()
 	background, cancel := context.WithCancel(context.Background())
 	var loops sync.WaitGroup
-	loops.Add(3)
+	loops.Add(4)
 	go func() { defer loops.Done(); activityService.Record(background, activityEvents) }()
 	go func() { defer loops.Done(); guardService.Run(background, guardEvents) }()
+	go func() { defer loops.Done(); banService.Run(background, banEvents) }()
 	go func() { defer loops.Done(); feedSMBEvents(background, osLayer.Audit, smbEvents) }()
 	stop := func() {
 		tasks.Stop()
@@ -235,7 +253,11 @@ func chooseSystem(ctx context.Context, cfg config.Config, override *sys.System) 
 		if err := client.Ping(ctx); err != nil {
 			return sys.System{}, fmt.Errorf("cannot reach the agent at %s (is `netshare-hub agent` running?): %w", cfg.AgentSocket, err)
 		}
-		return client.System(), nil
+		system := client.System()
+		// The neighbour table is readable without privileges: the web
+		// server reads it itself.
+		system.Neighbors = sysexec.NewNeighbors()
+		return system, nil
 	default:
 		// Everything in this one root process: the web server is the caller.
 		return sysexec.New(sysexec.Options{Protected: cfg.ProtectedDirs()})

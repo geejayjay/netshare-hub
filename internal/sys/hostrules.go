@@ -63,6 +63,11 @@ func checkHostList(share, name string, list []string) error {
 	if len(list) > MaxHostRules {
 		return fmt.Errorf("share %q: more than %d %s entries", share, MaxHostRules, name)
 	}
+	return checkHostEntries(share, name, list)
+}
+
+// checkHostEntries checks each entry is canonical and listed once.
+func checkHostEntries(share, name string, list []string) error {
 	seen := map[string]bool{}
 	for _, entry := range list {
 		canonical, err := ParseHostRule(entry)

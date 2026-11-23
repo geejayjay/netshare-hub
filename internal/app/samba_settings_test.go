@@ -20,13 +20,15 @@ func TestSambaServerSettings(t *testing.T) {
 	admin.do("POST", "/shares", map[string]any{"name": "media", "path": "/srv/media",
 		"access": []map[string]any{{"userId": jay.ID, "level": "write"}}}, nil)
 
-	// Nothing managed at first: smb.conf decides.
+	// No server setting managed at first: smb.conf decides. The only global
+	// line is login logging, for brute-force protection (on by default).
 	var s sambaSettings
 	status, _ := admin.do("GET", "/settings/samba", nil, &s)
 	want(t, "get status", status, 200)
 	want(t, "default protocol", s.MinProtocol, "default")
-	if strings.Contains(fake.Config, "[global]") {
-		t.Errorf("no settings yet, but a [global] section:\n%s", fake.Config)
+	global := fake.Config[strings.Index(fake.Config, "[global]"):strings.Index(fake.Config, "[media]")]
+	if strings.TrimSpace(global) != "[global]\n   log level = 0 auth_json_audit:3" {
+		t.Errorf("no server settings yet, but [global] has more than login logging:\n%s", global)
 	}
 
 	all := map[string]any{"serverName": "nas-01", "workgroup": "HOME", "minProtocol": "SMB3_00",

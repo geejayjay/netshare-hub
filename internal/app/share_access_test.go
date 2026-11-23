@@ -37,11 +37,12 @@ func (e effectiveBody) level(name string) string {
 // section returns one share's part of the generated config.
 func section(t *testing.T, fake *sysfake.Fake, name string) string {
 	t.Helper()
-	start := strings.Index(fake.Config, "["+name+"]")
+	config := fake.CurrentConfig() // background work may be applying a new one
+	start := strings.Index(config, "["+name+"]")
 	if start < 0 {
-		t.Fatalf("share %s is not in the config:\n%s", name, fake.Config)
+		t.Fatalf("share %s is not in the config:\n%s", name, config)
 	}
-	rest := fake.Config[start+1:]
+	rest := config[start+1:]
 	if end := strings.Index(rest, "\n["); end >= 0 {
 		rest = rest[:end]
 	}

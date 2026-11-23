@@ -311,6 +311,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/guard/bans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List banned addresses, newest first */
+        get: operations["listSMBBans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/guard/bans/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the SMB brute-force protection settings */
+        get: operations["getSMBBanSettings"];
+        /** Change the SMB brute-force protection settings (bans of newly allowed addresses are lifted) */
+        put: operations["updateSMBBanSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/guard/bans/{id}/lift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End a ban now */
+        post: operations["liftSMBBan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/guard/incidents": {
         parameters: {
             query?: never;
@@ -700,6 +752,67 @@ export interface components {
             source: "shares" | "uploads" | "security" | "storage" | "replication" | "system";
             title: string;
         };
+        Ban: {
+            active: boolean;
+            /** @description An IPv4 address, or an IPv6 /64 range. */
+            address: string;
+            /** Format: date-time */
+            bannedAt: string;
+            /** Format: int64 */
+            failures: number;
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            liftedAt?: string;
+            /** Format: int64 */
+            liftedBy?: number;
+            /** @description The device's hardware address, when it is on the local network. */
+            mac?: string;
+            /**
+             * Format: int64
+             * @description 1 for a first ban; higher for repeats within a week (longer bans).
+             */
+            offence: number;
+            /**
+             * @description "same_device": a banned device came back with a new address.
+             * @enum {string}
+             */
+            reason: "failures" | "same_device";
+            /** Format: date-time */
+            until: string;
+            /** @description The account names tried. */
+            users: string[];
+        };
+        BanSettings: {
+            /** @description Addresses and ranges never banned (your own computer). IPs or CIDR ranges. */
+            allowList: string[];
+            /**
+             * Format: int64
+             * @description How long the first ban lasts. Each repeat within a week lasts 4 times longer.
+             */
+            banMinutes: number;
+            /** @description Count failed SMB logins and ban addresses that fail too often. Also turns on login logging in Samba. */
+            enabled: boolean;
+            /**
+             * Format: int64
+             * @description Failed logins from one address ...
+             */
+            failures: number;
+            /** @description When a banned computer on the local network gets a new address (DHCP), ban the new address too (recognised by its hardware/MAC address). */
+            followDevice: boolean;
+            /**
+             * Format: int64
+             * @description The longest a ban lasts.
+             */
+            maxBanHours: number;
+            /** Format: date-time */
+            updatedAt?: string;
+            /**
+             * Format: int64
+             * @description ... within this many minutes, to be banned.
+             */
+            windowMinutes: number;
+        };
         CreateShareRequest: {
             /** @description Users who may use the share. Without any (and without guest access), nobody can connect. */
             access?: components["schemas"]["ShareAccessInput"][] | null;
@@ -863,6 +976,11 @@ export interface components {
         };
         ListAlert: {
             items: components["schemas"]["Alert"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListBan: {
+            items: components["schemas"]["Ban"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
@@ -1836,6 +1954,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listSMBBans: {
+        parameters: {
+            query?: {
+                /** @description Page number, starting at 1. */
+                page?: number;
+                /** @description Items per page. Each endpoint has its own default and maximum. */
+                pageSize?: number;
+                /** @description Field to sort by. Prefix with - for descending, e.g. -createdAt. */
+                sort?: string;
+                /** @description Free-text search. */
+                q?: string;
+                /** @description Only bans in force now. */
+                active?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListBan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSMBBanSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BanSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateSMBBanSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BanSettings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BanSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    liftSMBBan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ban"];
                 };
             };
             /** @description Error */

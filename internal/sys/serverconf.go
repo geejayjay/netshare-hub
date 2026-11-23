@@ -17,7 +17,20 @@ type SambaConfig struct {
 	// Audit turns on the activity log: Samba's full_audit module on every
 	// share, and the audit log levels (see AuditOptions).
 	Audit bool `json:"audit,omitempty"`
+	// LoginAudit logs every SMB login (brute-force protection), also when
+	// the activity log is off.
+	LoginAudit bool `json:"loginAudit,omitempty"`
+	// Banned are addresses (IPs, or IPv6 /64 ranges) refused before they
+	// can even try a password: a global "hosts deny".
+	Banned []string `json:"banned,omitempty"`
 }
+
+// MaxBans is the most addresses one config bans.
+const MaxBans = 1000
+
+// LoginLogLevel logs logins only (brute-force protection without the
+// activity log).
+const LoginLogLevel = "0 auth_json_audit:3"
 
 // The activity log's Samba settings. Only the operations the activity log
 // and the ransomware guard use are logged (Samba cannot log only the
@@ -99,9 +112,11 @@ func (s ServerSettings) Check() error {
 func (s ServerSettings) empty() bool { return s == ServerSettings{} }
 
 // renderServer writes the [global] part of the managed config (nothing
-// when no server setting is managed and the activity log is off).
-func renderServer(b *strings.Builder, s ServerSettings, audit bool) {
-	if s.empty() && !audit {
+// when no server setting is managed, nothing is logged and nobody is
+// banned).
+func renderServer(b *strings.Builder, cfg SambaConfig) {
+	s := cfg.Server
+	if s.empty() && !cfg.Audit && !cfg.LoginAudit && len(cfg.Banned) == 0 {
 		return
 	}
 	// The managed config is included from smb.conf's [global] section, but
@@ -120,11 +135,20 @@ func renderServer(b *strings.Builder, s ServerSettings, audit bool) {
 			param(b, p.key, p.value)
 		}
 	}
-	if audit {
-		// Each connection's process reads the config again, so the log
-		// level must be here (setting it at runtime does not last). It
-		// replaces a log level set in smb.conf while the activity log is on.
+	// Each connection's process reads the config again, so the log level
+	// must be here (setting it at runtime does not last). It replaces a log
+	// level set in smb.conf while these are on.
+	switch {
+	case cfg.Audit:
 		param(b, "log level", AuditLogLevel)
+	case cfg.LoginAudit:
+		param(b, "log level", LoginLogLevel)
+	}
+	if len(cfg.Banned) > 0 {
+		// Checked when a client connects, before it can try a password.
+		// It replaces a global "hosts deny" set in smb.conf while anyone is
+		// banned.
+		param(b, "hosts deny", strings.Join(cfg.Banned, ", "))
 	}
 }
 

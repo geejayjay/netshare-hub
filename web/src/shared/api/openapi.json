@@ -154,6 +154,141 @@
         ],
         "type": "object"
       },
+      "Ban": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "address": {
+            "description": "An IPv4 address, or an IPv6 /64 range.",
+            "type": "string"
+          },
+          "bannedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "failures": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "liftedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "liftedBy": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mac": {
+            "description": "The device's hardware address, when it is on the local network.",
+            "type": "string"
+          },
+          "offence": {
+            "description": "1 for a first ban; higher for repeats within a week (longer bans).",
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "description": "\"same_device\": a banned device came back with a new address.",
+            "enum": [
+              "failures",
+              "same_device"
+            ],
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "users": {
+            "description": "The account names tried.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "address",
+          "reason",
+          "failures",
+          "users",
+          "offence",
+          "bannedAt",
+          "until",
+          "active"
+        ],
+        "type": "object"
+      },
+      "BanSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "allowList": {
+            "description": "Addresses and ranges never banned (your own computer). IPs or CIDR ranges.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "banMinutes": {
+            "description": "How long the first ban lasts. Each repeat within a week lasts 4 times longer.",
+            "format": "int64",
+            "maximum": 10080,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "Count failed SMB logins and ban addresses that fail too often. Also turns on login logging in Samba.",
+            "type": "boolean"
+          },
+          "failures": {
+            "description": "Failed logins from one address ...",
+            "format": "int64",
+            "maximum": 1000,
+            "minimum": 3,
+            "type": "integer"
+          },
+          "followDevice": {
+            "description": "When a banned computer on the local network gets a new address (DHCP), ban the new address too (recognised by its hardware/MAC address).",
+            "type": "boolean"
+          },
+          "maxBanHours": {
+            "description": "The longest a ban lasts.",
+            "format": "int64",
+            "maximum": 8760,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "windowMinutes": {
+            "description": "... within this many minutes, to be banned.",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "failures",
+          "windowMinutes",
+          "banMinutes",
+          "maxBanHours",
+          "followDevice",
+          "allowList"
+        ],
+        "type": "object"
+      },
       "CreateShareRequest": {
         "additionalProperties": false,
         "properties": {
@@ -650,6 +785,25 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ListBan": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Ban"
             },
             "type": "array"
           },
@@ -2967,6 +3121,234 @@
           "Files"
         ],
         "x-permission": "files:write"
+      }
+    },
+    "/guard/bans": {
+      "get": {
+        "operationId": "listSMBBans",
+        "parameters": [
+          {
+            "description": "Page number, starting at 1.",
+            "explode": false,
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "description": "Page number, starting at 1.",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Items per page. Each endpoint has its own default and maximum.",
+            "explode": false,
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "description": "Items per page. Each endpoint has its own default and maximum.",
+              "format": "int64",
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+            "explode": false,
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "description": "Field to sort by. Prefix with - for descending, e.g. -createdAt.",
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Free-text search.",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Free-text search.",
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only bans in force now.",
+            "explode": false,
+            "in": "query",
+            "name": "active",
+            "schema": {
+              "description": "Only bans in force now.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListBan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List banned addresses, newest first",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "system:read"
+      }
+    },
+    "/guard/bans/settings": {
+      "get": {
+        "operationId": "getSMBBanSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BanSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get the SMB brute-force protection settings",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "system:read"
+      },
+      "put": {
+        "operationId": "updateSMBBanSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BanSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change the SMB brute-force protection settings (bans of newly allowed addresses are lifted)",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "settings:write"
+      }
+    },
+    "/guard/bans/{id}/lift": {
+      "post": {
+        "operationId": "liftSMBBan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ban"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "End a ban now",
+        "tags": [
+          "Security"
+        ],
+        "x-permission": "alerts:manage"
       }
     },
     "/guard/incidents": {

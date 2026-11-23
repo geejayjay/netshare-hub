@@ -389,6 +389,7 @@ func TestSharePathPolicyFollowsSymlinks(t *testing.T) {
 	admin.do("POST", "/setup", map[string]string{"username": "admin", "password": pw}, &s)
 	admin.csrf = s.CSRFToken
 
+	applied := fake.Applied // the config written at start
 	var p problem
 	status, _ := admin.do("POST", "/shares", map[string]any{"name": "x", "path": "/srv/innocent"}, &p)
 	want(t, "link to system folder status", status, 422)
@@ -403,5 +404,5 @@ func TestSharePathPolicyFollowsSymlinks(t *testing.T) {
 	if len(files.created) != 0 {
 		t.Errorf("a folder was created before the policy check: %v", files.created)
 	}
-	want(t, "config never applied", fake.Applied, 0)
+	want(t, "config never applied for the refused shares", fake.Applied, applied)
 }
