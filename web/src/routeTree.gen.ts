@@ -13,6 +13,12 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppActivityRouteImport } from './routes/_app/activity'
+import { Route as AppFilesRouteImport } from './routes/_app/files'
+import { Route as AppMySharesRouteImport } from './routes/_app/my-shares'
+import { Route as AppSecurityRouteImport } from './routes/_app/security'
+import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSharesRouteImport } from './routes/_app/shares'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
 
@@ -35,6 +41,36 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppActivityRoute = AppActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFilesRoute = AppFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMySharesRoute = AppMySharesRouteImport.update({
+  id: '/my-shares',
+  path: '/my-shares',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSecurityRoute = AppSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSessionsRoute = AppSessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSharesRoute = AppSharesRouteImport.update({
   id: '/shares',
   path: '/shares',
@@ -50,12 +86,24 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/activity': typeof AppActivityRoute
+  '/files': typeof AppFilesRoute
+  '/my-shares': typeof AppMySharesRoute
+  '/security': typeof AppSecurityRoute
+  '/sessions': typeof AppSessionsRoute
+  '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
   '/users': typeof AppUsersRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/activity': typeof AppActivityRoute
+  '/files': typeof AppFilesRoute
+  '/my-shares': typeof AppMySharesRoute
+  '/security': typeof AppSecurityRoute
+  '/sessions': typeof AppSessionsRoute
+  '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
   '/users': typeof AppUsersRoute
   '/': typeof AppIndexRoute
@@ -65,20 +113,54 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
+  '/_app/activity': typeof AppActivityRoute
+  '/_app/files': typeof AppFilesRoute
+  '/_app/my-shares': typeof AppMySharesRoute
+  '/_app/security': typeof AppSecurityRoute
+  '/_app/sessions': typeof AppSessionsRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/_app/shares': typeof AppSharesRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/setup' | '/shares' | '/users'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/setup'
+    | '/activity'
+    | '/files'
+    | '/my-shares'
+    | '/security'
+    | '/sessions'
+    | '/settings'
+    | '/shares'
+    | '/users'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/setup' | '/shares' | '/users' | '/'
+  to:
+    | '/login'
+    | '/setup'
+    | '/activity'
+    | '/files'
+    | '/my-shares'
+    | '/security'
+    | '/sessions'
+    | '/settings'
+    | '/shares'
+    | '/users'
+    | '/'
   id:
     | '__root__'
     | '/_app'
     | '/login'
     | '/setup'
+    | '/_app/activity'
+    | '/_app/files'
+    | '/_app/my-shares'
+    | '/_app/security'
+    | '/_app/sessions'
+    | '/_app/settings'
     | '/_app/shares'
     | '/_app/users'
     | '/_app/'
@@ -120,6 +202,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/activity': {
+      id: '/_app/activity'
+      path: '/activity'
+      fullPath: '/activity'
+      preLoaderRoute: typeof AppActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/files': {
+      id: '/_app/files'
+      path: '/files'
+      fullPath: '/files'
+      preLoaderRoute: typeof AppFilesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/my-shares': {
+      id: '/_app/my-shares'
+      path: '/my-shares'
+      fullPath: '/my-shares'
+      preLoaderRoute: typeof AppMySharesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/security': {
+      id: '/_app/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof AppSecurityRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sessions': {
+      id: '/_app/sessions'
+      path: '/sessions'
+      fullPath: '/sessions'
+      preLoaderRoute: typeof AppSessionsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/shares': {
       id: '/_app/shares'
       path: '/shares'
@@ -138,12 +262,24 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppActivityRoute: typeof AppActivityRoute
+  AppFilesRoute: typeof AppFilesRoute
+  AppMySharesRoute: typeof AppMySharesRoute
+  AppSecurityRoute: typeof AppSecurityRoute
+  AppSessionsRoute: typeof AppSessionsRoute
+  AppSettingsRoute: typeof AppSettingsRoute
   AppSharesRoute: typeof AppSharesRoute
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppActivityRoute: AppActivityRoute,
+  AppFilesRoute: AppFilesRoute,
+  AppMySharesRoute: AppMySharesRoute,
+  AppSecurityRoute: AppSecurityRoute,
+  AppSessionsRoute: AppSessionsRoute,
+  AppSettingsRoute: AppSettingsRoute,
   AppSharesRoute: AppSharesRoute,
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
