@@ -12,28 +12,36 @@ import (
 	"netshare-hub/internal/sys/sambalog"
 )
 
-// auditModuleGlobs are where distributions put Samba's full_audit module.
-var auditModuleGlobs = []string{
-	"/usr/lib/*/samba/vfs/full_audit.so", // Debian, Ubuntu (multiarch)
-	"/usr/lib64/samba/vfs/full_audit.so", // Fedora, RHEL
-	"/usr/lib/samba/vfs/full_audit.so",   // Arch, Alpine
+// moduleDirGlobs are where distributions put Samba's VFS modules.
+var moduleDirGlobs = []string{
+	"/usr/lib/*/samba/vfs", // Debian, Ubuntu (multiarch)
+	"/usr/lib64/samba/vfs", // Fedora, RHEL
+	"/usr/lib/samba/vfs",   // Arch, Alpine
 }
 
-// auditModuleInstalled reports whether full_audit can be loaded. Samba's
-// own checker does not notice a missing module, and a share naming one
-// stops working, so this is checked before the activity log is turned on.
-func auditModuleInstalled() bool {
-	for _, g := range auditModuleGlobs {
-		if m, _ := filepath.Glob(g); len(m) > 0 {
+// moduleInstalled reports whether a Samba VFS module can be loaded. The
+// name comes from a fixed list in package sys, never from a request.
+func moduleInstalled(name string) bool {
+	for _, g := range moduleDirGlobs {
+		if m, _ := filepath.Glob(filepath.Join(g, name+".so")); len(m) > 0 {
 			return true
 		}
 	}
 	return false
 }
 
-func checkAuditModule(cfg sys.SambaConfig) error {
-	if cfg.Audit && !auditModuleInstalled() {
-		return fmt.Errorf("%w: full_audit (on Debian and Ubuntu: apt install samba-vfs-modules)", sys.ErrModuleMissing)
+// checkModules refuses a config whose modules are not all installed.
+// Samba's own checker does not notice a missing module, and a share naming
+// one stops working, so this is checked before anything changes.
+func checkModules(cfg sys.SambaConfig) error {
+	var missing []string
+	for _, m := range cfg.RequiredModules() {
+		if !moduleInstalled(m) {
+			missing = append(missing, m)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: %s (on Debian and Ubuntu: apt install samba-vfs-modules)", sys.ErrModuleMissing, strings.Join(missing, ", "))
 	}
 	return nil
 }

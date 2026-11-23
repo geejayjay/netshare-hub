@@ -30,6 +30,7 @@ type ServerSettings struct {
 	Encryption   string    `json:"encryption" enum:"default,off,if-supported,required" doc:"\"if-supported\" encrypts when the client can; \"required\" refuses clients that cannot (needs minProtocol SMB3_00 or newer)."`
 	Multichannel string    `json:"multichannel" enum:"default,on,off" doc:"Several network links per client, for speed."`
 	ActivityLog  bool      `json:"activityLog" required:"false" doc:"Record who did what over SMB (the activity log). Needs Samba's full_audit module (Debian, Ubuntu: samba-vfs-modules)."`
+	MacSupport   bool      `json:"macSupport" required:"false" doc:"Apple's SMB extensions on every share: faster folders and correct file details on Macs. Needs Samba's fruit, catia and streams_xattr modules (Debian, Ubuntu: samba-vfs-modules). On while any share is a Time Machine share."`
 	UpdatedAt    time.Time `json:"updatedAt,omitzero"`
 }
 
@@ -45,6 +46,7 @@ func (s ServerSettings) toSys() sys.ServerSettings {
 		NetbiosName: strings.TrimSpace(s.ServerName), Workgroup: strings.TrimSpace(s.Workgroup),
 		MinProtocol: val(s.MinProtocol), MaxProtocol: val(s.MaxProtocol),
 		Encryption: val(s.Encryption), Multichannel: val(s.Multichannel),
+		MacSupport: s.MacSupport,
 	}
 	switch out.Encryption {
 	case "if-supported":
@@ -70,7 +72,7 @@ func fromSys(s sys.ServerSettings, activity bool, updated time.Time) ServerSetti
 		ServerName: s.NetbiosName, Workgroup: s.Workgroup,
 		MinProtocol: def(s.MinProtocol), MaxProtocol: def(s.MaxProtocol),
 		Encryption: def(s.Encryption), Multichannel: def(s.Multichannel),
-		ActivityLog: activity,
+		ActivityLog: activity, MacSupport: s.MacSupport,
 	}
 	if out.Encryption == "desired" {
 		out.Encryption = "if-supported"
@@ -96,8 +98,9 @@ func (r *Repo) serverSettings(ctx context.Context, q querier) (sys.ServerSetting
 	var activity bool
 	var updated int64
 	err := q.QueryRowContext(ctx, `SELECT netbios_name, workgroup, min_protocol, max_protocol, encryption, multichannel,
-		activity_log, updated_at FROM samba_server_settings WHERE id = 1`).
-		Scan(&s.NetbiosName, &s.Workgroup, &s.MinProtocol, &s.MaxProtocol, &s.Encryption, &s.Multichannel, &activity, &updated)
+		mac_support, activity_log, updated_at FROM samba_server_settings WHERE id = 1`).
+		Scan(&s.NetbiosName, &s.Workgroup, &s.MinProtocol, &s.MaxProtocol, &s.Encryption, &s.Multichannel, &s.MacSupport,
+			&activity, &updated)
 	if err == sql.ErrNoRows {
 		return sys.ServerSettings{}, false, time.Time{}, nil
 	}
@@ -106,13 +109,13 @@ func (r *Repo) serverSettings(ctx context.Context, q querier) (sys.ServerSetting
 
 func (r *Repo) saveServerSettings(ctx context.Context, q querier, s sys.ServerSettings, activity bool, now time.Time) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO samba_server_settings
-		(id, netbios_name, workgroup, min_protocol, max_protocol, encryption, multichannel, activity_log, updated_at)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, netbios_name, workgroup, min_protocol, max_protocol, encryption, multichannel, mac_support, activity_log, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET netbios_name = excluded.netbios_name, workgroup = excluded.workgroup,
 			min_protocol = excluded.min_protocol, max_protocol = excluded.max_protocol,
-			encryption = excluded.encryption, multichannel = excluded.multichannel,
+			encryption = excluded.encryption, multichannel = excluded.multichannel, mac_support = excluded.mac_support,
 			activity_log = excluded.activity_log, updated_at = excluded.updated_at`,
-		s.NetbiosName, s.Workgroup, s.MinProtocol, s.MaxProtocol, s.Encryption, s.Multichannel, activity, now.Unix())
+		s.NetbiosName, s.Workgroup, s.MinProtocol, s.MaxProtocol, s.Encryption, s.Multichannel, s.MacSupport, activity, now.Unix())
 	return err
 }
 
@@ -148,6 +151,19 @@ func (s *Service) UpdateServerSettings(ctx context.Context, in ServerSettings) (
 		return ServerSettings{}, err
 	}
 	err := s.change(ctx, func(tx *sql.Tx) (bool, error) {
+		if !settings.MacSupport {
+			// Checked inside the change, so a Time Machine share cannot be
+			// added in between.
+			tm, err := s.repo.timeMachineShares(ctx, tx)
+			if err != nil {
+				return false, err
+			}
+			if len(tm) > 0 {
+				v := validate.New()
+				v.Add("macSupport", "needed_by_time_machine", timeMachineNeedsMacSupport+" ("+strings.Join(tm, ", ")+")")
+				return false, v.Err()
+			}
+		}
 		return true, s.repo.saveServerSettings(ctx, tx, settings, in.ActivityLog, s.now())
 	})
 	var refused *sys.ConfigError

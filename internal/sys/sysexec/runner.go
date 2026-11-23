@@ -49,6 +49,7 @@ var allowed = map[string][]string{
 	"testparm":   {"/usr/bin/testparm"},
 	"smbcontrol": {"/usr/bin/smbcontrol"},
 	"smbstatus":  {"/usr/bin/smbstatus"},
+	"systemctl":  {"/usr/bin/systemctl", "/bin/systemctl"},
 }
 
 const commandTimeout = 30 * time.Second

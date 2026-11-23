@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -59,11 +60,12 @@ type Fake struct {
 	// tests may set it to a temporary directory.
 	FilesDir string
 
-	// NoAuditModule pretends Samba's full_audit module is not installed.
-	NoAuditModule bool
-	disconnected  []netip.Addr
-	macs          map[netip.Addr]string
-	sessions      []sys.Session
+	// MissingModules pretends these Samba modules are not installed.
+	MissingModules []string
+	disconnected   []netip.Addr
+	macs           map[netip.Addr]string
+	sessions       []sys.Session
+	discovery      sys.DiscoveryStatus
 	// listeners are the open Events streams (EmitAudit feeds them).
 	listeners map[chan sambalog.Event]bool
 }
@@ -98,12 +100,15 @@ func New() *Fake {
 		dirs:     map[string]bool{},
 		failures: map[string]error{},
 		workers:  map[string]*fakeWorker{},
+		discovery: sys.DiscoveryStatus{Systemd: true,
+			WSD:  sys.ServiceState{Installed: true, Unit: "wsdd.service"},
+			MDNS: sys.ServiceState{Installed: true, Unit: "avahi-daemon.service"}},
 	}
 }
 
 // System returns the fake as a sys.System.
 func (f *Fake) System() sys.System {
-	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f, Neighbors: f}
+	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f, Neighbors: f, Discovery: f}
 }
 
 // --- sys.Audit ---
@@ -267,8 +272,14 @@ func (f *Fake) ApplyConfig(_ context.Context, cfg sys.SambaConfig) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	shares := cfg.Shares
-	if cfg.Audit && f.NoAuditModule {
-		return fmt.Errorf("%w: full_audit (on Debian and Ubuntu: apt install samba-vfs-modules)", sys.ErrModuleMissing)
+	var missing []string
+	for _, m := range cfg.RequiredModules() {
+		if slices.Contains(f.MissingModules, m) {
+			missing = append(missing, m)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: %s (on Debian and Ubuntu: apt install samba-vfs-modules)", sys.ErrModuleMissing, strings.Join(missing, ", "))
 	}
 	// Same rules and same renderer as the real system.
 	config, err := sys.RenderConfig(cfg)
@@ -352,6 +363,40 @@ func (f *Fake) CurrentConfig() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.Config
+}
+
+// SetDiscoveryStatus sets the state of the pretend discovery daemons.
+func (f *Fake) SetDiscoveryStatus(st sys.DiscoveryStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.discovery = st
+}
+
+// DiscoveryStatus returns the pretend daemons' state: by default both are
+// installed and stopped.
+func (f *Fake) DiscoveryStatus(context.Context) (sys.DiscoveryStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.discovery, nil
+}
+
+// SetDiscovery switches a pretend daemon on or off, like the real one.
+func (f *Fake) SetDiscovery(_ context.Context, svc sys.DiscoveryService, on bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	st := &f.discovery.WSD
+	switch svc {
+	case sys.WSD:
+	case sys.MDNS:
+		st = &f.discovery.MDNS
+	default:
+		return fmt.Errorf("%w: discovery service %q", sys.ErrInvalid, svc)
+	}
+	if !f.discovery.Systemd || !st.Installed {
+		return fmt.Errorf("%w: no %s daemon is installed", sys.ErrNotFound, svc)
+	}
+	st.Running, st.Enabled = on, on
+	return nil
 }
 
 // SetSessions sets what Sessions returns.

@@ -218,6 +218,7 @@ func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules, ne
 		return EffectiveAccess{}, err
 	}
 	checkUploads(v, access, r)
+	checkTimeMachine(v, access, r, 0)
 	network = checkNetworkRules(v, network)
 	if err := v.Err(); err != nil {
 		return EffectiveAccess{}, err
@@ -263,6 +264,7 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 		return Share{}, err
 	}
 	checkUploads(v, in.Access, in.Rules)
+	checkTimeMachine(v, in.Access, in.Rules, in.TimeMachineMaxGiB)
 	in.NetworkRules = checkNetworkRules(v, in.NetworkRules)
 	if err := v.Err(); err != nil {
 		return Share{}, err
@@ -288,6 +290,11 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 		var err error
 		if id, err = s.repo.Insert(ctx, tx, in, s.now()); err != nil {
 			return false, err
+		}
+		if in.TimeMachine {
+			if err := s.repo.enableMacSupport(ctx, tx, s.now()); err != nil {
+				return false, err
+			}
 		}
 		return true, s.repo.ReplaceAccess(ctx, tx, id, in.Access, s.now())
 	})
@@ -320,8 +327,9 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 	if in.Preset != nil {
 		v.Check(validPreset(*in.Preset), "preset", "invalid_choice", "Unknown preset.")
 	}
-	rules := Rules{ReadOnly: before.ReadOnly, GuestAccess: before.GuestAccess}
-	preset, hide := before.Preset, before.HideUnreadable
+	set := settings{Rules: Rules{ReadOnly: before.ReadOnly, GuestAccess: before.GuestAccess, TimeMachine: before.TimeMachine},
+		Preset: before.Preset, HideUnreadable: before.HideUnreadable, TimeMachineMaxGiB: before.TimeMachineMaxGiB}
+	rules := &set.Rules
 	if in.ReadOnly != nil {
 		rules.ReadOnly = *in.ReadOnly
 	}
@@ -329,12 +337,22 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 		rules.GuestAccess = *in.GuestAccess
 	}
 	if in.Preset != nil {
-		preset = *in.Preset
+		set.Preset = *in.Preset
 	}
 	if in.HideUnreadable != nil {
-		hide = *in.HideUnreadable
+		set.HideUnreadable = *in.HideUnreadable
 	}
-	settingsChanged := in.ReadOnly != nil || in.GuestAccess != nil || in.Preset != nil || in.HideUnreadable != nil
+	if in.TimeMachine != nil {
+		rules.TimeMachine = *in.TimeMachine
+		if !rules.TimeMachine && in.TimeMachineMaxGiB == nil {
+			set.TimeMachineMaxGiB = 0 // the limit goes with it
+		}
+	}
+	if in.TimeMachineMaxGiB != nil {
+		set.TimeMachineMaxGiB = *in.TimeMachineMaxGiB
+	}
+	settingsChanged := in.ReadOnly != nil || in.GuestAccess != nil || in.Preset != nil || in.HideUnreadable != nil ||
+		in.TimeMachine != nil || in.TimeMachineMaxGiB != nil
 
 	access := accessOf(before)
 	if in.Access != nil {
@@ -343,7 +361,8 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 		}
 		access = *in.Access
 	}
-	checkUploads(v, access, rules)
+	checkUploads(v, access, *rules)
+	checkTimeMachine(v, access, *rules, set.TimeMachineMaxGiB)
 	if in.NetworkRules != nil {
 		*in.NetworkRules = checkNetworkRules(v, *in.NetworkRules)
 	}
@@ -358,7 +377,12 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 			}
 		}
 		if settingsChanged {
-			if err := s.repo.UpdateSettings(ctx, tx, id, rules, preset, hide, s.now()); err != nil {
+			if err := s.repo.UpdateSettings(ctx, tx, id, set, s.now()); err != nil {
+				return false, err
+			}
+		}
+		if rules.TimeMachine && !before.TimeMachine {
+			if err := s.repo.enableMacSupport(ctx, tx, s.now()); err != nil {
 				return false, err
 			}
 		}
@@ -459,7 +483,8 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 		// pick it up yet. Keep database and config in step, and say so.
 	case errors.Is(applyErr, sys.ErrModuleMissing):
 		return errs.Invalid(CodeSambaModuleMissing,
-			"The activity log needs Samba's full_audit module, which is not installed (on Debian and Ubuntu: apt install samba-vfs-modules). Install it, or turn the activity log off. Nothing was changed.").
+			"A Samba module this needs is not installed: the activity log needs full_audit; Mac support and Time Machine need fruit, catia and streams_xattr. "+
+				"On Debian and Ubuntu: apt install samba-vfs-modules. Nothing was changed.").
 			WithCause(applyErr)
 	case errors.As(applyErr, &aclErr) && errors.Is(applyErr, sys.ErrACLUnsupported):
 		return errs.Invalid(CodePermissionsUnsupported, fmt.Sprintf(
@@ -670,6 +695,33 @@ func checkUploads(v *validate.Errors, access []AccessInput, r Rules) {
 		if a.Level == LevelUpload {
 			v.Add(fmt.Sprintf("access[%d].level", i), "not_with_guest",
 				"Upload-only does not work on a share with guest access: everyone can read what is uploaded. Turn guest access off, or choose another level.")
+		}
+	}
+}
+
+// checkTimeMachine refuses what a backup target cannot be. A Mac backs up
+// by writing, so the share is never read-only; and backups are private, so
+// it takes no guests and no upload-only users.
+func checkTimeMachine(v *validate.Errors, access []AccessInput, r Rules, maxGiB int) {
+	if maxGiB < 0 || maxGiB > sys.MaxTimeMachineGiB {
+		v.Add("timeMachineMaxGiB", "out_of_range", fmt.Sprintf("Between 0 (no limit) and %d GiB.", sys.MaxTimeMachineGiB))
+	}
+	if !r.TimeMachine {
+		if maxGiB > 0 {
+			v.Add("timeMachineMaxGiB", "needs_time_machine", "A size limit only applies to a Time Machine share.")
+		}
+		return
+	}
+	if r.GuestAccess {
+		v.Add("guestAccess", "not_with_time_machine", "A Time Machine share cannot have guest access: backups are private.")
+	}
+	if r.ReadOnly {
+		v.Add("readOnly", "not_with_time_machine", "A Time Machine share cannot be read-only: Macs write their backups into it.")
+	}
+	for i, a := range access {
+		if a.Level == LevelUpload {
+			v.Add(fmt.Sprintf("access[%d].level", i), "not_with_time_machine",
+				"Upload-only does not work for Time Machine. Give \"Read and write\" to each person who backs up.")
 		}
 	}
 }

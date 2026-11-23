@@ -89,7 +89,7 @@ func TestSharePresetsAndPreview(t *testing.T) {
 	for _, p := range presets.Items {
 		ids = append(ids, p.ID)
 	}
-	want(t, "presets", strings.Join(ids, ","), "private,team,public-read,dropbox,media,read-only")
+	want(t, "presets", strings.Join(ids, ","), "private,team,public-read,dropbox,media,read-only,time-machine")
 
 	access := []map[string]any{
 		{"userId": jay.ID, "level": "write"},

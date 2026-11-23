@@ -23,6 +23,7 @@ import (
 	activitymigrations "netshare-hub/internal/modules/activity/migrations"
 	"netshare-hub/internal/modules/alerts"
 	"netshare-hub/internal/modules/auth"
+	"netshare-hub/internal/modules/discovery"
 	"netshare-hub/internal/modules/files"
 	"netshare-hub/internal/modules/guard"
 	"netshare-hub/internal/modules/jobs"
@@ -208,6 +209,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		guard.Register(api, guardService)
 		guard.RegisterBans(api, banService)
 		sessions.Register(api, osLayer.Samba)
+		discovery.Register(api, osLayer.Discovery)
 		scheduler.Register(api, tasks)
 	})
 

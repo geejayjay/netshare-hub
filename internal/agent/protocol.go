@@ -45,11 +45,16 @@ const (
 	// by its session id only (the agent finds the process itself).
 	opSessions          = "samba.sessions"
 	opDisconnectSession = "samba.disconnect-session"
-	opResolveDir        = "files.resolve-dir"
-	opCreateShareDir    = "files.create-share-dir"
-	opWorker            = "files.worker"
-	pathPrefix          = "/v1/"
-	maxRequestBytes     = 8 << 20
+	// opDiscoveryStatus reads the discovery daemons' state; opSetDiscovery
+	// switches one on or off. It names the service ("wsd" or "mdns"), never
+	// a unit: the agent has the fixed list of units.
+	opDiscoveryStatus = "discovery.status"
+	opSetDiscovery    = "discovery.set"
+	opResolveDir      = "files.resolve-dir"
+	opCreateShareDir  = "files.create-share-dir"
+	opWorker          = "files.worker"
+	pathPrefix        = "/v1/"
+	maxRequestBytes   = 8 << 20
 )
 
 // Request and response bodies. Each operation has its own type and unknown
@@ -94,6 +99,11 @@ type sessionRequest struct {
 
 type sessionsResponse struct {
 	Sessions []sys.Session `json:"sessions"`
+}
+
+type setDiscoveryRequest struct {
+	Service sys.DiscoveryService `json:"service"`
+	On      bool                 `json:"on"`
 }
 
 type disconnectRequest struct {

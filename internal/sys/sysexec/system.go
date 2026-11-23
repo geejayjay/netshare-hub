@@ -55,5 +55,6 @@ func New(opts Options) (sys.System, error) {
 		Workers:   workers,
 		Audit:     NewAuditLog(runner, DefaultMainConfig),
 		Neighbors: NewNeighbors(),
+		Discovery: NewDiscovery(runner),
 	}, nil
 }

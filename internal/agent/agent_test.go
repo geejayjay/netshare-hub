@@ -297,9 +297,10 @@ func TestApplyConfigKeepsEveryField(t *testing.T) {
 	}
 	cfg := sys.SambaConfig{
 		Server: sys.ServerSettings{NetbiosName: "NAS", Workgroup: "HOME", MinProtocol: "SMB3_00", MaxProtocol: "SMB3_11",
-			Encryption: "desired", Multichannel: "yes"},
+			Encryption: "desired", Multichannel: "yes", MacSupport: true},
 		Shares: []sys.ShareSpec{{Name: "media", Path: "/srv/media", Comment: "Films", Readers: []string{"jay"},
-			Writers: []string{"jay"}, Guest: true, HideUnreadable: true, Allow: []string{"192.168.1.0/24"}, Block: []string{"192.168.1.66"}}},
+			Writers: []string{"jay"}, Guest: true, HideUnreadable: true, Allow: []string{"192.168.1.0/24"}, Block: []string{"192.168.1.66"}},
+			{Name: "backup", Path: "/srv/backup", Readers: []string{"jay"}, Writers: []string{"jay"}, TimeMachine: true, TimeMachineMaxGiB: 300}},
 		Audit:      true,
 		LoginAudit: true,
 		Banned:     []string{"192.168.1.66", "2001:db8:1:2::/64"},
@@ -313,5 +314,24 @@ func TestApplyConfigKeepsEveryField(t *testing.T) {
 	}
 	if fake.Config != local {
 		t.Errorf("the agent applied a different config.\nagent:\n%s\nlocal:\n%s", fake.Config, local)
+	}
+}
+
+// Step 3.5a: the discovery daemons through the agent.
+func TestDiscoveryThroughAgent(t *testing.T) {
+	client, _, _ := start(t, true)
+	d := client.System().Discovery
+	if err := d.SetDiscovery(ctx, sys.WSD, true); err != nil {
+		t.Fatal(err)
+	}
+	st, err := d.DiscoveryStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.Systemd || !st.WSD.Running || !st.WSD.Enabled || st.WSD.Unit != "wsdd.service" || st.MDNS.Running {
+		t.Errorf("status: %+v", st)
+	}
+	if err := d.SetDiscovery(ctx, "sshd", true); !errors.Is(err, sys.ErrInvalid) {
+		t.Errorf("unknown service: %v", err)
 	}
 }

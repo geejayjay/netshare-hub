@@ -49,7 +49,7 @@ func NewClient(hc *http.Client, base string) *Client {
 
 // System returns the client as a sys.System.
 func (c *Client) System() sys.System {
-	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c, Audit: c}
+	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c, Audit: c, Discovery: c}
 }
 
 // Ping checks that the agent is reachable and accepts this process.
@@ -151,6 +151,18 @@ func (c *Client) DisconnectSession(ctx context.Context, id string) error {
 // DisconnectClient drops every SMB connection from one address.
 func (c *Client) DisconnectClient(ctx context.Context, ip netip.Addr) error {
 	return c.call(ctx, opDisconnectClient, disconnectRequest{IP: ip.String()}, nil)
+}
+
+// --- sys.Discovery ---
+
+func (c *Client) DiscoveryStatus(ctx context.Context) (sys.DiscoveryStatus, error) {
+	var res sys.DiscoveryStatus
+	err := c.call(ctx, opDiscoveryStatus, struct{}{}, &res)
+	return res, err
+}
+
+func (c *Client) SetDiscovery(ctx context.Context, svc sys.DiscoveryService, on bool) error {
+	return c.call(ctx, opSetDiscovery, setDiscoveryRequest{Service: svc, On: on}, nil)
 }
 
 // --- sys.Audit ---

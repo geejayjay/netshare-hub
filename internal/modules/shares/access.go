@@ -11,8 +11,6 @@ import (
 // Presets are one-click starting points for a share. They only fill in the
 // share's settings and the level given to the people added; every setting
 // stays editable, and the server applies the settings, not the preset.
-//
-// Time Machine is a preset too, but needs its own Samba settings (3.5a).
 var Presets = []Preset{
 	{
 		ID: "private", Name: "Private",
@@ -47,6 +45,13 @@ var Presets = []Preset{
 		ReadOnly:     true,
 		DefaultLevel: LevelRead, Levels: []Level{LevelRead},
 	},
+	{
+		ID: "time-machine", Name: "Time Machine",
+		Description: "Macs back up into this share. Each person needs \"Read and write\". Everyone on the share can open the others' backups, " +
+			"so give each person their own share, or have them turn on backup encryption on their Mac.",
+		TimeMachine:  true,
+		DefaultLevel: LevelWrite, Levels: []Level{LevelWrite},
+	},
 }
 
 // PresetCustom is the preset of a share set up by hand.
@@ -59,6 +64,7 @@ type Preset struct {
 	Description string `json:"description"`
 	ReadOnly    bool   `json:"readOnly"`
 	GuestAccess bool   `json:"guestAccess"`
+	TimeMachine bool   `json:"timeMachine"`
 	// DefaultLevel is given to people added while the preset is chosen;
 	// Levels are the ones that make sense for it (the UI may hide others).
 	DefaultLevel Level   `json:"defaultLevel" enum:"read,upload,write"`
@@ -190,7 +196,8 @@ func preview(access []AccessInput, byID map[int64]users.User, r Rules, blocked m
 // ransomware guard blocked (blocked, may be nil) can only read.
 func spec(sh Share, byID map[int64]users.User, blocked map[int64]bool) sys.ShareSpec {
 	r := Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess}
-	s := sys.ShareSpec{Name: sh.Name, Path: sh.Path, Comment: sh.Comment, Guest: r.GuestAccess, HideUnreadable: sh.HideUnreadable}
+	s := sys.ShareSpec{Name: sh.Name, Path: sh.Path, Comment: sh.Comment, Guest: r.GuestAccess, HideUnreadable: sh.HideUnreadable,
+		TimeMachine: sh.TimeMachine, TimeMachineMaxGiB: sh.TimeMachineMaxGiB}
 	s.Allow, s.Block = splitRules(sh.NetworkRules)
 	for _, a := range sh.Access {
 		u, ok := byID[a.UserID]

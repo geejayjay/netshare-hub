@@ -89,7 +89,7 @@ func TestActivityLogSetting(t *testing.T) {
 	}
 
 	// Without the module, turning it on is refused and nothing changes.
-	fake.NoAuditModule = true
+	fake.MissingModules = []string{"full_audit"}
 	before := fake.CurrentConfig()
 	var p problem
 	status, _ := admin.do("PUT", "/settings/samba", defaultsWithActivity, &p)
@@ -100,7 +100,7 @@ func TestActivityLogSetting(t *testing.T) {
 	}
 	want(t, "config untouched", fake.CurrentConfig(), before)
 
-	fake.NoAuditModule = false
+	fake.MissingModules = nil
 	var s struct{ ActivityLog bool }
 	status, _ = admin.do("PUT", "/settings/samba", defaultsWithActivity, &s)
 	want(t, "turn on", status, 200)

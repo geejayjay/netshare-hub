@@ -96,6 +96,20 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 		return nil, system.Samba.DisconnectClient(ctx, ip)
 	}, func(r disconnectRequest) []any { return []any{"ip", r.IP} })
 
+	register(s, opDiscoveryStatus, func(ctx context.Context, _ struct{}) (any, error) {
+		if system.Discovery == nil {
+			return sys.DiscoveryStatus{}, nil
+		}
+		return system.Discovery.DiscoveryStatus(ctx)
+	}, nil)
+
+	register(s, opSetDiscovery, func(ctx context.Context, r setDiscoveryRequest) (any, error) {
+		if system.Discovery == nil {
+			return nil, sys.ErrNotFound
+		}
+		return nil, system.Discovery.SetDiscovery(ctx, r.Service, r.On)
+	}, func(r setDiscoveryRequest) []any { return []any{"service", string(r.Service), "on", r.On} })
+
 	register(s, opResolveDir, func(ctx context.Context, r pathRequest) (any, error) {
 		// Only answer for paths that could be shared at all, so the agent is
 		// not a way to probe which files exist anywhere on the system.

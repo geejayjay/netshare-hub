@@ -41,6 +41,8 @@ type CreateShareRequest struct {
 	GuestAccess     bool               `json:"guestAccess,omitempty" doc:"Anyone on the network can read without a password."`
 	Preset          string             `json:"preset,omitempty" maxLength:"32" doc:"The preset used to set the share up (a label; see GET /shares/presets). Default \"custom\"."`
 	HideUnreadable  bool               `json:"hideUnreadable,omitempty" doc:"Hide files and folders a user cannot read. Slows down listing very big folders."`
+	TimeMachine     bool               `json:"timeMachine,omitempty" doc:"Macs can back up into this share (see Share.timeMachine). Turns Mac support on."`
+	TimeMachineMax  int                `json:"timeMachineMaxGiB,omitempty" minimum:"0" maximum:"1048576" doc:"The size Time Machine sees as the disk, in GiB (0: the real disk's size)."`
 	NetworkRules    []NetworkRule      `json:"networkRules,omitempty" maxItems:"128" doc:"Which computers may connect (see Share.networkRules)."`
 	Access          []ShareAccessInput `json:"access,omitempty" maxItems:"500" doc:"Users who may use the share. Without any (and without guest access), nobody can connect."`
 }
@@ -52,6 +54,8 @@ type UpdateShareRequest struct {
 	GuestAccess    *bool               `json:"guestAccess,omitempty"`
 	Preset         *string             `json:"preset,omitempty" maxLength:"32"`
 	HideUnreadable *bool               `json:"hideUnreadable,omitempty"`
+	TimeMachine    *bool               `json:"timeMachine,omitempty" doc:"Turning it on turns Mac support on."`
+	TimeMachineMax *int                `json:"timeMachineMaxGiB,omitempty" minimum:"0" maximum:"1048576"`
 	NetworkRules   *[]NetworkRule      `json:"networkRules,omitempty" maxItems:"128" doc:"Replaces the whole list of network rules."`
 	Access         *[]ShareAccessInput `json:"access,omitempty" maxItems:"500" doc:"Replaces the whole access list."`
 }
@@ -60,6 +64,7 @@ type UpdateShareRequest struct {
 type PreviewAccessRequest struct {
 	ReadOnly     bool               `json:"readOnly,omitempty"`
 	GuestAccess  bool               `json:"guestAccess,omitempty"`
+	TimeMachine  bool               `json:"timeMachine,omitempty"`
 	NetworkRules []NetworkRule      `json:"networkRules,omitempty" maxItems:"128"`
 	Access       []ShareAccessInput `json:"access,omitempty" maxItems:"500"`
 }
@@ -241,7 +246,7 @@ func (h *handler) presets(context.Context, *struct{}) (*presetsOutput, error) {
 
 func (h *handler) preview(ctx context.Context, in *previewInput) (*previewOutput, error) {
 	res, err := h.svc.Preview(ctx, accessInputs(in.Body.Access),
-		Rules{ReadOnly: in.Body.ReadOnly, GuestAccess: in.Body.GuestAccess}, in.Body.NetworkRules)
+		Rules{ReadOnly: in.Body.ReadOnly, GuestAccess: in.Body.GuestAccess, TimeMachine: in.Body.TimeMachine}, in.Body.NetworkRules)
 	if err != nil {
 		return nil, err
 	}
@@ -258,15 +263,16 @@ func (h *handler) fixPermissions(ctx context.Context, in *idInput) (*jobOutput, 
 
 func (h *handler) create(ctx context.Context, in *createInput) (*shareOutput, error) {
 	sh, err := h.svc.Create(ctx, httpx.PrincipalFrom(ctx).UserID, CreateInput{
-		Name:            in.Body.Name,
-		Path:            in.Body.Path,
-		Comment:         in.Body.Comment,
-		CreateDirectory: in.Body.CreateDirectory,
-		Rules:           Rules{ReadOnly: in.Body.ReadOnly, GuestAccess: in.Body.GuestAccess},
-		Preset:          in.Body.Preset,
-		HideUnreadable:  in.Body.HideUnreadable,
-		NetworkRules:    in.Body.NetworkRules,
-		Access:          accessInputs(in.Body.Access),
+		Name:              in.Body.Name,
+		Path:              in.Body.Path,
+		Comment:           in.Body.Comment,
+		CreateDirectory:   in.Body.CreateDirectory,
+		Rules:             Rules{ReadOnly: in.Body.ReadOnly, GuestAccess: in.Body.GuestAccess, TimeMachine: in.Body.TimeMachine},
+		Preset:            in.Body.Preset,
+		HideUnreadable:    in.Body.HideUnreadable,
+		TimeMachineMaxGiB: in.Body.TimeMachineMax,
+		NetworkRules:      in.Body.NetworkRules,
+		Access:            accessInputs(in.Body.Access),
 	})
 	if err != nil {
 		return nil, err
@@ -277,6 +283,7 @@ func (h *handler) create(ctx context.Context, in *createInput) (*shareOutput, er
 func (h *handler) update(ctx context.Context, in *updateInput) (*shareOutput, error) {
 	update := UpdateInput{Comment: in.Body.Comment, ReadOnly: in.Body.ReadOnly,
 		GuestAccess: in.Body.GuestAccess, Preset: in.Body.Preset, HideUnreadable: in.Body.HideUnreadable,
+		TimeMachine: in.Body.TimeMachine, TimeMachineMaxGiB: in.Body.TimeMachineMax,
 		NetworkRules: in.Body.NetworkRules}
 	if in.Body.Access != nil {
 		access := accessInputs(*in.Body.Access)

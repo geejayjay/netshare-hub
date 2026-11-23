@@ -355,6 +355,17 @@
           "readOnly": {
             "description": "Nobody can change files, whatever their level.",
             "type": "boolean"
+          },
+          "timeMachine": {
+            "description": "Macs can back up into this share (see Share.timeMachine). Turns Mac support on.",
+            "type": "boolean"
+          },
+          "timeMachineMaxGiB": {
+            "description": "The size Time Machine sees as the disk, in GiB (0: the real disk's size).",
+            "format": "int64",
+            "maximum": 1048576,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -403,6 +414,76 @@
           "role",
           "password"
         ],
+        "type": "object"
+      },
+      "DiscoveryService": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "description": "Starts when the machine starts.",
+            "type": "boolean"
+          },
+          "hint": {
+            "description": "What to do when the service cannot be switched on.",
+            "type": "string"
+          },
+          "installed": {
+            "description": "A package provides the daemon (wsdd or wsdd2; avahi-daemon).",
+            "type": "boolean"
+          },
+          "on": {
+            "description": "Running and enabled: what the toggle shows.",
+            "type": "boolean"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "unit": {
+            "description": "The systemd unit in use.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "installed",
+          "running",
+          "enabled",
+          "on"
+        ],
+        "type": "object"
+      },
+      "DiscoveryStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "mdns": {
+            "$ref": "#/components/schemas/DiscoveryService",
+            "description": "mDNS / Bonjour: the server shows up in macOS Finder and Linux file managers, and Macs find Time Machine shares."
+          },
+          "systemd": {
+            "description": "False when the machine is not run by systemd: the daemons cannot be switched from here.",
+            "type": "boolean"
+          },
+          "wsd": {
+            "$ref": "#/components/schemas/DiscoveryService",
+            "description": "WS-Discovery: the server shows up in Windows' Network folder, under the machine's hostname."
+          }
+        },
+        "required": [
+          "systemd",
+          "wsd",
+          "mdns"
+        ],
+        "type": "object"
+      },
+      "DiscoveryUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "mdns": {
+            "type": "boolean"
+          },
+          "wsd": {
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "Effective": {
@@ -1208,6 +1289,9 @@
           },
           "readOnly": {
             "type": "boolean"
+          },
+          "timeMachine": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1216,6 +1300,7 @@
           "description",
           "readOnly",
           "guestAccess",
+          "timeMachine",
           "defaultLevel",
           "levels"
         ],
@@ -1248,6 +1333,9 @@
             ]
           },
           "readOnly": {
+            "type": "boolean"
+          },
+          "timeMachine": {
             "type": "boolean"
           }
         },
@@ -1388,6 +1476,10 @@
               "required"
             ],
             "type": "string"
+          },
+          "macSupport": {
+            "description": "Apple's SMB extensions on every share: faster folders and correct file details on Macs. Needs Samba's fruit, catia and streams_xattr modules (Debian, Ubuntu: samba-vfs-modules). On while any share is a Time Machine share.",
+            "type": "boolean"
           },
           "maxProtocol": {
             "description": "The newest SMB version clients may use.",
@@ -1666,6 +1758,15 @@
             "description": "Nobody can change files, whatever their level.",
             "type": "boolean"
           },
+          "timeMachine": {
+            "description": "Macs can back up into this share with Time Machine. Its users need \"write\"; never a guest or read-only share.",
+            "type": "boolean"
+          },
+          "timeMachineMaxGiB": {
+            "description": "The size Time Machine sees as the disk, in GiB (0: the real disk's size).",
+            "format": "int64",
+            "type": "integer"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
@@ -1680,6 +1781,8 @@
           "guestAccess",
           "preset",
           "hideUnreadable",
+          "timeMachine",
+          "timeMachineMaxGiB",
           "networkRules",
           "access",
           "createdAt",
@@ -1848,6 +1951,16 @@
           },
           "readOnly": {
             "type": "boolean"
+          },
+          "timeMachine": {
+            "description": "Turning it on turns Mac support on.",
+            "type": "boolean"
+          },
+          "timeMachineMaxGiB": {
+            "format": "int64",
+            "maximum": 1048576,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "type": "object"
@@ -3959,6 +4072,88 @@
           "Users"
         ],
         "x-permission": "users:read"
+      }
+    },
+    "/settings/discovery": {
+      "get": {
+        "operationId": "getDiscovery",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get network discovery (Windows Network, macOS Finder)",
+        "tags": [
+          "Settings"
+        ],
+        "x-permission": "settings:read"
+      },
+      "put": {
+        "operationId": "updateDiscovery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Switch network discovery on or off",
+        "tags": [
+          "Settings"
+        ],
+        "x-permission": "settings:write"
       }
     },
     "/settings/samba": {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -37,7 +38,17 @@ type ShareSpec struct {
 	// connect; Block entries never may.
 	Allow []string `json:"allow,omitempty"`
 	Block []string `json:"block,omitempty"`
+	// TimeMachine makes the share a backup target for Macs (Samba's
+	// vfs_fruit "time machine"). Its writers back up into it; it is never a
+	// guest share and has no upload-only users. TimeMachineMaxGiB, when
+	// set, is the size Time Machine sees as the disk (so it does not fill
+	// the real one).
+	TimeMachine       bool `json:"timeMachine,omitempty"`
+	TimeMachineMaxGiB int  `json:"timeMachineMaxGiB,omitempty"`
 }
+
+// MaxTimeMachineGiB is the largest Time Machine size limit (1 PiB).
+const MaxTimeMachineGiB = 1 << 20
 
 // Live reports whether anyone at all may use the share.
 func (s ShareSpec) Live() bool {
@@ -83,6 +94,13 @@ func (s ShareSpec) Check() error {
 	// promise a privacy it cannot keep.
 	if s.Guest && len(s.Uploaders) > 0 {
 		return fmt.Errorf("share %q: a guest share cannot have upload-only users", s.Name)
+	}
+	// A backup target is private to the Macs backing up into it.
+	if s.TimeMachine && (s.Guest || len(s.Uploaders) > 0) {
+		return fmt.Errorf("share %q: a Time Machine share cannot be a guest share or have upload-only users", s.Name)
+	}
+	if s.TimeMachineMaxGiB < 0 || s.TimeMachineMaxGiB > MaxTimeMachineGiB || (s.TimeMachineMaxGiB > 0 && !s.TimeMachine) {
+		return fmt.Errorf("share %q: invalid Time Machine size limit", s.Name)
 	}
 	return nil
 }
@@ -190,9 +208,7 @@ func RenderConfig(cfg SambaConfig) (string, error) {
 		// not stop a folder from being deleted.
 		param(&b, "veto files", "/"+UploadTempPattern+"/")
 		param(&b, "delete veto files", "yes")
-		if cfg.Audit {
-			renderAudit(&b)
-		}
+		renderModules(&b, cfg, s)
 	}
 	return b.String(), nil
 }
@@ -290,6 +306,10 @@ func ParseShares(config string) []ShareSpec {
 			current.Block = strings.Split(value, ", ")
 		case "hide unreadable":
 			current.HideUnreadable = value == "yes"
+		case "fruit:time machine":
+			current.TimeMachine = value == "yes"
+		case "fruit:time machine max size":
+			current.TimeMachineMaxGiB, _ = strconv.Atoi(strings.TrimSuffix(value, "G"))
 		case "available":
 			available = value != "no"
 		}

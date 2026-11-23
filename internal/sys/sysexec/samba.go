@@ -62,7 +62,7 @@ func (s *Samba) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
 		}
 	}
 	// A share naming a missing module stops working: check first.
-	if err := checkAuditModule(cfg); err != nil {
+	if err := checkModules(cfg); err != nil {
 		return err
 	}
 	// RenderConfig checks the server settings, and the shares' names,
@@ -106,6 +106,10 @@ func (s *Samba) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
 		undo()
 		return err
 	}
+	// Macs find Time Machine shares through mDNS: announce the new set.
+	if timeMachineChanged(before, shares) {
+		refreshMDNS(ctx, s.runner)
+	}
 	// Folders no longer shared lose the entries NetShare Hub gave them.
 	for _, old := range removed {
 		if _, stripErr := setShareACL(sys.ShareSpec{Name: old.Name, Path: old.Path}, ids, s.protected, len(old.Uploaders) > 0); stripErr != nil {
@@ -116,6 +120,27 @@ func (s *Samba) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
 		s.afterApply()
 	}
 	return err
+}
+
+// timeMachineChanged reports whether the live Time Machine shares differ
+// from the applied ones (by name: that is all Samba announces).
+func timeMachineChanged(before map[string]sys.ShareSpec, shares []sys.ShareSpec) bool {
+	n := 0
+	for _, sh := range shares {
+		if !sh.TimeMachine || !sh.Live() {
+			continue
+		}
+		n++
+		if p, ok := before[sh.Name]; !ok || !p.TimeMachine || !p.Live() {
+			return true
+		}
+	}
+	for _, p := range before {
+		if p.TimeMachine && p.Live() {
+			n--
+		}
+	}
+	return n != 0
 }
 
 // applied returns the shares in the managed config now.

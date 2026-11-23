@@ -27,14 +27,14 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-const columns = "id, name, path, comment, read_only, guest_access, preset, hide_unreadable, network_rules, created_at, updated_at"
+const columns = "id, name, path, comment, read_only, guest_access, preset, hide_unreadable, time_machine, time_machine_max_gib, network_rules, created_at, updated_at"
 
 func scan(s interface{ Scan(...any) error }) (Share, error) {
 	var sh Share
 	var created, updated int64
 	var rules string
 	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset, &sh.HideUnreadable,
-		&rules, &created, &updated)
+		&sh.TimeMachine, &sh.TimeMachineMaxGiB, &rules, &created, &updated)
 	if err == nil {
 		err = json.Unmarshal([]byte(rules), &sh.NetworkRules)
 	}
@@ -180,10 +180,11 @@ func (r *Repo) query(ctx context.Context, q querier, query string, args ...any) 
 
 func (r *Repo) Insert(ctx context.Context, q querier, in CreateInput, now time.Time) (int64, error) {
 	res, err := q.ExecContext(ctx,
-		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, hide_unreadable, network_rules, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, in.HideUnreadable, rulesJSON(in.NetworkRules),
-		now.Unix(), now.Unix())
+		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, hide_unreadable, time_machine, time_machine_max_gib,
+			network_rules, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, in.HideUnreadable, in.TimeMachine, in.TimeMachineMaxGiB,
+		rulesJSON(in.NetworkRules), now.Unix(), now.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -195,11 +196,46 @@ func (r *Repo) UpdateComment(ctx context.Context, q querier, id int64, comment s
 	return err
 }
 
+// settings are a share's settings other than its comment, network rules
+// and access list.
+type settings struct {
+	Rules
+	Preset            string
+	HideUnreadable    bool
+	TimeMachineMaxGiB int
+}
+
 // UpdateSettings changes the share-wide settings.
-func (r *Repo) UpdateSettings(ctx context.Context, q querier, id int64, rules Rules, preset string, hideUnreadable bool, now time.Time) error {
+func (r *Repo) UpdateSettings(ctx context.Context, q querier, id int64, s settings, now time.Time) error {
 	_, err := q.ExecContext(ctx,
-		"UPDATE shares SET read_only = ?, guest_access = ?, preset = ?, hide_unreadable = ?, updated_at = ? WHERE id = ?",
-		rules.ReadOnly, rules.GuestAccess, preset, hideUnreadable, now.Unix(), id)
+		`UPDATE shares SET read_only = ?, guest_access = ?, preset = ?, hide_unreadable = ?, time_machine = ?, time_machine_max_gib = ?,
+			updated_at = ? WHERE id = ?`,
+		s.ReadOnly, s.GuestAccess, s.Preset, s.HideUnreadable, s.TimeMachine, s.TimeMachineMaxGiB, now.Unix(), id)
+	return err
+}
+
+// timeMachineShares returns the names of the Time Machine shares.
+func (r *Repo) timeMachineShares(ctx context.Context, q querier) ([]string, error) {
+	rows, err := q.QueryContext(ctx, "SELECT name FROM shares WHERE time_machine = 1 ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	return names, rows.Err()
+}
+
+// enableMacSupport turns Mac support on (a Time Machine share needs it).
+func (r *Repo) enableMacSupport(ctx context.Context, q querier, now time.Time) error {
+	_, err := q.ExecContext(ctx, `INSERT INTO samba_server_settings (id, mac_support, updated_at) VALUES (1, 1, ?)
+		ON CONFLICT (id) DO UPDATE SET mac_support = 1`, now.Unix())
 	return err
 }
 

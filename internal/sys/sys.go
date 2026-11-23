@@ -50,7 +50,8 @@ var (
 	// POSIX ACLs (for example ZFS without acltype=posixacl). Nothing changed.
 	ErrACLUnsupported = errors.New("filesystem does not support ACLs")
 	// ErrModuleMissing means a Samba module the config needs is not
-	// installed (full_audit is in Debian's samba-vfs-modules). A share that
+	// installed (full_audit and Apple's fruit, catia and streams_xattr are
+	// in Debian's samba-vfs-modules). A share that
 	// names a missing module stops working, so nothing was changed.
 	ErrModuleMissing = errors.New("samba module not installed")
 )
@@ -176,6 +177,51 @@ type Neighbors interface {
 	MAC(ip netip.Addr) (string, bool)
 }
 
+// DiscoveryService is one way computers find the server on the network.
+type DiscoveryService string
+
+const (
+	// WSD is WS-Discovery: the server shows up in Windows' Network folder.
+	// The daemon is wsdd (or wsdd2).
+	WSD DiscoveryService = "wsd"
+	// MDNS is mDNS / DNS-SD ("Bonjour"): the server shows up in macOS
+	// Finder and Linux file managers, and Macs find Time Machine shares.
+	// The daemon is avahi-daemon; Samba registers its shares with it.
+	MDNS DiscoveryService = "mdns"
+)
+
+// ServiceState is the state of one discovery daemon on this machine.
+type ServiceState struct {
+	// Installed is false when no package provides the daemon.
+	Installed bool `json:"installed"`
+	// Unit is the systemd unit in use ("wsdd.service").
+	Unit string `json:"unit,omitempty"`
+	// Running now, and Enabled to start at boot.
+	Running bool `json:"running"`
+	Enabled bool `json:"enabled"`
+}
+
+// DiscoveryStatus is what Discovery reports.
+type DiscoveryStatus struct {
+	// Systemd is false when the machine is not run by systemd: the daemons
+	// cannot be controlled from NetShare Hub then.
+	Systemd bool         `json:"systemd"`
+	WSD     ServiceState `json:"wsd"`
+	MDNS    ServiceState `json:"mdns"`
+}
+
+// Discovery controls the daemons that announce the server on the network.
+// Their state lives in systemd (enabled or not), never in NetShare Hub, so
+// what is reported is always what really runs.
+type Discovery interface {
+	DiscoveryStatus(ctx context.Context) (DiscoveryStatus, error)
+	// SetDiscovery starts the service's daemon and enables it at boot (on),
+	// or stops and disables it (off). Only fixed unit names are used.
+	// Errors: ErrInvalid (unknown service), ErrNotFound (no daemon
+	// installed, or no systemd).
+	SetDiscovery(ctx context.Context, service DiscoveryService, on bool) error
+}
+
 // System bundles the interfaces for wiring.
 type System struct {
 	Accounts  Accounts
@@ -184,4 +230,5 @@ type System struct {
 	Workers   Workers
 	Audit     Audit
 	Neighbors Neighbors
+	Discovery Discovery
 }

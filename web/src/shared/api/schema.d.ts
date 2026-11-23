@@ -517,6 +517,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get network discovery (Windows Network, macOS Finder) */
+        get: operations["getDiscovery"];
+        /** Switch network discovery on or off */
+        put: operations["updateDiscovery"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/samba": {
         parameters: {
             query?: never;
@@ -870,6 +888,13 @@ export interface components {
             preset?: string;
             /** @description Nobody can change files, whatever their level. */
             readOnly?: boolean;
+            /** @description Macs can back up into this share (see Share.timeMachine). Turns Mac support on. */
+            timeMachine?: boolean;
+            /**
+             * Format: int64
+             * @description The size Time Machine sees as the disk, in GiB (0: the real disk's size).
+             */
+            timeMachineMaxGiB?: number;
         };
         CreateUserRequest: {
             /** @example Jay */
@@ -881,6 +906,31 @@ export interface components {
             smbAccess?: boolean;
             /** @example jay */
             username: string;
+        };
+        DiscoveryService: {
+            /** @description Starts when the machine starts. */
+            enabled: boolean;
+            /** @description What to do when the service cannot be switched on. */
+            hint?: string;
+            /** @description A package provides the daemon (wsdd or wsdd2; avahi-daemon). */
+            installed: boolean;
+            /** @description Running and enabled: what the toggle shows. */
+            on: boolean;
+            running: boolean;
+            /** @description The systemd unit in use. */
+            unit?: string;
+        };
+        DiscoveryStatus: {
+            /** @description mDNS / Bonjour: the server shows up in macOS Finder and Linux file managers, and Macs find Time Machine shares. */
+            mdns: components["schemas"]["DiscoveryService"];
+            /** @description False when the machine is not run by systemd: the daemons cannot be switched from here. */
+            systemd: boolean;
+            /** @description WS-Discovery: the server shows up in Windows' Network folder, under the machine's hostname. */
+            wsd: components["schemas"]["DiscoveryService"];
+        };
+        DiscoveryUpdate: {
+            mdns?: boolean;
+            wsd?: boolean;
         };
         Effective: {
             /** @enum {string} */
@@ -1122,12 +1172,14 @@ export interface components {
             levels: ("read" | "upload" | "write")[] | null;
             name: string;
             readOnly: boolean;
+            timeMachine: boolean;
         };
         PreviewAccessRequest: {
             access?: components["schemas"]["ShareAccessInput"][] | null;
             guestAccess?: boolean;
             networkRules?: components["schemas"]["NetworkRule"][] | null;
             readOnly?: boolean;
+            timeMachine?: boolean;
         };
         Problem: {
             /** @description Stable machine-readable error code. */
@@ -1178,6 +1230,8 @@ export interface components {
              * @enum {string}
              */
             encryption: "default" | "off" | "if-supported" | "required";
+            /** @description Apple's SMB extensions on every share: faster folders and correct file details on Macs. Needs Samba's fruit, catia and streams_xattr modules (Debian, Ubuntu: samba-vfs-modules). On while any share is a Time Machine share. */
+            macSupport?: boolean;
             /**
              * @description The newest SMB version clients may use.
              * @enum {string}
@@ -1282,6 +1336,13 @@ export interface components {
             preset: string;
             /** @description Nobody can change files, whatever their level. */
             readOnly: boolean;
+            /** @description Macs can back up into this share with Time Machine. Its users need "write"; never a guest or read-only share. */
+            timeMachine: boolean;
+            /**
+             * Format: int64
+             * @description The size Time Machine sees as the disk, in GiB (0: the real disk's size).
+             */
+            timeMachineMaxGiB: number;
             /** Format: date-time */
             updatedAt: string;
         };
@@ -1339,6 +1400,10 @@ export interface components {
             networkRules?: components["schemas"]["NetworkRule"][];
             preset?: string;
             readOnly?: boolean;
+            /** @description Turning it on turns Mac support on. */
+            timeMachine?: boolean;
+            /** Format: int64 */
+            timeMachineMaxGiB?: number;
         };
         UpdateUserRequest: {
             disabled?: boolean;
@@ -2472,6 +2537,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListRoleInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getDiscovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateDiscovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoveryUpdate"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryStatus"];
                 };
             };
             /** @description Error */

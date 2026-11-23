@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -23,6 +24,20 @@ type SambaConfig struct {
 	// Banned are addresses (IPs, or IPv6 /64 ranges) refused before they
 	// can even try a password: a global "hosts deny".
 	Banned []string `json:"banned,omitempty"`
+}
+
+// Apple reports whether a config needs Apple's SMB extensions: when
+// Mac support is on, or any share is a Time Machine target.
+func (cfg SambaConfig) Apple() bool {
+	if cfg.Server.MacSupport {
+		return true
+	}
+	for _, s := range cfg.Shares {
+		if s.TimeMachine {
+			return true
+		}
+	}
+	return false
 }
 
 // MaxBans is the most addresses one config bans.
@@ -61,6 +76,12 @@ type ServerSettings struct {
 	Encryption string `json:"encryption,omitempty"`
 	// Multichannel is "yes" or "no" (several network links per client).
 	Multichannel string `json:"multichannel,omitempty"`
+	// MacSupport turns on Apple's SMB extensions (vfs_fruit) on every
+	// share: faster folder listings and correct file metadata on Macs.
+	// It is on every share because a Mac decides on the first share it
+	// opens whether the server speaks the extensions. A Time Machine share
+	// turns it on too (see SambaConfig.Apple).
+	MacSupport bool `json:"macSupport,omitempty"`
 }
 
 // Protocols are the SMB versions that may be set, oldest first.
@@ -116,7 +137,7 @@ func (s ServerSettings) empty() bool { return s == ServerSettings{} }
 // banned).
 func renderServer(b *strings.Builder, cfg SambaConfig) {
 	s := cfg.Server
-	if s.empty() && !cfg.Audit && !cfg.LoginAudit && len(cfg.Banned) == 0 {
+	if s.empty() && !cfg.Audit && !cfg.LoginAudit && len(cfg.Banned) == 0 && !cfg.Apple() {
 		return
 	}
 	// The managed config is included from smb.conf's [global] section, but
@@ -144,6 +165,9 @@ func renderServer(b *strings.Builder, cfg SambaConfig) {
 	case cfg.LoginAudit:
 		param(b, "log level", LoginLogLevel)
 	}
+	if cfg.Apple() {
+		renderAppleGlobals(b)
+	}
 	if len(cfg.Banned) > 0 {
 		// Checked when a client connects, before it can try a password.
 		// It replaces a global "hosts deny" set in smb.conf while anyone is
@@ -152,9 +176,66 @@ func renderServer(b *strings.Builder, cfg SambaConfig) {
 	}
 }
 
-// renderAudit adds the activity log to one share.
+// AppleModules are the Samba modules of Apple's SMB extensions, in the order
+// Samba's documentation gives.
+var AppleModules = []string{"catia", "fruit", "streams_xattr"}
+
+// renderAppleGlobals writes the server-wide settings of Apple's extensions.
+// They are defaults for every share.
+func renderAppleGlobals(b *strings.Builder) {
+	// Mac metadata lives in the file's extended attributes (streams_xattr),
+	// not in extra "._" files.
+	param(b, "fruit:metadata", "stream")
+	// How the server looks in Finder.
+	param(b, "fruit:model", "MacSamba")
+	// A Mac must not change permissions through NFS-style entries: the
+	// share's folder ACL decides who may do what.
+	param(b, "fruit:nfs_aces", "no")
+	// Keep "._" files other tools wrote; clean up empty ones Macs leave.
+	param(b, "fruit:veto_appledouble", "no")
+	param(b, "fruit:wipe_intentionally_left_blank_rfork", "yes")
+	param(b, "fruit:delete_empty_adfiles", "yes")
+}
+
+// renderModules adds a share's Samba modules: Apple's extensions and the
+// activity log. full_audit comes last, so it logs what reaches the disk
+// (real file names, after the Apple modules translated them).
+func renderModules(b *strings.Builder, cfg SambaConfig, s ShareSpec) {
+	var modules []string
+	if cfg.Apple() {
+		modules = append(modules, AppleModules...)
+	}
+	if cfg.Audit {
+		modules = append(modules, "full_audit")
+	}
+	if len(modules) > 0 {
+		param(b, "vfs objects", strings.Join(modules, " "))
+	}
+	if s.TimeMachine {
+		param(b, "fruit:time machine", "yes")
+		if s.TimeMachineMaxGiB > 0 {
+			param(b, "fruit:time machine max size", strconv.Itoa(s.TimeMachineMaxGiB)+"G")
+		}
+	}
+	if cfg.Audit {
+		renderAudit(b)
+	}
+}
+
+// RequiredModules are the Samba modules a config loads.
+func (cfg SambaConfig) RequiredModules() []string {
+	var m []string
+	if cfg.Apple() {
+		m = append(m, AppleModules...)
+	}
+	if cfg.Audit {
+		m = append(m, "full_audit")
+	}
+	return m
+}
+
+// renderAudit adds the activity log's settings to one share.
 func renderAudit(b *strings.Builder) {
-	param(b, "vfs objects", "full_audit")
 	param(b, "full_audit:prefix", AuditPrefix)
 	param(b, "full_audit:success", AuditSuccess)
 	param(b, "full_audit:failure", AuditFailure)

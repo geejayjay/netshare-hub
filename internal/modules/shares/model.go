@@ -43,11 +43,14 @@ type Share struct {
 	Preset      string `json:"preset" doc:"The preset the share was set up with, or \"custom\". A label only: the rules are the other fields."`
 	// Users never see shares they cannot open (always on); this also hides
 	// the files and folders inside that they cannot read.
-	HideUnreadable bool          `json:"hideUnreadable" doc:"Hide files and folders a user cannot read, over SMB and in the file manager. Slows down listing very big folders."`
-	NetworkRules   []NetworkRule `json:"networkRules" nullable:"false" doc:"Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address."`
-	Access         []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
-	CreatedAt      time.Time     `json:"createdAt"`
-	UpdatedAt      time.Time     `json:"updatedAt"`
+	HideUnreadable bool `json:"hideUnreadable" doc:"Hide files and folders a user cannot read, over SMB and in the file manager. Slows down listing very big folders."`
+	TimeMachine    bool `json:"timeMachine" doc:"Macs can back up into this share with Time Machine. Its users need \"write\"; never a guest or read-only share."`
+	// TimeMachineMaxGiB keeps Time Machine from filling the real disk.
+	TimeMachineMaxGiB int           `json:"timeMachineMaxGiB" doc:"The size Time Machine sees as the disk, in GiB (0: the real disk's size)."`
+	NetworkRules      []NetworkRule `json:"networkRules" nullable:"false" doc:"Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address."`
+	Access            []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
+	CreatedAt         time.Time     `json:"createdAt"`
+	UpdatedAt         time.Time     `json:"updatedAt"`
 }
 
 // MyShare is a share visible to the signed-in user in their personal portal.
@@ -79,6 +82,8 @@ type AccessInput struct {
 type Rules struct {
 	ReadOnly    bool
 	GuestAccess bool
+	// TimeMachine shares take no guests, no read-only and no uploads.
+	TimeMachine bool
 }
 
 // CreateInput is what the service needs to create a share.
@@ -88,19 +93,22 @@ type CreateInput struct {
 	Comment         string
 	CreateDirectory bool
 	Rules
-	Preset         string
-	HideUnreadable bool
-	NetworkRules   []NetworkRule
-	Access         []AccessInput
+	Preset            string
+	HideUnreadable    bool
+	TimeMachineMaxGiB int
+	NetworkRules      []NetworkRule
+	Access            []AccessInput
 }
 
 // UpdateInput changes only the fields that are set (non-nil).
 type UpdateInput struct {
-	Comment        *string
-	ReadOnly       *bool
-	GuestAccess    *bool
-	Preset         *string
-	HideUnreadable *bool
+	Comment           *string
+	ReadOnly          *bool
+	GuestAccess       *bool
+	Preset            *string
+	HideUnreadable    *bool
+	TimeMachine       *bool
+	TimeMachineMaxGiB *int
 	// NetworkRules and Access, when set, replace the whole list.
 	NetworkRules *[]NetworkRule
 	Access       *[]AccessInput
@@ -144,6 +152,9 @@ const (
 	CodeSambaConfigRefused     errs.Code = "SAMBA_CONFIG_REFUSED"
 	CodeSambaModuleMissing     errs.Code = "SAMBA_MODULE_MISSING"
 )
+
+// TimeMachineNeedsMacSupport explains a refused "Mac support off".
+const timeMachineNeedsMacSupport = "Time Machine shares need Mac support. Turn Time Machine off on those shares first."
 
 func errNotFound() error {
 	return errs.NotFound(CodeShareNotFound, "This share does not exist.")
