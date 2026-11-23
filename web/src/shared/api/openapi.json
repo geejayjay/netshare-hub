@@ -604,6 +604,25 @@
         ],
         "type": "object"
       },
+      "ExportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "passphrase": {
+            "description": "Encrypts the file. Needed to restore it: it cannot be recovered.",
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          },
+          "smbPasswords": {
+            "description": "Include the Samba password hashes, so users keep their SMB passwords after a restore (default true). Without them, SMB users must be given new passwords.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "passphrase"
+        ],
+        "type": "object"
+      },
       "FieldError": {
         "additionalProperties": false,
         "properties": {
@@ -1246,7 +1265,8 @@
           "system:read",
           "jobs:manage",
           "alerts:manage",
-          "sessions:manage"
+          "sessions:manage",
+          "backup:manage"
         ],
         "type": "string"
       },
@@ -1403,6 +1423,35 @@
         "required": [
           "path",
           "name"
+        ],
+        "type": "object"
+      },
+      "RestoreRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "backup": {
+            "contentEncoding": "base64",
+            "description": "The backup file (base64 in JSON).",
+            "maxLength": 22369624,
+            "type": "string"
+          },
+          "createMissingFolders": {
+            "description": "Create share folders that do not exist on this machine (their parent folder must exist).",
+            "type": "boolean"
+          },
+          "dryRun": {
+            "description": "Only check the backup and say what restoring it would do. Nothing is changed.",
+            "type": "boolean"
+          },
+          "passphrase": {
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          }
+        },
+        "required": [
+          "backup",
+          "passphrase"
         ],
         "type": "object"
       },
@@ -1879,6 +1928,80 @@
           "schedule",
           "running",
           "runs"
+        ],
+        "type": "object"
+      },
+      "Summary": {
+        "additionalProperties": false,
+        "properties": {
+          "admins": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "app": {
+            "description": "The NetShare Hub version that made it.",
+            "type": "string"
+          },
+          "applied": {
+            "description": "False for a dry run: nothing was changed.",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "description": "When the backup was made.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "hostname": {
+            "description": "The machine it was made on.",
+            "type": "string"
+          },
+          "missingFolders": {
+            "description": "Share folders not on this machine (created when createMissingFolders is set).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rollbackCopy": {
+            "description": "The copy of the database kept before restoring (in the data folder's backups).",
+            "type": "string"
+          },
+          "shares": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "signInAgain": {
+            "description": "Everyone was signed out, the caller too: sign in with an account from the backup.",
+            "type": "boolean"
+          },
+          "smbUsers": {
+            "description": "Users with SMB access after the restore.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "users": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "createdAt",
+          "hostname",
+          "app",
+          "users",
+          "smbUsers",
+          "admins",
+          "shares",
+          "missingFolders",
+          "warnings",
+          "applied",
+          "signInAgain"
         ],
         "type": "object"
       },
@@ -4724,6 +4847,121 @@
           "Shares"
         ],
         "x-permission": "shares:write"
+      }
+    },
+    "/system/backup": {
+      "post": {
+        "operationId": "downloadConfigBackup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The file's content.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Part of the file (a Range request)."
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Download an encrypted backup of users, shares and settings",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "backup:manage"
+      }
+    },
+    "/system/restore": {
+      "post": {
+        "operationId": "restoreConfigBackup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Check a backup, or restore it (replaces every user, share and setting)",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "backup:manage"
       }
     },
     "/system/sessions": {

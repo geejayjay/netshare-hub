@@ -90,6 +90,12 @@ func ValidAccountName(name string) bool {
 	return accountName.MatchString(name)
 }
 
+var ntHash = regexp.MustCompile(`^[0-9A-F]{32}$`)
+
+// ValidNTHash reports whether s is a Samba password hash (the NT hash: 32
+// upper-case hex digits), as SMBHashes returns it.
+func ValidNTHash(s string) bool { return ntHash.MatchString(s) }
+
 // ValidPassword reports whether a password can be passed to the system tools.
 // They read it line by line from stdin, so line breaks and NUL are refused.
 func ValidPassword(password string) bool {
@@ -110,6 +116,18 @@ type Accounts interface {
 	// DeleteUser removes the Samba and Linux accounts. A missing account is
 	// not an error. Errors: ErrNotManaged.
 	DeleteUser(ctx context.Context, name string) error
+	// SMBHashes returns the Samba password hash of each named managed
+	// account (for a config backup). An account without a Samba entry is
+	// left out. The hash is password-equivalent for SMB: it is never
+	// logged, and only goes into an encrypted backup.
+	// Errors: ErrInvalid, ErrNotManaged.
+	SMBHashes(ctx context.Context, names []string) (map[string]string, error)
+	// CreateUserFromHash is CreateUser with a password hash from SMBHashes
+	// instead of a password (restoring a backup): the user keeps their SMB
+	// password. An existing managed account gets the hash and is enabled.
+	// The hash never appears on a command line.
+	// Errors: ErrInvalid, ErrNameTaken.
+	CreateUserFromHash(ctx context.Context, name, hash string) error
 }
 
 // Samba manages the Samba configuration NetShare Hub owns.

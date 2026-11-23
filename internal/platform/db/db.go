@@ -134,6 +134,21 @@ func (d *DB) backup(ctx context.Context, dir string, version int64) (string, err
 	return path, nil
 }
 
+// Snapshot writes a consistent copy of the database to path (a new file,
+// readable by the owner only). The config restore keeps one before it
+// replaces anything.
+func (d *DB) Snapshot(ctx context.Context, path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	literal := "'" + strings.ReplaceAll(filepath.ToSlash(path), "'", "''") + "'"
+	if _, err := d.Write.ExecContext(ctx, "VACUUM INTO "+literal); err != nil {
+		os.Remove(path)
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
 // prune removes all but the newest KeepBackups backups.
 func prune(dir string) {
 	entries, err := os.ReadDir(dir)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -403,5 +404,77 @@ func TestDisabledAccountDetection(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("disabled(%s) = %v, %v; want %v", name, got, err, want)
 		}
+	}
+}
+
+// Step 3.6: a restored account keeps its Samba password hash, which never
+// appears on a command line.
+func TestCreateUserFromHash(t *testing.T) {
+	const hash = "FDC527D027CB6F964A52F8CCECD0248C"
+	m := &machine{passwd: map[string]int{"jay": 1004}, groups: map[string][]string{"jay": {sys.ManagedGroup}}, group: true}
+	var imported string
+	r := &scriptRunner{answer: func(cmd Command) Result {
+		if cmd.Name == "pdbedit" && cmd.Args[0] == "-i" {
+			data, err := os.ReadFile(strings.TrimPrefix(cmd.Args[1], "smbpasswd:"))
+			if err != nil {
+				return Result{ExitCode: 1, Stderr: err.Error()}
+			}
+			if st, _ := os.Stat(strings.TrimPrefix(cmd.Args[1], "smbpasswd:")); runtime.GOOS == "linux" && st.Mode().Perm() != 0o600 {
+				return Result{ExitCode: 1, Stderr: "file mode " + st.Mode().String()}
+			}
+			imported = string(data)
+			return Result{}
+		}
+		return m.answer(cmd)
+	}}
+	a := NewAccounts(r)
+	if err := a.CreateUserFromHash(ctx, "jay", hash); err != nil {
+		t.Fatal(err)
+	}
+	// The local UID, the hash, and a current change time (0 would force a
+	// new password).
+	if !strings.HasPrefix(imported, "jay:1004:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:"+hash+":[U          ]:LCT-") || strings.Contains(imported, "LCT-00000000") {
+		t.Errorf("imported %q", imported)
+	}
+	for _, c := range r.calls {
+		if strings.Contains(strings.Join(c.Args, " ")+c.Stdin, hash) {
+			t.Errorf("the hash reached the command line or stdin of %s", c.Name)
+		}
+	}
+	// The file is gone afterwards.
+	for _, c := range r.calls {
+		if c.Name == "pdbedit" && c.Args[0] == "-i" {
+			if _, err := os.Stat(filepath.Dir(strings.TrimPrefix(c.Args[1], "smbpasswd:"))); !os.IsNotExist(err) {
+				t.Error("the import folder was left behind")
+			}
+		}
+	}
+	if !r.ran("smbpasswd -e jay") {
+		t.Errorf("not enabled: %q", r.lines())
+	}
+
+	// Refused: a bad hash, a system account's name.
+	if err := a.CreateUserFromHash(ctx, "jay", "nothex"); !errors.Is(err, sys.ErrInvalid) {
+		t.Errorf("bad hash: %v", err)
+	}
+	m.passwd["daemon"], m.groups["daemon"] = 1, []string{"daemon"}
+	if err := a.CreateUserFromHash(ctx, "daemon", hash); !errors.Is(err, sys.ErrNameTaken) {
+		t.Errorf("system account: %v", err)
+	}
+}
+
+func TestSMBHashes(t *testing.T) {
+	m := &machine{passwd: map[string]int{"jay": 1004, "root": 0}, groups: map[string][]string{"jay": {sys.ManagedGroup}, "root": {"root"}}}
+	a, _ := newAccounts(m)
+	got, err := a.SMBHashes(ctx, []string{"jay", "gone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got["jay"] != "0123456789ABCDEF0123456789ABCDEF" {
+		t.Errorf("hashes: %v", got)
+	}
+	// Never for an account NetShare Hub does not manage.
+	if _, err := a.SMBHashes(ctx, []string{"root"}); !errors.Is(err, sys.ErrNotManaged) {
+		t.Errorf("root: %v", err)
 	}
 }

@@ -11,7 +11,11 @@
 //	if err := v.Err(); err != nil { return err }
 package validate
 
-import "netshare-hub/internal/platform/errs"
+import (
+	"errors"
+
+	"netshare-hub/internal/platform/errs"
+)
 
 type Errors struct {
 	fields []errs.FieldError
@@ -51,3 +55,29 @@ func (v *Errors) Err() error {
 	}
 	return errs.Invalid(errs.CodeValidationFailed, "Some fields need your attention.", v.fields...)
 }
+
+// Merge adds other's errors with prefix in front of each field name
+// ("shares[2]." + "path"), for checks reused on one item of a list.
+func (v *Errors) Merge(prefix string, other *Errors) *Errors {
+	for _, f := range other.fields {
+		v.Add(prefix+f.Field, f.Code, f.Message)
+	}
+	return v
+}
+
+// MergeErr is Merge for an error a service returned: its field errors are
+// added with prefix, and true is returned. Any other error is left to the
+// caller (false).
+func (v *Errors) MergeErr(prefix string, err error) bool {
+	var e *errs.E
+	if !errors.As(err, &e) || len(e.Fields) == 0 {
+		return false
+	}
+	for _, f := range e.Fields {
+		v.Add(prefix+f.Field, f.Code, f.Message)
+	}
+	return true
+}
+
+// Empty reports whether nothing failed.
+func (v *Errors) Empty() bool { return len(v.fields) == 0 }

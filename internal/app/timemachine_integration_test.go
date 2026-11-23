@@ -112,7 +112,9 @@ func TestTimeMachineOverRealSamba(t *testing.T) {
 	// full_audit below the Apple modules.
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		var page struct{ Items []struct{ Share, Op, Path string } }
+		var page struct {
+			Items []struct{ Share, Op, Path string }
+		}
 		admin.do("GET", "/activity?user="+user+"&limit=200", nil, &page)
 		for _, e := range page.Items {
 			if e.Share == name && e.Op == "write" && e.Path == "backup.txt" {

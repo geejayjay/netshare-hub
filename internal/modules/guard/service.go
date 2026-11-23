@@ -270,9 +270,7 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) { return s.loa
 // UpdateSettings changes the mode and thresholds; they apply at once.
 func (s *Service) UpdateSettings(ctx context.Context, actor *httpx.Principal, in Settings) (Settings, error) {
 	v := validate.New()
-	v.Check(in.Mode == ModeOff || in.Mode == ModeLearning || in.Mode == ModeProtect, "mode", "invalid_choice", "Must be off, learning or protect.")
-	v.Check(in.Renames >= 3, "renames", "too_small", "At least 3: lower would trigger on normal work.")
-	v.Check(in.NoteFolders >= 2, "noteFolders", "too_small", "At least 2.")
+	CheckSettings(v, in)
 	if err := v.Err(); err != nil {
 		return Settings{}, err
 	}
@@ -290,6 +288,16 @@ func (s *Service) UpdateSettings(ctx context.Context, actor *httpx.Principal, in
 	slog.InfoContext(ctx, "ransomware guard settings changed", "mode", st.Mode, "renames", st.Renames,
 		"note_folders", st.NoteFolders, "by", actor.Username)
 	return st, nil
+}
+
+// CheckSettings validates the guard's settings (the API's and a restored
+// backup's).
+func CheckSettings(v *validate.Errors, in Settings) {
+	v.Check(in.Mode == ModeOff || in.Mode == ModeLearning || in.Mode == ModeProtect, "mode", "invalid_choice", "Must be off, learning or protect.")
+	v.Check(in.Renames >= 3, "renames", "too_small", "At least 3: lower would trigger on normal work.")
+	v.Check(in.Renames <= 100000, "renames", "too_large", "At most 100000.")
+	v.Check(in.NoteFolders >= 2, "noteFolders", "too_small", "At least 2.")
+	v.Check(in.NoteFolders <= 1000, "noteFolders", "too_large", "At most 1000.")
 }
 
 // --- incidents ---

@@ -9,6 +9,8 @@ package sysfake
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -30,7 +32,15 @@ import (
 // Account is one fake Linux + Samba account.
 type Account struct {
 	Password string
-	Enabled  bool
+	// Hash is the account's Samba password hash (NTHash of the password).
+	Hash    string
+	Enabled bool
+}
+
+// NTHash is the fake's Samba password hash: a stand-in, not Samba's.
+func NTHash(password string) string {
+	sum := sha256.Sum256([]byte("nt:" + password))
+	return strings.ToUpper(hex.EncodeToString(sum[:16]))
 }
 
 // Fake implements sys.Accounts, sys.Samba and sys.Files.
@@ -203,8 +213,45 @@ func (f *Fake) CreateUser(_ context.Context, name, password string) error {
 	if err := f.fail("CreateUser"); err != nil {
 		return err
 	}
-	f.accounts[name] = &Account{Password: password, Enabled: true}
+	f.accounts[name] = &Account{Password: password, Hash: NTHash(password), Enabled: true}
 	return nil
+}
+
+func (f *Fake) CreateUserFromHash(_ context.Context, name, hash string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !sys.ValidAccountName(name) {
+		return fmt.Errorf("%w: account name", sys.ErrInvalid)
+	}
+	if !sys.ValidNTHash(hash) {
+		return fmt.Errorf("%w: password hash", sys.ErrInvalid)
+	}
+	if f.system[name] {
+		return sys.ErrNameTaken
+	}
+	if err := f.fail("CreateUserFromHash"); err != nil {
+		return err
+	}
+	f.accounts[name] = &Account{Hash: hash, Enabled: true}
+	return nil
+}
+
+func (f *Fake) SMBHashes(_ context.Context, names []string) (map[string]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]string{}
+	for _, name := range names {
+		if !sys.ValidAccountName(name) {
+			return nil, fmt.Errorf("%w: account name", sys.ErrInvalid)
+		}
+		if f.system[name] {
+			return nil, sys.ErrNotManaged
+		}
+		if a, ok := f.accounts[name]; ok {
+			out[name] = a.Hash
+		}
+	}
+	return out, nil
 }
 
 func (f *Fake) managed(name string) (*Account, error) {

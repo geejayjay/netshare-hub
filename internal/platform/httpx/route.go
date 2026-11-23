@@ -52,6 +52,9 @@ type Route struct {
 	// Binary marks a route that streams a file instead of JSON (the handler
 	// returns *huma.StreamResponse); it is the response's content type.
 	Binary string
+	// MaxBody raises the request body limit (default 1 MiB), for the few
+	// routes that take a file in JSON.
+	MaxBody int64
 }
 
 // Register adds a route to the API. It is the only way routes are added, so
@@ -65,6 +68,7 @@ func Register[I, O any](api huma.API, r Route, handler func(context.Context, *I)
 		Tags:          []string{r.Tag},
 		DefaultStatus: r.Status,
 		Middlewares:   huma.Middlewares{r.Access.guard(r.Method)},
+		MaxBodyBytes:  r.MaxBody,
 	}
 	if !r.Access.public {
 		op.Security = []map[string][]string{{SecurityScheme: {}}}

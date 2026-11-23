@@ -23,6 +23,7 @@ import (
 	activitymigrations "netshare-hub/internal/modules/activity/migrations"
 	"netshare-hub/internal/modules/alerts"
 	"netshare-hub/internal/modules/auth"
+	"netshare-hub/internal/modules/backup"
 	"netshare-hub/internal/modules/discovery"
 	"netshare-hub/internal/modules/files"
 	"netshare-hub/internal/modules/guard"
@@ -151,6 +152,8 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 
 	// SMB brute-force protection: failed logins from the same events.
 	banService := guard.NewBans(database, shareService, osLayer.Samba, osLayer.Neighbors, alertService)
+	backupService := backup.NewService(database, userService, shareService, guardService, banService, jobService,
+		osLayer, cfg.DataDir, Version)
 	if err := banService.Start(ctx); err != nil {
 		activityDB.Close()
 		database.Close()
@@ -210,6 +213,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		guard.RegisterBans(api, banService)
 		sessions.Register(api, osLayer.Samba)
 		discovery.Register(api, osLayer.Discovery)
+		backup.Register(api, backupService)
 		scheduler.Register(api, tasks)
 	})
 

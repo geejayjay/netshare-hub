@@ -429,21 +429,7 @@ func (b *Bans) Settings(ctx context.Context) (BanSettings, error) { return b.loa
 // login logging.
 func (b *Bans) UpdateSettings(ctx context.Context, actor *httpx.Principal, in BanSettings) (BanSettings, error) {
 	v := validate.New()
-	v.Check(in.Failures >= 3, "failures", "too_small", "At least 3: people mistype passwords.")
-	v.Check(in.WindowMinutes >= 1, "windowMinutes", "too_small", "At least 1 minute.")
-	v.Check(in.BanMinutes >= 1, "banMinutes", "too_small", "At least 1 minute.")
-	v.Check(in.MaxBanHours >= 1 && in.MaxBanHours*60 >= in.BanMinutes, "maxBanHours", "too_small", "At least as long as the first ban.")
-	allow := make([]string, 0, len(in.AllowList))
-	for i, a := range in.AllowList {
-		c, err := sys.ParseHostRule(a)
-		if err != nil {
-			v.Add(fmt.Sprintf("allowList[%d]", i), "invalid_format", err.Error())
-			continue
-		}
-		if !slices.Contains(allow, c) {
-			allow = append(allow, c)
-		}
-	}
+	allow := CheckBanSettings(v, in)
 	if err := v.Err(); err != nil {
 		return BanSettings{}, err
 	}
@@ -488,6 +474,32 @@ func (b *Bans) UpdateSettings(ctx context.Context, actor *httpx.Principal, in Ba
 	slog.InfoContext(ctx, "SMB brute-force settings changed", "enabled", st.Enabled, "failures", st.Failures,
 		"window_minutes", st.WindowMinutes, "allow_list", st.AllowList, "lifted", lifted, "by", actor.Username)
 	return st, nil
+}
+
+// CheckBanSettings validates brute-force settings (the API's and a restored
+// backup's) and returns the allow list normalized.
+func CheckBanSettings(v *validate.Errors, in BanSettings) []string {
+	v.Check(in.Failures >= 3 && in.Failures <= 1000, "failures", "out_of_range", "Between 3 (people mistype passwords) and 1000.")
+	v.Check(in.WindowMinutes >= 1 && in.WindowMinutes <= 1440, "windowMinutes", "out_of_range", "Between 1 minute and a day.")
+	v.Check(in.BanMinutes >= 1 && in.BanMinutes <= 10080, "banMinutes", "out_of_range", "Between 1 minute and a week.")
+	v.Check(in.MaxBanHours >= 1 && in.MaxBanHours <= 8760 && in.MaxBanHours*60 >= in.BanMinutes, "maxBanHours", "too_small",
+		"At least as long as the first ban, and at most a year.")
+	if len(in.AllowList) > 64 {
+		v.Add("allowList", "too_many", "At most 64 entries.")
+		return nil
+	}
+	allow := make([]string, 0, len(in.AllowList))
+	for i, a := range in.AllowList {
+		c, err := sys.ParseHostRule(a)
+		if err != nil {
+			v.Add(fmt.Sprintf("allowList[%d]", i), "invalid_format", err.Error())
+			continue
+		}
+		if !slices.Contains(allow, c) {
+			allow = append(allow, c)
+		}
+	}
+	return allow
 }
 
 // --- reading ---

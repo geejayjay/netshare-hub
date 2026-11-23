@@ -475,6 +475,34 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 	}
 
 	applyErr := s.samba.ApplyConfig(ctx, cfg)
+	if err := applyFailure(applyErr); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		// Extremely unlikely, but then Samba has a config the database does
+		// not know about. Put the previous config back.
+		s.restoreConfig(ctx)
+		return err
+	}
+	return s.afterApply(ctx, applyErr)
+}
+
+// afterApply reports a Samba that did not reload (the change is saved).
+func (s *Service) afterApply(ctx context.Context, applyErr error) error {
+	s.reloadAlert(ctx, applyErr)
+	if applyErr != nil {
+		return errs.Unavailable(CodeSambaReloadFailed,
+			"The change was saved, but Samba could not be reloaded. It will take effect when Samba restarts.").
+			WithCause(applyErr)
+	}
+	return nil
+}
+
+// applyFailure turns an ApplyConfig error that changed nothing into the
+// error for the client. nil (and a failed reload, which kept the change)
+// give nil.
+func applyFailure(applyErr error) error {
 	var aclErr *sys.ACLError
 	switch {
 	case applyErr == nil:
@@ -500,19 +528,6 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 		// not be written): nothing changed on the system, and the deferred
 		// rollback undoes the edit.
 		return errs.Internal(fmt.Errorf("apply samba config: %w", applyErr))
-	}
-
-	if err := tx.Commit(); err != nil {
-		// Extremely unlikely, but then Samba has a config the database does
-		// not know about. Put the previous config back.
-		s.restoreConfig(ctx)
-		return err
-	}
-	s.reloadAlert(ctx, applyErr)
-	if applyErr != nil {
-		return errs.Unavailable(CodeSambaReloadFailed,
-			"The change was saved, but Samba could not be reloaded. It will take effect when Samba restarts.").
-			WithCause(applyErr)
 	}
 	return nil
 }

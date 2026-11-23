@@ -35,7 +35,7 @@ type DiscoveryService struct {
 
 // DiscoveryStatus is both services' state.
 type DiscoveryStatus struct {
-	Systemd bool    `json:"systemd" doc:"False when the machine is not run by systemd: the daemons cannot be switched from here."`
+	Systemd bool             `json:"systemd" doc:"False when the machine is not run by systemd: the daemons cannot be switched from here."`
 	WSD     DiscoveryService `json:"wsd" doc:"WS-Discovery: the server shows up in Windows' Network folder, under the machine's hostname."`
 	MDNS    DiscoveryService `json:"mdns" doc:"mDNS / Bonjour: the server shows up in macOS Finder and Linux file managers, and Macs find Time Machine shares."`
 }

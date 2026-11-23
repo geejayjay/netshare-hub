@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"netshare-hub/internal/sys"
 )
@@ -84,13 +87,35 @@ func (a *Accounts) managed(ctx context.Context, name string) error {
 }
 
 func (a *Accounts) CreateUser(ctx context.Context, name, password string) error {
-	if !sys.ValidAccountName(name) {
-		return fmt.Errorf("%w: account name", sys.ErrInvalid)
-	}
 	if !sys.ValidPassword(password) {
 		return fmt.Errorf("%w: password", sys.ErrInvalid)
 	}
+	return a.create(ctx, name, func() error { return a.setSambaPassword(ctx, name, password) })
+}
 
+func (a *Accounts) CreateUserFromHash(ctx context.Context, name, hash string) error {
+	if !sys.ValidNTHash(hash) {
+		return fmt.Errorf("%w: password hash", sys.ErrInvalid)
+	}
+	return a.create(ctx, name, func() error {
+		// The hash file names the account's UID on this machine.
+		acc, err := a.lookup(ctx, name)
+		if err == nil && acc == nil {
+			err = fmt.Errorf("account %q not found after creating it", name)
+		}
+		if err != nil {
+			return err
+		}
+		return a.importHash(ctx, name, acc.uid, hash)
+	})
+}
+
+// create makes (or adopts) the Linux account, then sets the Samba
+// password with setPassword. It is all-or-nothing.
+func (a *Accounts) create(ctx context.Context, name string, setPassword func() error) error {
+	if !sys.ValidAccountName(name) {
+		return fmt.Errorf("%w: account name", sys.ErrInvalid)
+	}
 	acc, err := a.lookup(ctx, name)
 	if err != nil {
 		return err
@@ -118,18 +143,71 @@ func (a *Accounts) CreateUser(ctx context.Context, name, password string) error 
 		created = true
 	}
 
-	if err := a.setSambaPassword(ctx, name, password); err != nil {
+	if err := setPassword(); err != nil {
 		if created {
 			// All-or-nothing: do not leave a Linux account without a Samba one.
-			if _, delErr := run(ctx, a.runner, "userdel", name); delErr != nil {
-				slog.ErrorContext(ctx, "could not remove half-created account", "account", name, "err", delErr)
-			}
+			a.undoCreate(ctx, name)
 		}
 		return err
 	}
 	// An adopted leftover account may have been disabled.
 	_, err = run(ctx, a.runner, "smbpasswd", "-e", name)
 	return err
+}
+
+func (a *Accounts) undoCreate(ctx context.Context, name string) {
+	if _, err := run(ctx, a.runner, "userdel", name); err != nil {
+		slog.ErrorContext(ctx, "could not remove half-created account", "account", name, "err", err)
+	}
+}
+
+// importHash sets a Samba password hash. Samba's only ways to take a hash
+// are the command line (seen by every local user in the process list) or a
+// passdb file, so it goes through a file only root can read, in a private
+// folder, removed right after. The account's UID must be this machine's.
+func (a *Accounts) importHash(ctx context.Context, name string, uid int, hash string) error {
+	dir, err := os.MkdirTemp("", "nsh-import-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	file := filepath.Join(dir, "passdb")
+	// smbpasswd format: name:uid:LM hash:NT hash:[flags]:LCT-<last change>.
+	// A last change of 0 would make Samba ask for a new password.
+	line := fmt.Sprintf("%s:%d:%s:%s:[U          ]:LCT-%08X:\n", name, uid, strings.Repeat("X", 32), hash, time.Now().Unix())
+	if err := os.WriteFile(file, []byte(line), 0o600); err != nil {
+		return err
+	}
+	_, err = run(ctx, a.runner, "pdbedit", "-i", "smbpasswd:"+file)
+	return err
+}
+
+func (a *Accounts) SMBHashes(ctx context.Context, names []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, name := range names {
+		if err := a.managed(ctx, name); err != nil {
+			if err == sys.ErrNotFound {
+				continue
+			}
+			return nil, err
+		}
+		res, err := a.runner.Run(ctx, Command{Name: "pdbedit", Args: []string{"-u", name, "-w"}})
+		if err != nil {
+			return nil, err
+		}
+		if res.ExitCode != 0 {
+			continue // no Samba entry
+		}
+		// name:uid:LM hash:NT hash:[account flags]:last change
+		fields := strings.Split(strings.TrimSpace(res.Stdout), ":")
+		if len(fields) < 5 || fields[0] != name {
+			return nil, fmt.Errorf("unexpected pdbedit output for %q", name)
+		}
+		if h := strings.ToUpper(fields[3]); sys.ValidNTHash(h) {
+			out[name] = h
+		}
+	}
+	return out, nil
 }
 
 func (a *Accounts) SetPassword(ctx context.Context, name, password string) error {

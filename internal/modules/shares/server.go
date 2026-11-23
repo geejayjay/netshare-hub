@@ -135,18 +135,7 @@ func (s *Service) ServerSettings(ctx context.Context) (ServerSettings, error) {
 func (s *Service) UpdateServerSettings(ctx context.Context, in ServerSettings) (ServerSettings, error) {
 	settings := in.toSys()
 	v := validate.New()
-	v.Check(settings.NetbiosName == "" || sys.ValidNetbiosName(settings.NetbiosName), "serverName", "invalid_format",
-		"Use 1-15 letters, digits or -, not starting or ending with -, and not only digits.")
-	v.Check(settings.Workgroup == "" || sys.ValidNetbiosName(settings.Workgroup), "workgroup", "invalid_format",
-		"Use 1-15 letters, digits or -, not starting or ending with -, and not only digits.")
-	minIdx, maxIdx := slices.Index(sys.Protocols, settings.MinProtocol), slices.Index(sys.Protocols, settings.MaxProtocol)
-	if minIdx >= 0 && maxIdx >= 0 && minIdx > maxIdx {
-		v.Add("maxProtocol", "older_than_min", "The newest version allowed cannot be older than the oldest.")
-	}
-	if settings.Encryption == "required" && minIdx >= 0 && minIdx < slices.Index(sys.Protocols, "SMB3_00") {
-		v.Add("encryption", "needs_smb3",
-			"Encryption needs SMB 3. Set the oldest version to SMB3_00 or newer, or clients on older versions connect and then cannot open anything.")
-	}
+	checkServer(v, settings)
 	if err := v.Err(); err != nil {
 		return ServerSettings{}, err
 	}
@@ -181,4 +170,21 @@ func (s *Service) UpdateServerSettings(ctx context.Context, in ServerSettings) (
 		return ServerSettings{}, err
 	}
 	return s.ServerSettings(ctx)
+}
+
+// checkServer validates server-wide settings (the API's and a restored
+// backup's).
+func checkServer(v *validate.Errors, settings sys.ServerSettings) {
+	v.Check(settings.NetbiosName == "" || sys.ValidNetbiosName(settings.NetbiosName), "serverName", "invalid_format",
+		"Use 1-15 letters, digits or -, not starting or ending with -, and not only digits.")
+	v.Check(settings.Workgroup == "" || sys.ValidNetbiosName(settings.Workgroup), "workgroup", "invalid_format",
+		"Use 1-15 letters, digits or -, not starting or ending with -, and not only digits.")
+	minIdx, maxIdx := slices.Index(sys.Protocols, settings.MinProtocol), slices.Index(sys.Protocols, settings.MaxProtocol)
+	if minIdx >= 0 && maxIdx >= 0 && minIdx > maxIdx {
+		v.Add("maxProtocol", "older_than_min", "The newest version allowed cannot be older than the oldest.")
+	}
+	if settings.Encryption == "required" && minIdx >= 0 && minIdx < slices.Index(sys.Protocols, "SMB3_00") {
+		v.Add("encryption", "needs_smb3",
+			"Encryption needs SMB 3. Set the oldest version to SMB3_00 or newer, or clients on older versions connect and then cannot open anything.")
+	}
 }

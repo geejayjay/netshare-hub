@@ -32,6 +32,9 @@ const (
 	AlertsManage Permission = "alerts:manage"
 	// SessionsManage lets a user end other people's SMB sessions.
 	SessionsManage Permission = "sessions:manage"
+	// BackupManage lets a user download a config backup (it holds every
+	// password hash) and restore one (it replaces every user and share).
+	BackupManage Permission = "backup:manage"
 )
 
 // all lists every permission. Add new ones here too: the Admin role gets the
@@ -39,7 +42,7 @@ const (
 var all = []Permission{
 	UsersRead, UsersWrite, GroupsRead, GroupsWrite, SharesRead, SharesWrite,
 	FilesRead, FilesWrite, SettingsRead, SettingsWrite, AuditRead, SystemRead,
-	JobsManage, AlertsManage, SessionsManage,
+	JobsManage, AlertsManage, SessionsManage, BackupManage,
 }
 
 // Role is a named bundle of permissions.

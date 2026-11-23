@@ -659,6 +659,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/backup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download an encrypted backup of users, shares and settings */
+        post: operations["downloadConfigBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check a backup, or restore it (replaces every user, share and setting) */
+        post: operations["restoreConfigBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/sessions": {
         parameters: {
             query?: never;
@@ -967,6 +1001,12 @@ export interface components {
             /** Format: int64 */
             size: number;
         };
+        ExportRequest: {
+            /** @description Encrypts the file. Needed to restore it: it cannot be recovered. */
+            passphrase: string;
+            /** @description Include the Samba password hashes, so users keep their SMB passwords after a restore (default true). Without them, SMB users must be given new passwords. */
+            smbPasswords?: boolean;
+        };
         FieldError: {
             /** @description Machine-readable reason, e.g. "required" or "too_short". */
             code: string;
@@ -1162,7 +1202,7 @@ export interface components {
             next: number;
         };
         /** @enum {string} */
-        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage" | "sessions:manage";
+        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage" | "sessions:manage" | "backup:manage";
         Preset: {
             /** @enum {string} */
             defaultLevel: "read" | "upload" | "write";
@@ -1204,6 +1244,15 @@ export interface components {
             /** @description The new name (no folders: use move for that). */
             name: string;
             path: string;
+        };
+        RestoreRequest: {
+            /** @description The backup file (base64 in JSON). */
+            backup: string;
+            /** @description Create share folders that do not exist on this machine (their parent folder must exist). */
+            createMissingFolders?: boolean;
+            /** @description Only check the backup and say what restoring it would do. Nothing is changed. */
+            dryRun?: boolean;
+            passphrase: string;
         };
         Result: {
             /**
@@ -1379,6 +1428,37 @@ export interface components {
             runs: number;
             /** @description "every 1h0m0s" or "daily at 03:00". */
             schedule: string;
+        };
+        Summary: {
+            /** Format: int64 */
+            admins: number;
+            /** @description The NetShare Hub version that made it. */
+            app: string;
+            /** @description False for a dry run: nothing was changed. */
+            applied: boolean;
+            /**
+             * Format: date-time
+             * @description When the backup was made.
+             */
+            createdAt: string;
+            /** @description The machine it was made on. */
+            hostname: string;
+            /** @description Share folders not on this machine (created when createMissingFolders is set). */
+            missingFolders: string[];
+            /** @description The copy of the database kept before restoring (in the data folder's backups). */
+            rollbackCopy?: string;
+            /** Format: int64 */
+            shares: number;
+            /** @description Everyone was signed out, the caller too: sign in with an account from the backup. */
+            signInAgain: boolean;
+            /**
+             * Format: int64
+             * @description Users with SMB access after the restore.
+             */
+            smbUsers: number;
+            /** Format: int64 */
+            users: number;
+            warnings: string[];
         };
         TransferRequest: {
             /**
@@ -2983,6 +3063,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    downloadConfigBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportRequest"];
+            };
+        };
+        responses: {
+            /** @description The file's content. */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Disposition"?: string;
+                    "Content-Type"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Part of the file (a Range request). */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+        };
+    };
+    restoreConfigBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Summary"];
                 };
             };
             /** @description Error */

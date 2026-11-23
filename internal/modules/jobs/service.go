@@ -466,3 +466,11 @@ func newID() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+// ActiveCount is how many jobs are queued or running (a config restore
+// waits until there are none: it replaces the users the jobs belong to).
+func (s *Service) ActiveCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.repo.db.Read.QueryRowContext(ctx, "SELECT COUNT(*) FROM jobs WHERE status IN ('queued', 'running')").Scan(&n)
+	return n, err
+}

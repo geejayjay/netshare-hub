@@ -60,6 +60,18 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 		return nil, system.Accounts.DeleteUser(ctx, r.Name)
 	}, func(r deleteUserRequest) []any { return []any{"account", r.Name} })
 
+	register(s, opSMBHashes, func(ctx context.Context, r smbHashesRequest) (any, error) {
+		if len(r.Names) > 10000 {
+			return nil, sys.ErrInvalid
+		}
+		hashes, err := system.Accounts.SMBHashes(ctx, r.Names)
+		return smbHashesResponse{Hashes: hashes}, err
+	}, func(r smbHashesRequest) []any { return []any{"accounts", len(r.Names)} })
+
+	register(s, opCreateFromHash, func(ctx context.Context, r createFromHashRequest) (any, error) {
+		return nil, system.Accounts.CreateUserFromHash(ctx, r.Name, r.Hash)
+	}, func(r createFromHashRequest) []any { return []any{"account", r.Name} })
+
 	register(s, opApplyConfig, func(ctx context.Context, r applyConfigRequest) (any, error) {
 		return nil, system.Samba.ApplyConfig(ctx, sys.SambaConfig{Server: r.Server, Shares: r.Shares, Audit: r.Audit,
 			LoginAudit: r.LoginAudit, Banned: r.Banned})

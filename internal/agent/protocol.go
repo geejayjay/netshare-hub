@@ -26,11 +26,16 @@ import (
 // Operations. This list is the agent's whole surface: adding an operation
 // here is a security decision, not a convenience.
 const (
-	opPing           = "ping"
-	opCreateUser     = "accounts.create"
-	opSetPassword    = "accounts.set-password"
-	opSetEnabled     = "accounts.set-enabled"
-	opDeleteUser     = "accounts.delete"
+	opPing        = "ping"
+	opCreateUser  = "accounts.create"
+	opSetPassword = "accounts.set-password"
+	opSetEnabled  = "accounts.set-enabled"
+	opDeleteUser  = "accounts.delete"
+	// opSMBHashes returns Samba password hashes of managed accounts (for an
+	// encrypted config backup); opCreateFromHash sets one (a restore).
+	// Neither ever logs a hash.
+	opSMBHashes      = "accounts.smb-hashes"
+	opCreateFromHash = "accounts.create-from-hash"
 	opApplyConfig    = "samba.apply-config"
 	opFixPermissions = "samba.fix-permissions"
 	// opAuditEvents streams the events read from Samba's logs (newline-
@@ -77,6 +82,19 @@ type setEnabledRequest struct {
 
 type deleteUserRequest struct {
 	Name string `json:"name"`
+}
+
+type smbHashesRequest struct {
+	Names []string `json:"names"`
+}
+
+type smbHashesResponse struct {
+	Hashes map[string]string `json:"hashes"`
+}
+
+type createFromHashRequest struct {
+	Name string `json:"name"`
+	Hash string `json:"hash"`
 }
 
 type applyConfigRequest struct {

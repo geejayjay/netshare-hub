@@ -148,6 +148,18 @@ func (c *Client) DisconnectSession(ctx context.Context, id string) error {
 	return c.call(ctx, opDisconnectSession, sessionRequest{ID: id}, nil)
 }
 
+// SMBHashes returns Samba password hashes of managed accounts.
+func (c *Client) SMBHashes(ctx context.Context, names []string) (map[string]string, error) {
+	var res smbHashesResponse
+	err := c.call(ctx, opSMBHashes, smbHashesRequest{Names: names}, &res)
+	return res.Hashes, err
+}
+
+// CreateUserFromHash creates an account with a Samba password hash.
+func (c *Client) CreateUserFromHash(ctx context.Context, name, hash string) error {
+	return c.call(ctx, opCreateFromHash, createFromHashRequest{Name: name, Hash: hash}, nil)
+}
+
 // DisconnectClient drops every SMB connection from one address.
 func (c *Client) DisconnectClient(ctx context.Context, ip netip.Addr) error {
 	return c.call(ctx, opDisconnectClient, disconnectRequest{IP: ip.String()}, nil)
