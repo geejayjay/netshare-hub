@@ -14,20 +14,19 @@ export function AuthLayout({
   children: ReactNode
 }) {
   return (
-    <div className="relative grid min-h-dvh place-items-center overflow-hidden p-4">
-      {/* A soft glow in the accent color, so the page is not a flat grey. */}
+    <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-chrome p-4">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 -top-40 mx-auto size-[42rem] rounded-full bg-primary/15 blur-3xl"
+        className="pointer-events-none absolute inset-x-0 -top-48 mx-auto size-[44rem] rounded-full bg-primary/14 blur-3xl"
       />
-      <div className="relative flex w-full max-w-sm flex-col gap-6">
+      <div className="relative flex w-full max-w-[23.5rem] flex-col gap-6">
         <div className="flex items-center gap-2.5">
           <Brand />
           <ThemeSwitcher className="ml-auto" />
         </div>
-        <Card className="shadow-pop">
+        <Card className="border-border-strong/80 shadow-pop">
           <CardHeader className="p-6 pb-0">
-            <CardTitle className="text-lg">{title}</CardTitle>
+            <CardTitle className="text-lg tracking-tight">{title}</CardTitle>
             {description && <CardDescription>{description}</CardDescription>}
           </CardHeader>
           <CardContent className="p-6">{children}</CardContent>

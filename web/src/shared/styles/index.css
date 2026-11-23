@@ -4,10 +4,6 @@
  *   2. Tailwind (utilities + reset)
  *   3. tokens   (colors, radii, sizes: the single source of truth)
  *   4. base     (element defaults)
- *
- * Component styling lives in the components themselves (src/shared/ui) as
- * Tailwind utilities, and each variant is defined once there. Only things
- * utilities cannot express well (the layout grid) get their own CSS file.
  */
 @import '@fontsource-variable/inter';
 @import 'tailwindcss';
@@ -20,6 +16,7 @@
     font-feature-settings: 'cv11', 'ss01';
     -webkit-text-size-adjust: 100%;
     scrollbar-color: var(--border-strong) transparent;
+    scrollbar-width: thin;
   }
 
   body {
@@ -35,11 +32,11 @@
   h1,
   h2,
   h3 {
-    letter-spacing: -0.011em;
+    letter-spacing: -0.015em;
   }
 
   ::selection {
-    background: color-mix(in oklch, var(--primary) 25%, transparent);
+    background: color-mix(in oklch, var(--primary) 24%, transparent);
   }
 
   /* One focus style for every interactive element. */
@@ -66,4 +63,34 @@
       transition-duration: 0.01ms !important;
     }
   }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-modal-in {
+  animation: modal-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-drawer-in {
+  animation: drawer-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }

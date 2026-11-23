@@ -14,14 +14,18 @@ interface AppLayoutProps {
   nav: NavItem[]
   /** Pinned to the bottom of the navigation, e.g. the account menu. */
   navFooter?: ReactNode
+  /** Rendered on the right side of the top header bar (alerts, jobs, theme). */
+  headerActions?: ReactNode
+  /** Optional sticky banner at the top of the main panel (e.g. critical alerts). */
+  banner?: ReactNode
   children: ReactNode
 }
 
 /**
  * The layout for signed-in pages. It fills the Shell's slots and knows nothing
- * about any feature: navigation and the account menu are passed in.
+ * about any feature: navigation, header actions and the account menu are passed in.
  */
-export function AppLayout({ variant, nav, navFooter, children }: AppLayoutProps) {
+export function AppLayout({ variant, nav, navFooter, headerActions, banner, children }: AppLayoutProps) {
   const { navCollapsed, toggleNavCollapsed } = useLayoutStore()
   const [navOpen, setNavOpen] = useState(false)
   const { can } = useSession()
@@ -29,7 +33,6 @@ export function AppLayout({ variant, nav, navFooter, children }: AppLayoutProps)
   const visible = nav.filter((item) => !item.permission || can(item.permission))
   const current = useCurrentItem(visible)
 
-  // One button: opens the drawer on small screens, collapses the sidebar on large ones.
   const toggleNav = () => {
     if (window.matchMedia('(min-width: 48rem)').matches) toggleNavCollapsed()
     else setNavOpen((open) => !open)
@@ -83,11 +86,13 @@ export function AppLayout({ variant, nav, navFooter, children }: AppLayoutProps)
                   <ChevronRight className="size-3.5 text-fg-subtle max-sm:hidden" />
                 </>
               )}
-              <span className="truncate font-medium">{current.label}</span>
+              <span className="truncate font-medium text-fg">{current.label}</span>
             </nav>
           )}
+          {headerActions && <div className="ml-auto flex items-center gap-1.5">{headerActions}</div>}
         </>
       }
+      banner={banner}
     >
       {children}
     </Shell>
@@ -106,8 +111,8 @@ export function Brand() {
     <>
       <LogoMark />
       <span data-nav-label className="flex flex-col leading-tight">
-        <span className="text-[0.9375rem] font-semibold tracking-tight">NetShare Hub</span>
-        <span className="text-[0.6875rem] font-medium text-fg-subtle">Network shares</span>
+        <span className="text-[0.9375rem] font-semibold tracking-tight text-fg">NetShare Hub</span>
+        <span className="text-[0.6875rem] font-medium text-fg-subtle">SMB Control Plane</span>
       </span>
     </>
   )

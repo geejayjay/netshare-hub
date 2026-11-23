@@ -23,6 +23,8 @@ interface ShellProps {
   navFooter?: ReactNode
   /** Header content: nav toggle, breadcrumb... */
   header: ReactNode
+  /** Optional sticky banner rendered at the top of the main panel. */
+  banner?: ReactNode
   /** The page. */
   children: ReactNode
 }
@@ -35,7 +37,18 @@ interface ShellProps {
  * when the sidebar is collapsed to icons. Slot content uses that instead of
  * knowing about the collapsed state.
  */
-export function Shell({ variant, navCollapsed, navOpen, onNavClose, brand, nav, navFooter, header, children }: ShellProps) {
+export function Shell({
+  variant,
+  navCollapsed,
+  navOpen,
+  onNavClose,
+  brand,
+  nav,
+  navFooter,
+  header,
+  banner,
+  children,
+}: ShellProps) {
   return (
     <div className="shell" data-layout={variant} data-nav-collapsed={navCollapsed} data-nav-open={navOpen}>
       <aside className="shell-nav">
@@ -49,6 +62,7 @@ export function Shell({ variant, navCollapsed, navOpen, onNavClose, brand, nav, 
         {header}
       </header>
       <main className="shell-main">
+        {banner && <div className="shell-banner">{banner}</div>}
         <div className="shell-main-inner">{children}</div>
       </main>
     </div>

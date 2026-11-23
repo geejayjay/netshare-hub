@@ -1,20 +1,6 @@
 /*
  * The app shell: ONE grid with three named areas (nav, header, main).
- *
- * A layout variant is nothing more than a different arrangement of those
- * areas, chosen with the data-layout attribute. The markup and the components
- * inside never change, so adding a variant means adding one block below.
- *
- *   sidebar-left     sidebar-right     topbar
- *   ┌───┬────────┐   ┌────────┬───┐   ┌────────────┐
- *   │nav│ header │   │ header │nav│   │   header   │
- *   │   ├────────┤   ├────────┤   │   ├────────────┤
- *   │   │  main  │   │  main  │   │   │    nav     │
- *   └───┴────────┘   └────────┴───┘   ├────────────┤
- *                                     │    main    │
- *                                     └────────────┘
- *
- * Look: the nav and header sit on the "chrome" color, and the page sits on a
+ * The nav and header sit on the "chrome" color, and the page sits on a
  * raised, rounded panel inset from them (like a premium desktop app).
  */
 @layer components {
@@ -30,7 +16,7 @@
     --nav-width: var(--shell-nav-width-collapsed);
   }
 
-  /* ---- variants: the only place the arrangement is decided ---- */
+  /* ---- variants ---- */
   .shell[data-layout='sidebar-left'] {
     grid-template-columns: var(--nav-width) minmax(0, 1fr);
     grid-template-areas: 'nav header' 'nav main';
@@ -62,6 +48,7 @@
   }
   .shell-nav-footer {
     padding: 0.5rem 0.75rem 0.75rem;
+    border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
   }
 
   .shell-header {
@@ -79,7 +66,7 @@
   .shell-main {
     grid-area: main;
     min-width: 0;
-    padding: 2rem 2.25rem 3rem;
+    padding: 1.75rem 2.25rem 3rem;
     margin-block-end: var(--panel-gap);
     background: var(--bg);
     border: 1px solid var(--border);
@@ -95,19 +82,23 @@
   .shell[data-layout='topbar'] .shell-main {
     margin-inline: var(--panel-gap);
   }
+  .shell-banner {
+    max-width: var(--content-max-width);
+    margin: 0 auto 1.25rem;
+  }
   .shell-main-inner {
     max-width: var(--content-max-width);
     margin-inline: auto;
   }
 
-  /* ---- brand: in the nav for sidebars, in the header for the topbar ---- */
+  /* ---- brand ---- */
   .shell-brand {
     display: flex;
     align-items: center;
     gap: 0.625rem;
     height: var(--shell-header-height);
     flex-shrink: 0;
-    padding-inline: 1.125rem;
+    padding-inline: 1rem;
     white-space: nowrap;
   }
   .shell-header .shell-brand {
@@ -120,10 +111,10 @@
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.375rem 0.75rem 0.75rem;
   }
   .shell-nav-section {
-    padding: 1rem 0.625rem 0.375rem;
+    padding: 1.125rem 0.625rem 0.375rem;
     color: var(--fg-subtle);
     font-size: 0.6875rem;
     font-weight: 600;
@@ -132,7 +123,7 @@
     white-space: nowrap;
   }
   .shell-nav-section:first-child {
-    padding-top: 0.25rem;
+    padding-top: 0.375rem;
   }
   .shell-nav-link {
     position: relative;
@@ -143,31 +134,33 @@
     padding-inline: 0.625rem;
     border-radius: var(--radius-md);
     color: var(--fg-muted);
-    font-size: 0.875rem;
+    font-size: 0.84375rem;
     font-weight: 500;
     white-space: nowrap;
     transition:
-      background-color 0.15s,
-      color 0.15s;
+      background-color 0.14s ease,
+      color 0.14s ease,
+      box-shadow 0.14s ease;
   }
   .shell-nav-link:hover {
-    background: var(--surface-3);
+    background: color-mix(in oklch, var(--surface-3) 70%, transparent);
     color: var(--fg);
   }
-  /* The current page reads as a raised tile with an accent icon. */
+  /* Active item: crisp raised surface tile with accent indicator. */
   .shell-nav-link[data-status='active'] {
     background: var(--surface);
     color: var(--fg);
+    font-weight: 550;
     box-shadow:
       0 0 0 1px var(--border),
       var(--shadow-xs);
   }
   .shell-nav-link svg {
     flex-shrink: 0;
-    width: 1.0625rem;
-    height: 1.0625rem;
+    width: 1rem;
+    height: 1rem;
     color: var(--fg-subtle);
-    transition: color 0.15s;
+    transition: color 0.14s ease;
   }
   .shell-nav-link:hover svg {
     color: var(--fg-muted);
@@ -182,9 +175,7 @@
 
   /* ---- desktop-only behavior ---- */
   @media (min-width: 48rem) {
-    /* Collapsed sidebar: icons only. Slot content hides itself via data-nav-label. */
     .shell[data-nav-collapsed='true']:not([data-layout='topbar']) {
-      /* !important: slot content may set its own display utility (e.g. flex). */
       & .shell-nav [data-nav-label],
       & .shell-nav-section {
         display: none !important;
@@ -202,7 +193,6 @@
       }
     }
 
-    /* Topbar: the nav becomes a horizontal strip and the brand moves to the header. */
     .shell[data-layout='topbar'] {
       & .shell-nav {
         position: static;
@@ -226,6 +216,7 @@
       }
       & .shell-nav-footer {
         padding: 0 0.75rem 0.5rem;
+        border-top: 0;
       }
       & .shell-header .shell-brand {
         display: flex;
@@ -233,7 +224,7 @@
     }
   }
 
-  /* ---- small screens: every variant becomes header + main, nav is a drawer ---- */
+  /* ---- small screens ---- */
   @media (max-width: 47.99rem) {
     .shell[data-layout] {
       grid-template-columns: minmax(0, 1fr);
@@ -247,7 +238,7 @@
       z-index: 40;
       width: var(--shell-nav-width);
       transform: translateX(-100%);
-      transition: transform 0.2s ease;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       box-shadow: var(--shadow-pop);
     }
     .shell[data-layout='sidebar-right'] .shell-nav {
@@ -262,8 +253,8 @@
       position: fixed;
       inset: 0;
       z-index: 30;
-      background: rgb(0 0 0 / 0.4);
-      backdrop-filter: blur(2px);
+      background: rgb(0 0 0 / 0.45);
+      backdrop-filter: blur(3px);
     }
     .shell[data-layout] .shell-main {
       margin: 0;

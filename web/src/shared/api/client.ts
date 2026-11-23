@@ -12,6 +12,9 @@ let csrfToken = ''
 export function setCsrfToken(token: string) {
   csrfToken = token
 }
+export function getCsrfToken() {
+  return csrfToken
+}
 
 async function toApiError(response: Response): Promise<ApiError> {
   try {

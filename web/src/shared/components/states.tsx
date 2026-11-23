@@ -1,7 +1,7 @@
 import { CircleAlert, Inbox, ShieldOff } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { errorMessage, errorReference } from '@/shared/api'
-import { Button } from '@/shared/ui'
+import { Button, Spinner } from '@/shared/ui'
 
 /** Layout shared by every "nothing to show here" state. */
 function State({
@@ -53,6 +53,15 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
         )
       }
     />
+  )
+}
+
+export function LoadingState({ label }: { label?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center text-sm text-fg-muted">
+      <Spinner />
+      {label && <span>{label}</span>}
+    </div>
   )
 }
 

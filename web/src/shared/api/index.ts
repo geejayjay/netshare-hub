@@ -1,4 +1,4 @@
-export { api, unwrap, setCsrfToken, API_BASE } from './client'
+export { api, unwrap, setCsrfToken, getCsrfToken, API_BASE } from './client'
 export { ApiError, isApiError, errorMessage, errorReference, fieldErrors, isFieldError } from './problem'
 export type { Problem, FieldError } from './problem'
 export { parseListParams } from './list'
