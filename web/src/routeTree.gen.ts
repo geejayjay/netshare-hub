@@ -15,6 +15,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppActivityRouteImport } from './routes/_app/activity'
 import { Route as AppFilesRouteImport } from './routes/_app/files'
+import { Route as AppLogsRouteImport } from './routes/_app/logs'
 import { Route as AppMySharesRouteImport } from './routes/_app/my-shares'
 import { Route as AppSecurityRouteImport } from './routes/_app/security'
 import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
@@ -49,6 +50,11 @@ const AppActivityRoute = AppActivityRouteImport.update({
 const AppFilesRoute = AppFilesRouteImport.update({
   id: '/files',
   path: '/files',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLogsRoute = AppLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMySharesRoute = AppMySharesRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRoute
   '/activity': typeof AppActivityRoute
   '/files': typeof AppFilesRoute
+  '/logs': typeof AppLogsRoute
   '/my-shares': typeof AppMySharesRoute
   '/security': typeof AppSecurityRoute
   '/sessions': typeof AppSessionsRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/setup': typeof SetupRoute
   '/activity': typeof AppActivityRoute
   '/files': typeof AppFilesRoute
+  '/logs': typeof AppLogsRoute
   '/my-shares': typeof AppMySharesRoute
   '/security': typeof AppSecurityRoute
   '/sessions': typeof AppSessionsRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/setup': typeof SetupRoute
   '/_app/activity': typeof AppActivityRoute
   '/_app/files': typeof AppFilesRoute
+  '/_app/logs': typeof AppLogsRoute
   '/_app/my-shares': typeof AppMySharesRoute
   '/_app/security': typeof AppSecurityRoute
   '/_app/sessions': typeof AppSessionsRoute
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/activity'
     | '/files'
+    | '/logs'
     | '/my-shares'
     | '/security'
     | '/sessions'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/activity'
     | '/files'
+    | '/logs'
     | '/my-shares'
     | '/security'
     | '/sessions'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/_app/activity'
     | '/_app/files'
+    | '/_app/logs'
     | '/_app/my-shares'
     | '/_app/security'
     | '/_app/sessions'
@@ -216,6 +228,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFilesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/logs': {
+      id: '/_app/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof AppLogsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/my-shares': {
       id: '/_app/my-shares'
       path: '/my-shares'
@@ -264,6 +283,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
   AppFilesRoute: typeof AppFilesRoute
+  AppLogsRoute: typeof AppLogsRoute
   AppMySharesRoute: typeof AppMySharesRoute
   AppSecurityRoute: typeof AppSecurityRoute
   AppSessionsRoute: typeof AppSessionsRoute
@@ -276,6 +296,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppActivityRoute: AppActivityRoute,
   AppFilesRoute: AppFilesRoute,
+  AppLogsRoute: AppLogsRoute,
   AppMySharesRoute: AppMySharesRoute,
   AppSecurityRoute: AppSecurityRoute,
   AppSessionsRoute: AppSessionsRoute,

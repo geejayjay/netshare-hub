@@ -1,0 +1,26 @@
+{
+  "name": "NetShare Hub",
+  "short_name": "NetShare",
+  "description": "Self-hosted SMB & NFS file server control plane",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e0f14",
+  "theme_color": "#5b5bd6",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "/files",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}

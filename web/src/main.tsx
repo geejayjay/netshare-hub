@@ -13,6 +13,14 @@ import { router } from '@/app/router'
 // The Content-Security-Policy forbids eval, so tell Zod not to probe for it.
 z.config({ jitless: true })
 
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Ignore registration failures (e.g. insecure non-localhost HTTP).
+    })
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
