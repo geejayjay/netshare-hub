@@ -1,2 +1,3 @@
 export { FilesPage } from './components/FilesPage'
-export { fileEntriesQuery, type FileEntry } from './api'
+export { UploadTray } from './components/UploadTray'
+export { fileEntriesInfiniteQuery, type FileEntry } from './api'

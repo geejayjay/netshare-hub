@@ -3,9 +3,11 @@ import { createFileRoute, Navigate, Outlet, redirect } from '@tanstack/react-rou
 import { layoutVariant, navigation } from '@/app/shell'
 import { AlertBell, CriticalAlertBanner } from '@/features/alerts'
 import { AccountMenu, sessionQuery } from '@/features/auth'
+import { UploadTray } from '@/features/files'
 import { JobsButton } from '@/features/jobs'
 import { AppLayout } from '@/layouts'
 import { ThemeSwitcher } from '@/shared/components'
+import { ModulesProvider, modulesQuery } from '@/shared/modules/modules'
 import { SessionProvider } from '@/shared/session/session'
 
 // Everything under routes/_app/ needs a login and is framed by AppLayout.
@@ -20,27 +22,31 @@ export const Route = createFileRoute('/_app')({
 
 function AppRoute() {
   const { data: session } = useQuery(sessionQuery)
+  const { data: modules } = useQuery({ ...modulesQuery, enabled: Boolean(session) })
 
   // The session ended while the app was open (logout or expiry).
   if (!session) return <Navigate to="/login" />
 
   return (
     <SessionProvider user={session.user} permissions={session.permissions}>
-      <AppLayout
-        variant={layoutVariant}
-        nav={navigation}
-        navFooter={<AccountMenu />}
-        headerActions={
-          <>
-            <JobsButton />
-            <AlertBell />
-            <ThemeSwitcher className="ml-1 max-sm:hidden" />
-          </>
-        }
-        banner={<CriticalAlertBanner />}
-      >
-        <Outlet />
-      </AppLayout>
+      <ModulesProvider modules={modules}>
+        <AppLayout
+          variant={layoutVariant}
+          nav={navigation}
+          navFooter={<AccountMenu />}
+          headerActions={
+            <>
+              <JobsButton />
+              <AlertBell />
+              <ThemeSwitcher className="ml-1 max-sm:hidden" />
+            </>
+          }
+          banner={<CriticalAlertBanner />}
+        >
+          <Outlet />
+        </AppLayout>
+        <UploadTray />
+      </ModulesProvider>
     </SessionProvider>
   )
 }

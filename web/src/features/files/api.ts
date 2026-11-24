@@ -1,21 +1,29 @@
-import { keepPreviousData, queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
+import { infiniteQueryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
 import { API_BASE, api, unwrap, type Schema } from '@/shared/api'
 
 export type FileEntry = Schema<'Entry'>
 export type FileItem = Schema<'Item'>
 export type TransferRequest = Schema<'TransferRequest'>
 
-export function fileEntriesQuery(share: string, path: string, sort?: string) {
-  return queryOptions({
-    queryKey: ['files', 'entries', share, path, sort ?? 'name'],
-    queryFn: () =>
+export function fileEntriesInfiniteQuery(share: string, path: string) {
+  return infiniteQueryOptions({
+    queryKey: ['files', 'entries', share, path],
+    initialPageParam: '' as string,
+    queryFn: ({ pageParam }) =>
       unwrap(
         api.GET('/files/{share}/entries', {
-          params: { path: { share }, query: { path: path || undefined, sort: sort || undefined, pageSize: 500 } },
+          params: {
+            path: { share },
+            query: {
+              path: path || undefined,
+              after: pageParam || undefined,
+              limit: 500,
+            },
+          },
         }),
       ),
+    getNextPageParam: (lastPage) => (lastPage.next ? lastPage.next : undefined),
     enabled: Boolean(share),
-    placeholderData: keepPreviousData,
   })
 }
 
