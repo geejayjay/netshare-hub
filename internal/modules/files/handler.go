@@ -123,7 +123,7 @@ func Register(api huma.API, svc *Service) {
 	httpx.Register(api, httpx.Route{ID: "copyFiles", Method: http.MethodPost, Path: "/files/copy",
 		Summary: "Copy files and folders (a background job)", Tag: tag, Access: write}, h.copy)
 	httpx.Register(api, httpx.Route{ID: "deleteFiles", Method: http.MethodPost, Path: "/files/delete",
-		Summary: "Delete files and folders (folders as a job). Permanent until the recycle bin exists.", Tag: tag, Access: write}, h.delete)
+		Summary: "Delete files and folders (folders as a job). On a share with a recycle bin, they go there; elsewhere it is permanent.", Tag: tag, Access: write}, h.delete)
 	httpx.Register(api, httpx.Route{ID: "prepareZip", Method: http.MethodPost, Path: "/files/zip",
 		Summary: "Get a one-time link to download several files as a zip", Tag: tag, Access: read}, h.prepareZip)
 	httpx.Register(api, httpx.Route{ID: "downloadZip", Method: http.MethodGet, Path: "/files/zip/{token}",

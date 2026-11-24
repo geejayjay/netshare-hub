@@ -38,6 +38,9 @@ const (
 	opCreateFromHash = "accounts.create-from-hash"
 	opApplyConfig    = "samba.apply-config"
 	opFixPermissions = "samba.fix-permissions"
+	// opPurgeRecycle empties a share's recycle bin of expired items. It
+	// names a share only; the retention comes from the applied config.
+	opPurgeRecycle = "samba.purge-recycle"
 	// opAuditEvents streams the events read from Samba's logs (newline-
 	// separated JSON) for as long as the caller stays connected. It only
 	// reads; it is how the unprivileged web server gets the activity log

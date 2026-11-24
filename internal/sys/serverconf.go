@@ -205,11 +205,26 @@ func renderModules(b *strings.Builder, cfg SambaConfig, s ShareSpec) {
 	if cfg.Apple() {
 		modules = append(modules, AppleModules...)
 	}
+	if s.RecycleDays > 0 {
+		modules = append(modules, "recycle")
+	}
 	if cfg.Audit {
-		modules = append(modules, "full_audit")
+		modules = append(modules, "full_audit") // last: it logs the real names
 	}
 	if len(modules) > 0 {
 		param(b, "vfs objects", strings.Join(modules, " "))
+	}
+	if s.RecycleDays > 0 {
+		param(b, "recycle:repository", RecycleDir)
+		param(b, "recycle:keeptree", "yes")
+		param(b, "recycle:versions", "yes")
+		param(b, "recycle:touch", "yes")
+		// The bin's folders take the share's inherited ACL (like every
+		// folder made over SMB): Samba's default 0700 would cut it off.
+		param(b, "recycle:directory_mode", "0770")
+		param(b, "recycle:subdir_mode", "0770")
+		param(b, "recycle:exclude", UploadTempPattern)
+		param(b, "recycle:exclude_dir", RecycleDir)
 	}
 	if s.TimeMachine {
 		param(b, "fruit:time machine", "yes")
@@ -230,6 +245,12 @@ func (cfg SambaConfig) RequiredModules() []string {
 	}
 	if cfg.Audit {
 		m = append(m, "full_audit")
+	}
+	for _, s := range cfg.Shares {
+		if s.RecycleDays > 0 && s.Live() {
+			m = append(m, "recycle")
+			break
+		}
 	}
 	return m
 }

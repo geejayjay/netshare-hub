@@ -57,6 +57,7 @@ type CreateShareRequest struct {
 	HideUnreadable  bool                    `json:"hideUnreadable,omitempty" doc:"Hide files and folders a user cannot read. Slows down listing very big folders."`
 	TimeMachine     bool                    `json:"timeMachine,omitempty" doc:"Macs can back up into this share (see Share.timeMachine). Turns Mac support on."`
 	TimeMachineMax  int                     `json:"timeMachineMaxGiB,omitempty" minimum:"0" maximum:"1048576" doc:"The size Time Machine sees as the disk, in GiB (0: the real disk's size)."`
+	RecycleDays     int                     `json:"recycleDays,omitempty" minimum:"0" maximum:"3650" doc:"Keep deleted files this many days in the share's recycle bin (0: none)."`
 	NetworkRules    []NetworkRule           `json:"networkRules,omitempty" maxItems:"128" doc:"Which computers may connect (see Share.networkRules)."`
 	Access          []ShareAccessInput      `json:"access,omitempty" maxItems:"500" doc:"Users who may use the share. Without any (and without guest access), nobody can connect."`
 	NFS             *NFS                    `json:"nfs,omitempty" doc:"Export over NFS (see Share.nfs)."`
@@ -72,6 +73,7 @@ type UpdateShareRequest struct {
 	HideUnreadable *bool                    `json:"hideUnreadable,omitempty"`
 	TimeMachine    *bool                    `json:"timeMachine,omitempty" doc:"Turning it on turns Mac support on."`
 	TimeMachineMax *int                     `json:"timeMachineMaxGiB,omitempty" minimum:"0" maximum:"1048576"`
+	RecycleDays    *int                     `json:"recycleDays,omitempty" minimum:"0" maximum:"3650" doc:"0 turns the recycle bin off (what is in it stays)."`
 	NetworkRules   *[]NetworkRule           `json:"networkRules,omitempty" maxItems:"128" doc:"Replaces the whole list of network rules."`
 	Access         *[]ShareAccessInput      `json:"access,omitempty" maxItems:"500" doc:"Replaces the whole access list."`
 	NFS            *NFS                     `json:"nfs,omitempty" doc:"Replaces the NFS settings."`
@@ -290,6 +292,7 @@ func (h *handler) create(ctx context.Context, in *createInput) (*shareOutput, er
 		Preset:            in.Body.Preset,
 		HideUnreadable:    in.Body.HideUnreadable,
 		TimeMachineMaxGiB: in.Body.TimeMachineMax,
+		RecycleDays:       in.Body.RecycleDays,
 		NetworkRules:      in.Body.NetworkRules,
 		Access:            accessInputs(in.Body.Access),
 		NFS:               in.Body.NFS,
@@ -304,7 +307,7 @@ func (h *handler) create(ctx context.Context, in *createInput) (*shareOutput, er
 func (h *handler) update(ctx context.Context, in *updateInput) (*shareOutput, error) {
 	update := UpdateInput{Comment: in.Body.Comment, ReadOnly: in.Body.ReadOnly,
 		GuestAccess: in.Body.GuestAccess, Preset: in.Body.Preset, HideUnreadable: in.Body.HideUnreadable,
-		TimeMachine: in.Body.TimeMachine, TimeMachineMaxGiB: in.Body.TimeMachineMax,
+		TimeMachine: in.Body.TimeMachine, TimeMachineMaxGiB: in.Body.TimeMachineMax, RecycleDays: in.Body.RecycleDays,
 		NetworkRules: in.Body.NetworkRules, NFS: in.Body.NFS}
 	if in.Body.Access != nil {
 		access := accessInputs(*in.Body.Access)

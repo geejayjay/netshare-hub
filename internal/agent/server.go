@@ -100,6 +100,10 @@ func NewServerWith(system sys.System, authorize Authorizer, version string, feat
 		s.mux.HandleFunc("POST "+pathPrefix+opAuditEvents, s.auditEvents)
 	}
 
+	register(s, opPurgeRecycle, func(ctx context.Context, r fixPermissionsRequest) (any, error) {
+		return system.Samba.PurgeRecycle(ctx, r.Share)
+	}, func(r fixPermissionsRequest) []any { return []any{"share", r.Share} })
+
 	register(s, opSessions, func(ctx context.Context, _ struct{}) (any, error) {
 		sessions, err := system.Samba.Sessions(ctx)
 		return sessionsResponse{Sessions: sessions}, err
@@ -211,7 +215,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // concurrent operations run without the lock. Only operations that change
 // nothing but file permissions (no accounts, no config) belong here: a
 // permission walk can take hours, and must not block everything else.
-var concurrent = map[string]bool{opFixPermissions: true}
+var concurrent = map[string]bool{opFixPermissions: true, opPurgeRecycle: true}
 
 // register adds one operation. Every operation goes through the same steps:
 // check the caller, read exactly the expected JSON, run it (one at a time),

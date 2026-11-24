@@ -127,6 +127,9 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		if isUploadTemp(item.Name()) {
 			continue // an upload (or a save) still in progress
 		}
+		if dir == "." && item.Name() == sys.RecycleDir && h.roots[share].Recycle {
+			continue // the recycle bin has its own listing
+		}
 		info, err := item.Info()
 		if err != nil {
 			continue // removed while listing
@@ -415,9 +418,14 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	if req.Recursive {
+	switch {
+	case h.roots[req.Share].Recycle && !sys.InRecycle(p):
+		// Into the recycle bin, at the same place in the tree (like Samba's
+		// recycle:keeptree), as a new version if that name is taken.
+		err = recycle(root, p)
+	case req.Recursive:
 		err = root.RemoveAll(p)
-	} else {
+	default:
 		err = root.Remove(p)
 	}
 	if err != nil {
@@ -425,6 +433,25 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, struct{}{})
+}
+
+// recycle moves p into the share's recycle bin. A name already in the bin
+// gets "Copy #n of " in front, like Samba's recycle:versions.
+func recycle(root *os.Root, p string) error {
+	dest := path.Join(sys.RecycleDir, p)
+	if err := root.MkdirAll(path.Dir(dest), dirMode); err != nil {
+		return err
+	}
+	for n := 1; ; n++ {
+		if _, err := root.Lstat(dest); errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+		if n > 1000 {
+			return fs.ErrExist
+		}
+		dest = path.Join(sys.RecycleDir, path.Dir(p), "Copy #"+strconv.Itoa(n)+" of "+path.Base(p))
+	}
+	return root.Rename(p, dest)
 }
 
 func entryOf(info fs.FileInfo) Entry {

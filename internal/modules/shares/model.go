@@ -46,10 +46,12 @@ type Share struct {
 	HideUnreadable bool `json:"hideUnreadable" doc:"Hide files and folders a user cannot read, over SMB and in the file manager. Slows down listing very big folders."`
 	TimeMachine    bool `json:"timeMachine" doc:"Macs can back up into this share with Time Machine. Its users need \"write\"; never a guest or read-only share."`
 	// TimeMachineMaxGiB keeps Time Machine from filling the real disk.
-	TimeMachineMaxGiB int           `json:"timeMachineMaxGiB" doc:"The size Time Machine sees as the disk, in GiB (0: the real disk's size)."`
-	NetworkRules      []NetworkRule `json:"networkRules" nullable:"false" doc:"Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address."`
-	Access            []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
-	NFS               NFS           `json:"nfs" doc:"Export over NFS, to the listed computers only."`
+	TimeMachineMaxGiB int `json:"timeMachineMaxGiB" doc:"The size Time Machine sees as the disk, in GiB (0: the real disk's size)."`
+	// RecycleDays turns the recycle bin on (2.7b).
+	RecycleDays  int           `json:"recycleDays" doc:"Deleted files go to the share's recycle bin and are kept this many days (0: no recycle bin, deleting is permanent)."`
+	NetworkRules []NetworkRule `json:"networkRules" nullable:"false" doc:"Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address."`
+	Access       []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
+	NFS          NFS           `json:"nfs" doc:"Export over NFS, to the listed computers only."`
 	// GroupAccess gives each member of a group access (see groups.go).
 	GroupAccess []ShareGroupAccess `json:"groupAccess" nullable:"false" doc:"Groups given access: each member gets the level, unless they have an entry of their own."`
 	CreatedAt   time.Time          `json:"createdAt"`
@@ -99,6 +101,7 @@ type CreateInput struct {
 	Preset            string
 	HideUnreadable    bool
 	TimeMachineMaxGiB int
+	RecycleDays       int
 	NetworkRules      []NetworkRule
 	Access            []AccessInput
 	GroupAccess       []GroupAccessInput
@@ -114,6 +117,7 @@ type UpdateInput struct {
 	HideUnreadable    *bool
 	TimeMachine       *bool
 	TimeMachineMaxGiB *int
+	RecycleDays       *int
 	// NetworkRules and Access, when set, replace the whole list.
 	NetworkRules *[]NetworkRule
 	Access       *[]AccessInput

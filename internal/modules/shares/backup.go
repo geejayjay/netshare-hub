@@ -96,6 +96,7 @@ func (s *Service) CheckRestore(ctx context.Context, v *validate.Errors, r *Resto
 		rules := Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess, TimeMachine: sh.TimeMachine}
 		checkUploads(one, access, rules)
 		checkTimeMachine(one, access, rules, sh.TimeMachineMaxGiB)
+		checkRecycle(one, sh.RecycleDays)
 		checkGroupAccess(one, groupInputs(*sh), r.GroupNames)
 		checkGroupLevels(one, groupInputs(*sh), rules)
 		for j := range sh.GroupAccess {
@@ -225,10 +226,10 @@ func (s *Service) Replace(ctx context.Context, r Replacement) error {
 	for _, sh := range r.Shares {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO shares (id, name, path, comment, read_only, guest_access, preset, hide_unreadable, time_machine,
-				time_machine_max_gib, network_rules, nfs, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				time_machine_max_gib, network_rules, nfs, recycle_days, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			sh.ID, sh.Name, sh.Path, sh.Comment, sh.ReadOnly, sh.GuestAccess, sh.Preset, sh.HideUnreadable, sh.TimeMachine,
-			sh.TimeMachineMaxGiB, rulesJSON(sh.NetworkRules), nfsJSON(sh.NFS), sh.CreatedAt.Unix(), sh.UpdatedAt.Unix()); err != nil {
+			sh.TimeMachineMaxGiB, rulesJSON(sh.NetworkRules), nfsJSON(sh.NFS), sh.RecycleDays, sh.CreatedAt.Unix(), sh.UpdatedAt.Unix()); err != nil {
 			return err
 		}
 		for _, a := range sh.Access {

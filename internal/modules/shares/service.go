@@ -316,6 +316,7 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 	}
 	checkUploads(v, in.Access, in.Rules)
 	checkTimeMachine(v, in.Access, in.Rules, in.TimeMachineMaxGiB)
+	checkRecycle(v, in.RecycleDays)
 	members, groupNames, err := s.memberships(ctx)
 	if err != nil {
 		return Share{}, err
@@ -399,7 +400,8 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 		v.Check(validPreset(*in.Preset), "preset", "invalid_choice", "Unknown preset.")
 	}
 	set := settings{Rules: Rules{ReadOnly: before.ReadOnly, GuestAccess: before.GuestAccess, TimeMachine: before.TimeMachine},
-		Preset: before.Preset, HideUnreadable: before.HideUnreadable, TimeMachineMaxGiB: before.TimeMachineMaxGiB}
+		Preset: before.Preset, HideUnreadable: before.HideUnreadable, TimeMachineMaxGiB: before.TimeMachineMaxGiB,
+		RecycleDays: before.RecycleDays}
 	rules := &set.Rules
 	if in.ReadOnly != nil {
 		rules.ReadOnly = *in.ReadOnly
@@ -422,8 +424,12 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 	if in.TimeMachineMaxGiB != nil {
 		set.TimeMachineMaxGiB = *in.TimeMachineMaxGiB
 	}
+	if in.RecycleDays != nil {
+		set.RecycleDays = *in.RecycleDays
+		checkRecycle(v, set.RecycleDays)
+	}
 	settingsChanged := in.ReadOnly != nil || in.GuestAccess != nil || in.Preset != nil || in.HideUnreadable != nil ||
-		in.TimeMachine != nil || in.TimeMachineMaxGiB != nil
+		in.TimeMachine != nil || in.TimeMachineMaxGiB != nil || in.RecycleDays != nil
 
 	access := accessOf(before)
 	byID := map[int64]users.User{}
@@ -650,7 +656,7 @@ func applyFailure(applyErr error) error {
 			"which must not be reachable as files. Choose another folder. Nothing was changed.").WithCause(applyErr)
 	case errors.Is(applyErr, sys.ErrModuleMissing):
 		return errs.Invalid(CodeSambaModuleMissing,
-			"A Samba module this needs is not installed: the activity log needs full_audit; Mac support and Time Machine need fruit, catia and streams_xattr. "+
+			"A Samba module this needs is not installed: the activity log needs full_audit; Mac support and Time Machine need fruit, catia and streams_xattr; the recycle bin needs recycle. "+
 				"On Debian and Ubuntu: apt install samba-vfs-modules. Nothing was changed.").
 			WithCause(applyErr)
 	case errors.As(applyErr, &aclErr) && errors.Is(applyErr, sys.ErrACLUnsupported):
@@ -887,6 +893,47 @@ func checkTimeMachine(v *validate.Errors, access []AccessInput, r Rules, maxGiB 
 				"Upload-only does not work for Time Machine. Give \"Read and write\" to each person who backs up.")
 		}
 	}
+}
+
+// checkRecycle validates the recycle bin's retention.
+func checkRecycle(v *validate.Errors, days int) {
+	v.Check(days >= 0 && days <= sys.MaxRecycleDays, "recycleDays", "out_of_range",
+		fmt.Sprintf("Between 0 (no recycle bin) and %d days.", sys.MaxRecycleDays))
+}
+
+// RecycleDays is a share's recycle bin retention (0: none, or no such share).
+func (s *Service) RecycleDays(ctx context.Context, name string) (int, error) {
+	sh, ok, err := s.repo.GetByName(ctx, name)
+	if err != nil || !ok {
+		return 0, err
+	}
+	return sh.RecycleDays, nil
+}
+
+// PurgeRecycleBins removes expired items from every recycle bin (a daily
+// task). A share that fails is logged; the others go on.
+func (s *Service) PurgeRecycleBins(ctx context.Context) error {
+	shares, err := s.repo.All(ctx, s.repo.db.Read)
+	if err != nil {
+		return err
+	}
+	var failed error
+	for _, sh := range shares {
+		if sh.RecycleDays <= 0 {
+			continue
+		}
+		stats, err := s.samba.PurgeRecycle(ctx, sh.Name)
+		switch {
+		case errors.Is(err, sys.ErrNotFound):
+			// Not live (nobody has access): nothing reaches its bin.
+		case err != nil:
+			slog.ErrorContext(ctx, "could not empty the expired part of a recycle bin", "share", sh.Name, "err", err)
+			failed = err
+		case stats.Removed > 0:
+			slog.InfoContext(ctx, "recycle bin purged", "share", sh.Name, "removed", stats.Removed, "bytes", stats.Bytes)
+		}
+	}
+	return failed
 }
 
 // checkNetworkRules validates network rules and returns them normalized

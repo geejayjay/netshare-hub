@@ -156,6 +156,13 @@ func (c *Client) ApplyConfig(ctx context.Context, cfg sys.SambaConfig) error {
 		LoginAudit: cfg.LoginAudit, Banned: cfg.Banned}, nil)
 }
 
+// PurgeRecycle walks a whole bin: no overall timeout, like FixPermissions.
+func (c *Client) PurgeRecycle(ctx context.Context, share string) (sys.PurgeStats, error) {
+	var res sys.PurgeStats
+	err := c.callWith(c.long, ctx, opPurgeRecycle, fixPermissionsRequest{Share: share}, &res)
+	return res, err
+}
+
 // FixPermissions can run for hours on a big share, so it is not bound by
 // the client's usual timeout: it ends when it is done or ctx is cancelled
 // (closing the connection makes the agent stop the walk).

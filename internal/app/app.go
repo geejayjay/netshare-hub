@@ -237,6 +237,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		fileClient = fileworker.NewClient(osLayer.Workers)
 		fileService = files.NewService(database, fileClient, userService, shareService, jobService,
 			files.Options{MaxUploadBytes: cfg.MaxUploadBytes, UploadExpiry: opts.UploadExpiry})
+		fileService.SetRecycle(shareService)
 		jobService.Register(files.JobCopy, fileService.RunCopy)
 		jobService.Register(files.JobDelete, fileService.RunDelete)
 		tasks.Add(scheduler.Task{Name: "uploads.cleanup", Every: time.Hour, Run: func(ctx context.Context) error {
@@ -305,6 +306,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	})
 	tasks.Add(scheduler.Task{Name: "storage.scan", Daily: 4*time.Hour + 30*time.Minute, Run: storageService.RunTask})
 	tasks.Add(scheduler.Task{Name: "jobs.cleanup", Every: time.Hour, Run: jobService.Cleanup})
+	tasks.Add(scheduler.Task{Name: "shares.recycle-purge", Daily: 2*time.Hour + 45*time.Minute, Run: shareService.PurgeRecycleBins})
 	tasks.Add(scheduler.Task{Name: "alerts.cleanup", Daily: 3*time.Hour + 30*time.Minute, Run: alertService.Prune})
 	if err := tasks.Load(ctx, database); err != nil {
 		closeAll()
@@ -361,6 +363,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		if mods.FileManager {
 			files.Register(api, fileService)
 			files.RegisterUploads(r, fileService)
+			files.RegisterRecycle(api, fileService)
 		}
 		if mods.ActivityLog {
 			activity.Register(api, activityService)

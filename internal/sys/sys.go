@@ -78,6 +78,12 @@ type PermissionStats struct {
 	Skipped int `json:"skipped"` // symbolic links, devices, and files with several hard links
 }
 
+// PurgeStats reports what PurgeRecycle did.
+type PurgeStats struct {
+	Removed int   `json:"removed"` // files and folders removed
+	Bytes   int64 `json:"bytes"`
+}
+
 // ConfigError means Samba's own checker rejected a config. Nothing was changed.
 type ConfigError struct {
 	// Output is what the checker printed. It is for the logs and for admins.
@@ -157,6 +163,11 @@ type Samba interface {
 	// when ctx is done. Symbolic links are never followed.
 	// Errors: ErrInvalid, ErrNotFound (no such live share), *ACLError.
 	FixPermissions(ctx context.Context, share string) (PermissionStats, error)
+	// PurgeRecycle removes what has been in a live share's recycle bin for
+	// longer than its retention (read from the applied config, never from
+	// the caller). Links are never followed. It can take long on a big bin.
+	// Errors: ErrInvalid, ErrNotFound (no such share, or no recycle bin).
+	PurgeRecycle(ctx context.Context, share string) (PurgeStats, error)
 	// DisconnectClient drops every SMB connection from one computer (the
 	// ransomware guard uses it so a blocked user's open connections cannot
 	// keep writing). The client may reconnect; what it may do then is

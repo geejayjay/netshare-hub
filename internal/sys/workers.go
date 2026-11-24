@@ -30,6 +30,8 @@ type WorkerRoot struct {
 	// HideUnreadable leaves out of listings what the user cannot read,
 	// like Samba's "hide unreadable".
 	HideUnreadable bool `json:"hideUnreadable,omitempty"`
+	// Recycle: deleting moves to the share's recycle bin (RecycleDir).
+	Recycle bool `json:"recycle,omitempty"`
 }
 
 // WorkerEndpoint says how to connect to a running worker.
@@ -58,11 +60,13 @@ func RootsFor(account string, shares []ShareSpec) []WorkerRoot {
 	for _, sh := range shares {
 		switch {
 		case contains(sh.Readers, account):
-			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, Writable: contains(sh.Writers, account), HideUnreadable: sh.HideUnreadable})
+			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, Writable: contains(sh.Writers, account),
+				HideUnreadable: sh.HideUnreadable, Recycle: sh.RecycleDays > 0})
 		case contains(sh.Uploaders, account):
 			// Writable, but the folder's ACL lets the user add files only:
 			// listing it is refused by the kernel.
-			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, Writable: true, HideUnreadable: sh.HideUnreadable})
+			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, Writable: true, HideUnreadable: sh.HideUnreadable,
+				Recycle: sh.RecycleDays > 0})
 		case sh.Guest:
 			// Anyone may read a guest share, so every managed user may too.
 			roots = append(roots, WorkerRoot{Share: sh.Name, Path: sh.Path, HideUnreadable: sh.HideUnreadable})

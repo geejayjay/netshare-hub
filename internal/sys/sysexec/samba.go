@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"netshare-hub/internal/sys"
 )
@@ -41,6 +42,8 @@ type Samba struct {
 	// reserved returns folders no share may be, hold or be inside: disk
 	// image folders and replication receiving folders.
 	reserved func() []string
+	// now is the clock of the recycle bin purge (tests move it).
+	now func() time.Time
 }
 
 func NewSamba(r Runner, managedConfig, mainConfig string, protected ...string) *Samba {

@@ -24,9 +24,11 @@ type Service struct {
 	users  Users
 	shares Shares
 	jobs   Jobs
-	zips   *zipTokens
-	up     *uploads
-	now    func() time.Time
+	// recycle says which shares have a recycle bin (2.7b).
+	recycle RecycleShares
+	zips    *zipTokens
+	up      *uploads
+	now     func() time.Time
 }
 
 // Options tune the file manager.
@@ -330,7 +332,8 @@ type deletePayload struct {
 // Delete removes files and folders. Files go at once; if any item is a
 // folder, the whole request runs as a job (a folder can hold a lot).
 //
-// Deleting is permanent until the recycle bin arrives (step 2.7b).
+// On a share with a recycle bin, the worker moves items there (2.7b);
+// elsewhere deleting is permanent.
 func (s *Service) Delete(ctx context.Context, a Actor, items []Item) (Result, error) {
 	v := validate.New()
 	checkItems(v, items)

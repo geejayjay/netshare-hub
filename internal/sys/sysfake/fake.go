@@ -71,6 +71,8 @@ type Fake struct {
 	// tests may set it to a temporary directory.
 	FilesDir string
 
+	// Purged lists the shares PurgeRecycle ran for.
+	Purged []string
 	// Exports and ExportsFile are the last applied NFS exports.
 	Exports     []sys.NFSExport
 	ExportsFile string
@@ -509,6 +511,19 @@ func (f *Fake) ApplyConfig(_ context.Context, cfg sys.SambaConfig) error {
 		}
 	}
 	return failure
+}
+
+// PurgeRecycle counts the call for a share with a recycle bin.
+func (f *Fake) PurgeRecycle(_ context.Context, share string) (sys.PurgeStats, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, sh := range f.shares {
+		if strings.EqualFold(sh.Name, share) && sh.RecycleDays > 0 {
+			f.Purged = append(f.Purged, sh.Name)
+			return sys.PurgeStats{}, nil
+		}
+	}
+	return sys.PurgeStats{}, fmt.Errorf("%w: no share %q with a recycle bin", sys.ErrNotFound, share)
 }
 
 // FixPermissions only checks the share is live and counts the call: the

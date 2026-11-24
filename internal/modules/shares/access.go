@@ -199,7 +199,7 @@ func preview(access []AccessInput, byID map[int64]users.User, r Rules, blocked m
 func spec(sh Share, byID map[int64]users.User, blocked map[int64]bool) sys.ShareSpec {
 	r := Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess}
 	s := sys.ShareSpec{Name: sh.Name, Path: sh.Path, Comment: sh.Comment, Guest: r.GuestAccess, HideUnreadable: sh.HideUnreadable,
-		TimeMachine: sh.TimeMachine, TimeMachineMaxGiB: sh.TimeMachineMaxGiB}
+		TimeMachine: sh.TimeMachine, TimeMachineMaxGiB: sh.TimeMachineMaxGiB, RecycleDays: sh.RecycleDays}
 	s.Allow, s.Block = splitRules(sh.NetworkRules)
 	for _, a := range sh.Access {
 		u, ok := byID[a.UserID]
