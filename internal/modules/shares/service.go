@@ -47,6 +47,7 @@ type Service struct {
 	alerts Alerts
 	blocks Blocks
 	logins Logins
+	groups Groups
 	// noActivity: the activity log module is off, so Samba never gets
 	// the audit settings, whatever the stored setting says.
 	noActivity bool
@@ -169,7 +170,13 @@ func (s *Service) ListForUser(ctx context.Context, userID int64) ([]MyShare, err
 	if !ok {
 		return out, nil
 	}
-	shares, levels, err := s.repo.ListForUser(ctx, userID)
+	// Every share, with group access expanded: the user may be on a share
+	// through a group.
+	all, err := s.repo.All(ctx, s.repo.db.Read)
+	if err != nil {
+		return nil, err
+	}
+	all, err = s.withGroups(ctx, all)
 	if err != nil {
 		return nil, err
 	}
@@ -177,9 +184,17 @@ func (s *Service) ListForUser(ctx context.Context, userID int64) ([]MyShare, err
 	if err != nil {
 		return nil, err
 	}
-	for i, sh := range shares {
-		given := levels[i]
+	for _, sh := range all {
+		var given Level
+		for _, a := range sh.Access {
+			if a.UserID == userID {
+				given = a.Level
+			}
+		}
 		if given == "" {
+			if !sh.GuestAccess {
+				continue
+			}
 			given = LevelRead // a guest share the user is not listed on
 		}
 		e := effective(AccessInput{UserID: userID, Level: given}, u, Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess}, blocked[userID])
@@ -218,7 +233,7 @@ func (s *Service) NetworkAllowed(ctx context.Context, share string, ip netip.Add
 
 // Preview returns the effective access a share would have with these
 // settings, without changing anything.
-func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules, network []NetworkRule) (EffectiveAccess, error) {
+func (s *Service) Preview(ctx context.Context, access []AccessInput, groupAccess []GroupAccessInput, r Rules, network []NetworkRule) (EffectiveAccess, error) {
 	v := validate.New()
 	byID, err := s.checkAccess(ctx, v, access)
 	if err != nil {
@@ -226,6 +241,12 @@ func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules, ne
 	}
 	checkUploads(v, access, r)
 	checkTimeMachine(v, access, r, 0)
+	members, names, err := s.memberships(ctx)
+	if err != nil {
+		return EffectiveAccess{}, err
+	}
+	checkGroupAccess(v, groupAccess, names)
+	checkGroupLevels(v, groupAccess, r)
 	network = checkNetworkRules(v, network)
 	if err := v.Err(); err != nil {
 		return EffectiveAccess{}, err
@@ -234,9 +255,31 @@ func (s *Service) Preview(ctx context.Context, access []AccessInput, r Rules, ne
 	if err != nil {
 		return EffectiveAccess{}, err
 	}
-	out := preview(access, byID, r, blocked)
+	all, via := expand(access, groupAccess, members, names)
+	allUsers, err := s.users.GetMany(ctx, userIDs(all))
+	if err != nil {
+		return EffectiveAccess{}, err
+	}
+	for id, u := range byID {
+		allUsers[id] = u
+	}
+	out := preview(all, allUsers, r, blocked)
+	for i, e := range out.Users {
+		if g := via[e.UserID]; g != "" {
+			out.Users[i].Via = g
+			out.Users[i].Reason = "Through group " + g + ". " + e.Reason
+		}
+	}
 	out.Network = networkNote(network)
 	return out, nil
+}
+
+func userIDs(list []AccessInput) []int64 {
+	out := make([]int64, len(list))
+	for i, a := range list {
+		out[i] = a.UserID
+	}
+	return out
 }
 
 // Create shares a folder. actor is the user asking; they own the job that
@@ -273,9 +316,22 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 	}
 	checkUploads(v, in.Access, in.Rules)
 	checkTimeMachine(v, in.Access, in.Rules, in.TimeMachineMaxGiB)
+	members, groupNames, err := s.memberships(ctx)
+	if err != nil {
+		return Share{}, err
+	}
+	checkGroupAccess(v, in.GroupAccess, groupNames)
+	checkGroupLevels(v, in.GroupAccess, in.Rules)
 	in.NetworkRules = checkNetworkRules(v, in.NetworkRules)
 	if in.NFS != nil {
-		n := s.checkNFS(v, *in.NFS, in.Access, in.Rules, byID)
+		all, allUsers, err := s.expandedUsers(ctx, in.Access, in.GroupAccess, members, groupNames)
+		if err != nil {
+			return Share{}, err
+		}
+		for id, u := range byID {
+			allUsers[id] = u
+		}
+		n := s.checkNFS(v, *in.NFS, all, in.Rules, allUsers)
 		in.NFS = &n
 	}
 	if err := v.Err(); err != nil {
@@ -308,6 +364,9 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 				return false, err
 			}
 		}
+		if err := s.repo.ReplaceGroupAccess(ctx, tx, id, in.GroupAccess, s.now()); err != nil {
+			return false, err
+		}
 		return true, s.repo.ReplaceAccess(ctx, tx, id, in.Access, s.now())
 	})
 	if err != nil && !errs.Is(err, CodeSambaReloadFailed) {
@@ -318,7 +377,7 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 		return Share{}, getErr
 	}
 	// A folder that already held files needs them updated too.
-	if !created && len(sh.Access)+boolInt(sh.GuestAccess) > 0 {
+	if !created && len(sh.Access)+len(sh.GroupAccess)+boolInt(sh.GuestAccess) > 0 {
 		s.queueFix(ctx, actor, sh)
 	}
 	return sh, err
@@ -378,6 +437,20 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 	}
 	checkUploads(v, access, *rules)
 	checkTimeMachine(v, access, *rules, set.TimeMachineMaxGiB)
+	groupAccess := groupInputs(before)
+	if in.GroupAccess != nil {
+		groupAccess = *in.GroupAccess
+	}
+	members, groupNames, err := s.memberships(ctx)
+	if err != nil {
+		return Share{}, err
+	}
+	if in.GroupAccess != nil {
+		checkGroupAccess(v, groupAccess, groupNames)
+	}
+	if in.GroupAccess != nil || settingsChanged {
+		checkGroupLevels(v, groupAccess, *rules)
+	}
 	if in.NetworkRules != nil {
 		*in.NetworkRules = checkNetworkRules(v, *in.NetworkRules)
 	}
@@ -388,8 +461,15 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 	if in.NFS != nil {
 		nfs = *in.NFS
 	}
-	if in.NFS != nil || (s.nfs != nil && nfs.Enabled && (in.Access != nil || settingsChanged)) {
-		nfs = s.checkNFS(v, nfs, access, *rules, byID)
+	if in.NFS != nil || (s.nfs != nil && nfs.Enabled && (in.Access != nil || in.GroupAccess != nil || settingsChanged)) {
+		all, allUsers, err := s.expandedUsers(ctx, access, groupAccess, members, groupNames)
+		if err != nil {
+			return Share{}, err
+		}
+		for id, u := range byID {
+			allUsers[id] = u
+		}
+		nfs = s.checkNFS(v, nfs, all, *rules, allUsers)
 		in.NFS = &nfs
 	}
 	if err := v.Err(); err != nil {
@@ -427,7 +507,13 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 				return false, err
 			}
 		}
-		return in.Comment != nil || settingsChanged || in.NetworkRules != nil || in.Access != nil || in.NFS != nil, nil
+		if in.GroupAccess != nil {
+			if err := s.repo.ReplaceGroupAccess(ctx, tx, id, *in.GroupAccess, s.now()); err != nil {
+				return false, err
+			}
+		}
+		return in.Comment != nil || settingsChanged || in.NetworkRules != nil || in.Access != nil || in.NFS != nil ||
+			in.GroupAccess != nil, nil
 	})
 	if err != nil && !errs.Is(err, CodeSambaReloadFailed) {
 		return Share{}, err
@@ -601,6 +687,10 @@ func (s *Service) restoreConfig(ctx context.Context) {
 
 // specs turns shares into what the system layer applies (see spec).
 func (s *Service) specs(ctx context.Context, shares []Share) ([]sys.ShareSpec, error) {
+	shares, err := s.withGroups(ctx, shares)
+	if err != nil {
+		return nil, err
+	}
 	byID, err := s.usersOf(ctx, shares)
 	if err != nil {
 		return nil, err
@@ -619,7 +709,12 @@ func (s *Service) specs(ctx context.Context, shares []Share) ([]sys.ShareSpec, e
 // accessChanged reports whether two versions of a share give anyone
 // different access on the filesystem.
 func (s *Service) accessChanged(ctx context.Context, before, after Share) (bool, error) {
-	byID, err := s.usersOf(ctx, []Share{before, after})
+	both, err := s.withGroups(ctx, []Share{before, after})
+	if err != nil {
+		return false, err
+	}
+	before, after = both[0], both[1]
+	byID, err := s.usersOf(ctx, both)
 	if err != nil {
 		return false, err
 	}

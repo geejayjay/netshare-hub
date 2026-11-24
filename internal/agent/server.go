@@ -157,6 +157,22 @@ func NewServerWith(system sys.System, authorize Authorizer, version string, feat
 		return []any{"exports", names}
 	})
 
+	register(s, opApplyGroups, func(ctx context.Context, r applyGroupsRequest) (any, error) {
+		if system.Groups == nil {
+			return nil, sys.ErrNotFound
+		}
+		if len(r.Groups) > 10000 {
+			return nil, sys.ErrInvalid
+		}
+		return nil, system.Groups.ApplyGroups(ctx, r.Groups)
+	}, func(r applyGroupsRequest) []any {
+		names := make([]string, len(r.Groups))
+		for i, g := range r.Groups {
+			names[i] = g.Name
+		}
+		return []any{"groups", names}
+	})
+
 	registerReplication(s, system)
 	registerBlock(s, system)
 

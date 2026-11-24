@@ -77,6 +77,7 @@ type Fake struct {
 	nfs         sys.NFSStatus
 	replication *Replication
 	block       *Block
+	groups      map[string][]string
 
 	// MissingModules pretends these Samba modules are not installed.
 	MissingModules []string
@@ -128,7 +129,7 @@ func New() *Fake {
 // System returns the fake as a sys.System.
 func (f *Fake) System() sys.System {
 	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f, Neighbors: f, Discovery: f, NFS: f,
-		Replication: f.Replication(), Block: f.Block()}
+		Replication: f.Replication(), Block: f.Block(), Groups: f}
 }
 
 // --- sys.NFS ---

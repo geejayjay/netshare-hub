@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"netshare-hub/internal/modules/groups"
 	"netshare-hub/internal/modules/guard"
 	"netshare-hub/internal/modules/shares"
 	"netshare-hub/internal/modules/users"
@@ -59,6 +60,7 @@ type Payload struct {
 	// backup was made without SMB passwords).
 	SMBHashes map[string]string     `json:"smbHashes,omitempty"`
 	Shares    []shares.Share        `json:"shares"`
+	Groups    []groups.Record       `json:"groups,omitempty"`
 	Samba     shares.ServerSettings `json:"samba"`
 	Guard     guard.Settings        `json:"guard"`
 	Bans      guard.BanSettings     `json:"bans"`
@@ -102,6 +104,7 @@ type Service struct {
 	shares  *shares.Service
 	guard   *guard.Service
 	bans    *guard.Bans
+	groups  *groups.Service
 	jobs    Jobs
 	system  sys.System
 	dataDir string
@@ -111,9 +114,9 @@ type Service struct {
 	restoring sync.Mutex
 }
 
-func NewService(d *db.DB, u *users.Service, s *shares.Service, g *guard.Service, b *guard.Bans, j Jobs,
+func NewService(d *db.DB, u *users.Service, s *shares.Service, gr *groups.Service, g *guard.Service, b *guard.Bans, j Jobs,
 	system sys.System, dataDir, version string) *Service {
-	return &Service{db: d, users: u, shares: s, guard: g, bans: b, jobs: j, system: system,
+	return &Service{db: d, users: u, shares: s, groups: gr, guard: g, bans: b, jobs: j, system: system,
 		dataDir: dataDir, version: version, now: time.Now}
 }
 
@@ -137,6 +140,9 @@ func (s *Service) Export(ctx context.Context, actor *httpx.Principal, passphrase
 		return nil, "", err
 	}
 	if p.Shares, p.Samba, err = s.shares.Records(ctx); err != nil {
+		return nil, "", err
+	}
+	if p.Groups, err = s.groups.Records(ctx); err != nil {
 		return nil, "", err
 	}
 	if p.Guard, err = s.guard.Settings(ctx); err != nil {
@@ -313,7 +319,29 @@ func (s *Service) check(ctx context.Context, p Payload, createMissing bool) (*pl
 		p.Shares[i].Access = kept
 	}
 
-	pl.restore = shares.Restoring{Shares: p.Shares, Server: p.Samba, Users: byID}
+	// Groups: members without SMB access in the restore are left out, like
+	// their share access.
+	usernames, smb := map[string]bool{}, map[int64]bool{}
+	for id, u := range byID {
+		usernames[u.Username] = true
+		smb[id] = u.SMBAccess && !noSMB[id]
+	}
+	for i := range p.Groups {
+		kept := []int64{}
+		for _, m := range p.Groups[i].Members {
+			if !noSMB[m] {
+				kept = append(kept, m)
+			}
+		}
+		p.Groups[i].Members = kept
+	}
+	groups.CheckRecords(v, p.Groups, usernames, smb)
+	members, names := map[int64][]int64{}, map[int64]string{}
+	for _, g := range p.Groups {
+		names[g.ID], members[g.ID] = g.Name, g.Members
+	}
+	pl.payload.Groups = p.Groups
+	pl.restore = shares.Restoring{Shares: p.Shares, Server: p.Samba, Users: byID, GroupMembers: members, GroupNames: names}
 	missing, err := s.shares.CheckRestore(ctx, v, &pl.restore, createMissing)
 	if err != nil {
 		return nil, err
@@ -381,8 +409,13 @@ func (s *Service) apply(ctx context.Context, actor *httpx.Principal, pl *plan) (
 	}
 
 	err = s.shares.Replace(ctx, shares.Replacement{
-		Restoring:  pl.restore,
-		WriteUsers: func(tx *sql.Tx) error { return s.users.ReplaceAll(ctx, tx, pl.payload.Users) },
+		Restoring: pl.restore,
+		WriteUsers: func(tx *sql.Tx) error {
+			if err := s.users.ReplaceAll(ctx, tx, pl.payload.Users); err != nil {
+				return err
+			}
+			return groups.ReplaceAll(ctx, tx, pl.payload.Groups, s.now())
+		},
 		Prepare: func(ctx context.Context) (func(), error) {
 			return s.prepareAccounts(ctx, pl, oldSMB, oldHashes)
 		},
@@ -405,6 +438,10 @@ func (s *Service) apply(ctx context.Context, actor *httpx.Principal, pl *plan) (
 	}
 	by := &httpx.Principal{UserID: restoredAdmin, Username: actor.Username + " (restore)", Role: rbac.RoleAdmin}
 
+	// The restored groups on this machine (the database has them already).
+	if err := s.groups.Reapply(ctx); err != nil {
+		sum.Warnings = append(sum.Warnings, "The Linux groups could not be set up: "+errs.From(err).Message)
+	}
 	// Accounts no longer in use: the new config no longer names them.
 	for _, name := range oldNames {
 		if _, keep := pl.smbUsers[name]; keep {

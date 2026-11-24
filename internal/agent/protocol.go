@@ -58,8 +58,10 @@ const (
 	// opNFSStatus reads whether NFS can be served; opApplyExports sets the
 	// NFS exports. An export names a live share, never a folder: the agent
 	// reads the folder and access from the applied Samba config.
-	opNFSStatus      = "nfs.status"
-	opApplyExports   = "nfs.apply-exports"
+	opNFSStatus    = "nfs.status"
+	opApplyExports = "nfs.apply-exports"
+	// opApplyGroups sets the managed Linux groups and their members.
+	opApplyGroups    = "groups.apply"
 	opResolveDir     = "files.resolve-dir"
 	opCreateShareDir = "files.create-share-dir"
 	opWorker         = "files.worker"
@@ -133,6 +135,10 @@ type applyExportsRequest struct {
 	Exports []sys.NFSExport `json:"exports"`
 }
 
+type applyGroupsRequest struct {
+	Groups []sys.GroupSpec `json:"groups"`
+}
+
 type disconnectRequest struct {
 	IP string `json:"ip"`
 }
@@ -182,6 +188,7 @@ const (
 	codeACLFailed      = "acl_failed"
 	codeModuleMissing  = "module_missing"
 	codeReserved       = "reserved_folder"
+	codeGroupTaken     = "group_taken"
 	codeForbidden      = "forbidden"
 	codeBadRequest     = "bad_request"
 	codeInternal       = "internal"
@@ -192,9 +199,12 @@ func encodeError(err error) (status int, res errorResponse) {
 	var cfg *sys.ConfigError
 	var aclErr *sys.ACLError
 	var diskErr *sys.DiskError
+	var groupErr *sys.GroupError
 	switch {
 	case errors.As(err, &diskErr):
 		return encodeDiskError(diskErr)
+	case errors.As(err, &groupErr):
+		return http.StatusConflict, errorResponse{Code: codeGroupTaken, Message: groupErr.Err.Error(), Share: groupErr.Name}
 	case errors.As(err, &cfg):
 		return http.StatusUnprocessableEntity, errorResponse{Code: codeConfigRejected, Message: cfg.Output}
 	case errors.As(err, &aclErr):
@@ -236,6 +246,8 @@ func decodeError(res errorResponse) error {
 	switch res.Code {
 	case codeDiskFailed:
 		return decodeDiskError(res)
+	case codeGroupTaken:
+		return &sys.GroupError{Name: res.Share, Err: wrap(sys.ErrNameTaken)}
 	case codeConfigRejected:
 		return &sys.ConfigError{Output: res.Message}
 	case codeACLUnsupported:

@@ -28,6 +28,7 @@ import (
 	"netshare-hub/internal/modules/block"
 	"netshare-hub/internal/modules/discovery"
 	"netshare-hub/internal/modules/files"
+	"netshare-hub/internal/modules/groups"
 	"netshare-hub/internal/modules/guard"
 	"netshare-hub/internal/modules/jobs"
 	"netshare-hub/internal/modules/notify"
@@ -126,8 +127,15 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	sseHub := sse.NewHub()
 	jobService := jobs.NewService(jobs.NewRepo(database), sseHub, opts.JobOptions)
 	shareService := shares.NewService(shares.NewRepo(database), userService, osLayer, jobService, cfg.ProtectedDirs()...)
-	// Users must be taken off every share before their system account goes away.
-	userService.SetAccessRevoker(shareService)
+	// Groups (1.5): real Linux groups; share access through a group is
+	// expanded to its members.
+	groupService := groups.NewService(database, userService, osLayer.Groups)
+	shareService.SetGroups(groupService)
+	groupService.SetShares(shareService)
+	userService.SetNameTaken(groupService.NameTaken)
+	// Users must be taken out of every group and off every share before
+	// their system account goes away.
+	userService.SetAccessRevoker(revokers{groupService, shareService})
 	jobService.RegisterIn(jobs.LaneMaintenance, shares.JobFixPermissions, shareService.RunFixPermissions)
 	alertService := alerts.NewService(alerts.NewRepo(database), sseHub)
 	shareService.SetAlerts(alertService)
@@ -204,8 +212,13 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 
 	var backupService *backup.Service
 	if mods.Backup {
-		backupService = backup.NewService(database, userService, shareService, guardService, banService, jobService,
+		backupService = backup.NewService(database, userService, shareService, groupService, guardService, banService, jobService,
 			osLayer, cfg.DataDir, Version)
+	}
+	// The Linux groups first (a reinstalled machine may lack them), then the
+	// Samba config.
+	if err := groupService.Reapply(ctx); err != nil {
+		slog.WarnContext(ctx, "could not set up the Linux groups at start", "err", err)
 	}
 	// Write the config once at start: login logging on, ended bans gone.
 	if err := shareService.Reapply(ctx); err != nil {
@@ -334,6 +347,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		speedtest.Register(api, r, cfg.DataDir)
 		auth.Register(api, authService, cfg.SecureCookies)
 		users.Register(api, userService)
+		groups.Register(api, groupService)
 		shares.Register(api, shareService)
 		jobs.Register(api, jobService)
 		alerts.Register(api, alertService)

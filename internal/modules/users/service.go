@@ -25,7 +25,9 @@ type Service struct {
 	repo     *Repo
 	accounts sys.Accounts
 	revoker  AccessRevoker
-	now      func() time.Time
+	// nameTaken: see SetNameTaken.
+	nameTaken func(ctx context.Context, name string) (bool, error)
+	now       func() time.Time
 }
 
 func NewService(repo *Repo, accounts sys.Accounts) *Service {
@@ -34,6 +36,13 @@ func NewService(repo *Repo, accounts sys.Accounts) *Service {
 
 // SetAccessRevoker wires in the module that grants SMB access (shares).
 func (s *Service) SetAccessRevoker(r AccessRevoker) { s.revoker = r }
+
+// SetNameTaken wires in a check for names other modules hold: a group's
+// name cannot be a username (Linux gives every account a group of its own
+// name, and useradd refuses one that exists).
+func (s *Service) SetNameTaken(f func(ctx context.Context, name string) (bool, error)) {
+	s.nameTaken = f
+}
 
 // Usernames are also Linux and Samba account names. This must stay at least
 // as strict as sys.ValidAccountName.
@@ -94,6 +103,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (User, error) {
 			return User{}, err
 		}
 		v.Check(!taken, "username", "taken", "This username is already in use.")
+		if !taken && s.nameTaken != nil {
+			group, err := s.nameTaken(ctx, in.Username)
+			if err != nil {
+				return User{}, err
+			}
+			v.Check(!group, "username", "taken_by_group", "A group has this name. Choose another username.")
+		}
 	}
 	if err := v.Err(); err != nil {
 		return User{}, err

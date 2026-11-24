@@ -85,6 +85,8 @@ type Effective struct {
 	Given  Level  `json:"given" enum:"read,upload,write"`
 	Level  Level  `json:"level" enum:"none,read,upload,write"`
 	Reason string `json:"reason" doc:"Why, in words for the user."`
+	// Via is the group that gave the access ("" for the user's own entry).
+	Via string `json:"via,omitempty" doc:"The group that gives this user access, when it is not their own entry."`
 }
 
 // EffectiveAccess is the preview of a whole share.

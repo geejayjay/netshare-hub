@@ -50,8 +50,10 @@ type Share struct {
 	NetworkRules      []NetworkRule `json:"networkRules" nullable:"false" doc:"Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address."`
 	Access            []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
 	NFS               NFS           `json:"nfs" doc:"Export over NFS, to the listed computers only."`
-	CreatedAt         time.Time     `json:"createdAt"`
-	UpdatedAt         time.Time     `json:"updatedAt"`
+	// GroupAccess gives each member of a group access (see groups.go).
+	GroupAccess []ShareGroupAccess `json:"groupAccess" nullable:"false" doc:"Groups given access: each member gets the level, unless they have an entry of their own."`
+	CreatedAt   time.Time          `json:"createdAt"`
+	UpdatedAt   time.Time          `json:"updatedAt"`
 }
 
 // MyShare is a share visible to the signed-in user in their personal portal.
@@ -99,6 +101,7 @@ type CreateInput struct {
 	TimeMachineMaxGiB int
 	NetworkRules      []NetworkRule
 	Access            []AccessInput
+	GroupAccess       []GroupAccessInput
 	NFS               *NFS
 }
 
@@ -116,6 +119,8 @@ type UpdateInput struct {
 	Access       *[]AccessInput
 	// NFS, when set, replaces the share's NFS settings.
 	NFS *NFS
+	// GroupAccess, when set, replaces the group access list.
+	GroupAccess *[]GroupAccessInput
 }
 
 // Users is what shares needs from the users module.

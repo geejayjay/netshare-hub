@@ -259,6 +259,8 @@ type System struct {
 	Replication Replication
 	// Block is nil when the block storage module is off.
 	Block Block
+	// Groups are the managed Linux groups (always on).
+	Groups Groups
 }
 
 // Message is an error from the system layer in words for an admin: without

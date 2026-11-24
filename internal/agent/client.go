@@ -49,7 +49,7 @@ func NewClient(hc *http.Client, base string) *Client {
 
 // System returns the client as a sys.System.
 func (c *Client) System() sys.System {
-	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c, Audit: c, Discovery: c, NFS: c, Replication: c, Block: c}
+	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c, Audit: c, Discovery: c, NFS: c, Replication: c, Block: c, Groups: c}
 }
 
 // Ping checks that the agent is reachable and accepts this process.
@@ -115,6 +115,20 @@ func (c *Client) SetEnabled(ctx context.Context, name string, enabled bool) erro
 
 func (c *Client) DeleteUser(ctx context.Context, name string) error {
 	return c.call(ctx, opDeleteUser, deleteUserRequest{Name: name}, nil)
+}
+
+// --- sys.Groups ---
+
+func (c *Client) ApplyGroups(ctx context.Context, groups []sys.GroupSpec) error {
+	if groups == nil {
+		groups = []sys.GroupSpec{}
+	}
+	for i := range groups {
+		if groups[i].Members == nil {
+			groups[i].Members = []string{}
+		}
+	}
+	return c.call(ctx, opApplyGroups, applyGroupsRequest{Groups: groups}, nil)
 }
 
 // --- sys.NFS ---

@@ -47,6 +47,7 @@ func scan(s interface{ Scan(...any) error }) (Share, error) {
 	sh.CreatedAt = time.Unix(created, 0).UTC()
 	sh.UpdatedAt = time.Unix(updated, 0).UTC()
 	sh.Access = []ShareAccess{}
+	sh.GroupAccess = []ShareGroupAccess{}
 	return sh, err
 }
 
@@ -168,17 +169,51 @@ func (r *Repo) query(ctx context.Context, q querier, query string, args ...any) 
 	if err != nil {
 		return nil, err
 	}
-	defer access.Close()
 	for access.Next() {
 		var shareID int64
 		var a ShareAccess
 		if err := access.Scan(&shareID, &a.UserID, &a.Level); err != nil {
+			access.Close()
 			return nil, err
 		}
 		i := index[shareID]
 		shares[i].Access = append(shares[i].Access, a)
 	}
-	return shares, access.Err()
+	access.Close()
+	if err := access.Err(); err != nil {
+		return nil, err
+	}
+	groups, err := q.QueryContext(ctx, `SELECT a.share_id, a.group_id, g.name, a.level FROM share_group_access a
+		JOIN user_groups g ON g.id = a.group_id WHERE a.share_id IN (`+placeholders+`) ORDER BY g.name`, ids...)
+	if err != nil {
+		return nil, err
+	}
+	defer groups.Close()
+	for groups.Next() {
+		var shareID int64
+		var g ShareGroupAccess
+		if err := groups.Scan(&shareID, &g.GroupID, &g.GroupName, &g.Level); err != nil {
+			return nil, err
+		}
+		i := index[shareID]
+		shares[i].GroupAccess = append(shares[i].GroupAccess, g)
+	}
+	return shares, groups.Err()
+}
+
+// ReplaceGroupAccess sets the whole group access list of a share.
+func (r *Repo) ReplaceGroupAccess(ctx context.Context, q querier, id int64, list []GroupAccessInput, now time.Time) error {
+	if _, err := q.ExecContext(ctx, "DELETE FROM share_group_access WHERE share_id = ?", id); err != nil {
+		return err
+	}
+	for _, g := range list {
+		if _, err := q.ExecContext(ctx, "INSERT INTO share_group_access (share_id, group_id, level) VALUES (?, ?, ?)",
+			id, g.GroupID, g.Level); err != nil {
+			return err
+		}
+	}
+	_, err := q.ExecContext(ctx, "UPDATE shares SET updated_at = ? WHERE id = ?", now.Unix(), id)
+	return err
 }
 
 func (r *Repo) Insert(ctx context.Context, q querier, in CreateInput, now time.Time) (int64, error) {

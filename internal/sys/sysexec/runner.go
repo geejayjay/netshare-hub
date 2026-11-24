@@ -42,6 +42,8 @@ var allowed = map[string][]string{
 	"useradd":    {"/usr/sbin/useradd"},
 	"userdel":    {"/usr/sbin/userdel"},
 	"groupadd":   {"/usr/sbin/groupadd"},
+	"groupdel":   {"/usr/sbin/groupdel"},
+	"gpasswd":    {"/usr/bin/gpasswd"},
 	"getent":     {"/usr/bin/getent"},
 	"id":         {"/usr/bin/id"},
 	"smbpasswd":  {"/usr/bin/smbpasswd"},

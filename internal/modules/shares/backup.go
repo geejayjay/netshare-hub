@@ -41,6 +41,9 @@ type Restoring struct {
 	Server ServerSettings
 	// Users are the restored users, by id.
 	Users map[int64]users.User
+	// GroupMembers and GroupNames are the restored groups, by id.
+	GroupMembers map[int64][]int64
+	GroupNames   map[int64]string
 }
 
 // CheckRestore validates the shares and server settings of a backup with
@@ -93,6 +96,11 @@ func (s *Service) CheckRestore(ctx context.Context, v *validate.Errors, r *Resto
 		rules := Rules{ReadOnly: sh.ReadOnly, GuestAccess: sh.GuestAccess, TimeMachine: sh.TimeMachine}
 		checkUploads(one, access, rules)
 		checkTimeMachine(one, access, rules, sh.TimeMachineMaxGiB)
+		checkGroupAccess(one, groupInputs(*sh), r.GroupNames)
+		checkGroupLevels(one, groupInputs(*sh), rules)
+		for j := range sh.GroupAccess {
+			sh.GroupAccess[j].GroupName = r.GroupNames[sh.GroupAccess[j].GroupID]
+		}
 		sh.NetworkRules = checkNetworkRules(one, sh.NetworkRules)
 		anyTM = anyTM || sh.TimeMachine
 
@@ -229,6 +237,12 @@ func (s *Service) Replace(ctx context.Context, r Replacement) error {
 				return err
 			}
 		}
+		for _, g := range sh.GroupAccess {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO share_group_access (share_id, group_id, level) VALUES (?, ?, ?)",
+				sh.ID, g.GroupID, g.Level); err != nil {
+				return err
+			}
+		}
 	}
 	server := r.Server.toSys()
 	if err := s.repo.saveServerSettings(ctx, tx, server, r.Server.ActivityLog, s.now()); err != nil {
@@ -238,7 +252,7 @@ func (s *Service) Replace(ctx context.Context, r Replacement) error {
 	// The config comes from the restored state itself (the user names are
 	// not committed yet, so it cannot be read back from the database).
 	specs := make([]sys.ShareSpec, 0, len(r.Shares))
-	for _, sh := range r.Shares {
+	for _, sh := range expandShares(r.Shares, r.GroupMembers, r.GroupNames) {
 		specs = append(specs, spec(sh, r.Users, nil)) // nobody is blocked: incidents go with the old users
 	}
 	cfg := sys.SambaConfig{Server: server, Shares: specs, Audit: r.Server.ActivityLog}

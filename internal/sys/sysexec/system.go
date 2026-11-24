@@ -45,6 +45,14 @@ func New(opts Options) (sys.System, error) {
 	workers.exe = opts.WorkerExe
 
 	nfs := NewNFS(runner, accounts, samba, DefaultExportsFile)
+	groups := NewGroups(runner, DefaultGroupsFile)
+	// A worker runs with the groups it started with: restart the workers of
+	// accounts whose groups changed.
+	groups.changed = func(names []string) {
+		for _, n := range names {
+			workers.Stop(n)
+		}
+	}
 	replication := NewReplication(runner, samba, DefaultReplicationDir, opts.Protected...)
 	block := NewBlock(samba, DefaultBlockDir, opts.Protected...)
 	samba.reserved = func() []string { return append(replication.ReservedFolders(), block.ReservedFolders()...) }
@@ -68,5 +76,6 @@ func New(opts Options) (sys.System, error) {
 		NFS:         nfs,
 		Replication: replication,
 		Block:       block,
+		Groups:      groups,
 	}, nil
 }
