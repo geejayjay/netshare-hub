@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Check, Eye, Globe, HardDrive, Lock, Network, Plus, Shield, Sparkles, Trash2, Users } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useDeferredValue, useEffect, useState, type FormEvent } from 'react'
 import { notify } from '@/features/notifications'
 import { errorMessage, fieldErrors } from '@/shared/api'
 import { FormField } from '@/shared/components'
@@ -8,6 +8,7 @@ import { cn } from '@/shared/lib/cn'
 import { useModules } from '@/shared/modules/modules'
 import { Alert, Badge, Button, Dialog, InfoTip, Input, Label, Select, Spinner, Switch, Tabs, type Tone } from '@/shared/ui'
 import {
+  mountCheckQuery,
   nfsStatusQuery,
   sharePresetsQuery,
   shareUsersQuery,
@@ -67,6 +68,10 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
   const [name, setName] = useState(share?.name ?? '')
   const [path, setPath] = useState(share?.path ?? '')
   const [createDirectory, setCreateDirectory] = useState(!isEdit)
+  const deferredPath = useDeferredValue(path)
+  const mountCheck = useQuery(mountCheckQuery(deferredPath))
+  const mountInfo = (mountCheck.data?.checks ?? [])[0]
+  const mountWarnings = (mountInfo?.warnings ?? []).filter((w) => !(w === 'path_missing' && !isEdit && createDirectory))
   const [comment, setComment] = useState(share?.comment ?? '')
   const [readOnly, setReadOnly] = useState(share?.readOnly ?? false)
   const [guestAccess, setGuestAccess] = useState(share?.guestAccess ?? false)
@@ -317,6 +322,29 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
               />
             </FormField>
           </div>
+
+          {mountWarnings.length > 0 && (
+            <Alert
+              tone="warning"
+              title={`LXC / Mount notice (${mountCheck.data?.environment ?? 'host'}${mountInfo?.mountPoint ? ` · ${mountInfo.mountPoint}` : ''})`}
+            >
+              <ul className="mt-1 list-disc pl-4 text-xs">
+                {mountWarnings.map((w) => (
+                  <li key={w}>
+                    {w === 'read_only_mount'
+                      ? 'This path is on a read-only mount — writes will fail.'
+                      : w === 'on_root_disk'
+                        ? 'This path is on the container root disk rather than a bind-mounted dataset.'
+                        : w === 'uid_mapping_mismatch'
+                          ? 'Folder owner is nobody (65534) — check unprivileged LXC UID mapping.'
+                          : w === 'path_missing'
+                            ? 'Folder does not exist yet on disk (enable "Create folder" or create it first).'
+                            : w}
+                  </li>
+                ))}
+              </ul>
+            </Alert>
+          )}
 
           {!isEdit && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg px-3.5 py-2.5">

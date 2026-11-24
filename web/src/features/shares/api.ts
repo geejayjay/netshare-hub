@@ -80,3 +80,14 @@ export function usePreviewAccess() {
     mutationFn: (body: PreviewAccessRequest) => unwrap(api.POST('/shares/effective-access', { body })),
   })
 }
+
+export function mountCheckQuery(path: string) {
+  const trimmed = path.trim()
+  return queryOptions({
+    queryKey: ['system', 'mounts', trimmed],
+    queryFn: () => unwrap(api.GET('/system/mounts', { params: { query: { path: [trimmed] } } })),
+    enabled: trimmed.startsWith('/') && trimmed.length >= 2,
+    staleTime: 15_000,
+    retry: false,
+  })
+}

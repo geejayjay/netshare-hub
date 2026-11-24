@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Shield, Trash2, UserCheck, Users as UsersIcon } from 'lucide-react'
+import { Eye, Plus, Shield, Trash2, UserCheck, Users as UsersIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { notify } from '@/features/notifications'
 import type { ListParams } from '@/shared/api'
@@ -9,6 +9,7 @@ import { useSession } from '@/shared/session/session'
 import { Badge, Button, Card, StatCard } from '@/shared/ui'
 import { rolesQuery, useDeleteUser, usersQuery, type User } from '../api'
 import { CreateUserDialog } from './CreateUserDialog'
+import { UserAccessDrawer } from './UserAccessDrawer'
 
 interface UsersPageProps {
   /** Search, sort and page. The route keeps them in the URL. */
@@ -22,6 +23,7 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
   const deleteUser = useDeleteUser()
   const session = useSession()
   const [creating, setCreating] = useState(false)
+  const [inspecting, setInspecting] = useState<User | null>(null)
 
   const items = users.data?.items ?? []
   const activeCount = items.filter((u) => !u.disabled).length
@@ -82,14 +84,22 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
       {
         id: 'actions',
         header: '',
-        cell: ({ row }) =>
-          session.can('users:write') &&
-          row.original.id !== session.user.id && (
-            <div className="flex justify-end">
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-fg-muted hover:text-fg"
+              onClick={() => setInspecting(row.original)}
+            >
+              <Eye className="size-3.5" />
+              Access
+            </Button>
+            {session.can('users:write') && row.original.id !== session.user.id && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-8 text-fg-muted hover:text-danger"
+                className="size-7 text-fg-muted hover:text-danger"
                 aria-label={`Delete ${row.original.username}`}
                 onClick={() => {
                   if (!window.confirm(`Delete user "${row.original.username}"?`)) return
@@ -99,10 +109,11 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
                   })
                 }}
               >
-                <Trash2 className="size-4" />
+                <Trash2 className="size-3.5" />
               </Button>
-            </div>
-          ),
+            )}
+          </div>
+        ),
       },
     ]
   }, [roles.data, session, deleteUser])
@@ -153,6 +164,7 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
       </Card>
 
       <CreateUserDialog open={creating} onClose={() => setCreating(false)} />
+      <UserAccessDrawer user={inspecting} onClose={() => setInspecting(null)} />
     </div>
   )
 }
