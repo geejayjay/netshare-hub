@@ -21,36 +21,56 @@ export default tseslint.config(
       'import/resolver': { typescript: { project: './tsconfig.json' } },
       'boundaries/include': ['src/**/*'],
       'boundaries/elements': [
-        { type: 'app', pattern: 'src/app/**', mode: 'full' },
-        { type: 'routes', pattern: 'src/routes/**', mode: 'full' },
-        { type: 'layouts', pattern: 'src/layouts/**', mode: 'full' },
-        { type: 'feature', pattern: 'src/features/*', mode: 'folder', capture: ['name'] },
-        { type: 'shared', pattern: 'src/shared/**', mode: 'full' },
+        { type: 'app', pattern: 'src/app/**', partialMatch: false },
+        { type: 'routes', pattern: 'src/routes/**', partialMatch: false },
+        { type: 'layouts', pattern: 'src/layouts/**', partialMatch: false },
+        { type: 'feature', pattern: 'src/features/*', capture: ['name'] },
+        { type: 'shared', pattern: 'src/shared/**', partialMatch: false },
       ],
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      'boundaries/element-types': [
+      'boundaries/dependencies': [
         'error',
         {
           default: 'disallow',
-          rules: [
-            { from: 'app', allow: ['app', 'routes', 'layouts', 'feature', 'shared'] },
-            { from: 'routes', allow: ['app', 'routes', 'layouts', 'feature', 'shared'] },
-            { from: 'layouts', allow: ['layouts', 'shared'] },
-            { from: 'feature', allow: ['shared', 'feature'] },
-            { from: 'shared', allow: ['shared'] },
-          ],
-        },
-      ],
-      // A feature is used through its index.ts only; its inner files are private.
-      'boundaries/entry-point': [
-        'error',
-        {
-          default: 'disallow',
-          rules: [
-            { target: ['feature'], allow: 'index.ts' },
-            { target: ['app', 'routes', 'layouts', 'shared'], allow: '*' },
+          policies: [
+            {
+              from: { element: { type: 'app' } },
+              allow: [
+                { to: { element: { type: 'app' } } },
+                { to: { element: { type: 'routes' } } },
+                { to: { element: { type: 'layouts' } } },
+                { to: { element: { type: 'feature' } } },
+                { to: { element: { type: 'shared' } } },
+              ],
+            },
+            {
+              from: { element: { type: 'routes' } },
+              allow: [
+                { to: { element: { type: 'app' } } },
+                { to: { element: { type: 'routes' } } },
+                { to: { element: { type: 'layouts' } } },
+                { to: { element: { type: 'feature' } } },
+                { to: { element: { type: 'shared' } } },
+              ],
+            },
+            {
+              from: { element: { type: 'layouts' } },
+              allow: [{ to: { element: { type: 'layouts' } } }, { to: { element: { type: 'shared' } } }],
+            },
+            {
+              from: { element: { type: 'feature' } },
+              allow: [
+                { to: { element: { type: 'shared' } } },
+                { to: { element: { type: 'feature' }, internalPath: 'index.ts' } },
+                { to: { element: { type: 'feature', captured: { name: '{{ from.captured.name }}' } } } },
+              ],
+            },
+            {
+              from: { element: { type: 'shared' } },
+              allow: [{ to: { element: { type: 'shared' } } }],
+            },
           ],
         },
       ],
