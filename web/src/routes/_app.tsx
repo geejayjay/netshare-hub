@@ -5,6 +5,7 @@ import { AlertBell, CriticalAlertBanner } from '@/features/alerts'
 import { AccountMenu, sessionQuery } from '@/features/auth'
 import { UploadTray } from '@/features/files'
 import { JobsButton } from '@/features/jobs'
+import { GlobalSearchButton } from '@/features/search'
 import { AppLayout } from '@/layouts'
 import { ThemeSwitcher } from '@/shared/components'
 import { ModulesProvider, modulesQuery } from '@/shared/modules/modules'
@@ -36,6 +37,7 @@ function AppRoute() {
           navFooter={<AccountMenu />}
           headerActions={
             <>
+              <GlobalSearchButton />
               <JobsButton />
               <AlertBell />
               <ThemeSwitcher className="ml-1 max-sm:hidden" />

@@ -3041,6 +3041,99 @@
         ],
         "type": "object"
       },
+      "SearchHit": {
+        "additionalProperties": false,
+        "properties": {
+          "ext": {
+            "type": "string"
+          },
+          "isDir": {
+            "type": "boolean"
+          },
+          "modTime": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "shareId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "shareName": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shareId",
+          "shareName",
+          "path",
+          "name",
+          "isDir",
+          "size",
+          "modTime"
+        ],
+        "type": "object"
+      },
+      "SearchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "indexedAt": {
+            "type": "string"
+          },
+          "indexedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "query",
+          "indexedCount"
+        ],
+        "type": "object"
+      },
+      "SearchStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "indexedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "indexing": {
+            "type": "boolean"
+          },
+          "lastDurationMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastIndexedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "indexedCount",
+          "lastDurationMs",
+          "indexing"
+        ],
+        "type": "object"
+      },
       "ServerSettings": {
         "additionalProperties": false,
         "properties": {
@@ -7179,6 +7272,168 @@
           "Users"
         ],
         "x-permission": "users:read"
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "searchFiles",
+        "parameters": [
+          {
+            "description": "Search terms matching file or folder names and paths.",
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "description": "Search terms matching file or folder names and paths.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional share ID to narrow results.",
+            "explode": false,
+            "in": "query",
+            "name": "shareId",
+            "schema": {
+              "description": "Optional share ID to narrow results.",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional filter: all, file, or dir.",
+            "explode": false,
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "description": "Optional filter: all, file, or dir.",
+              "enum": [
+                "",
+                "all",
+                "file",
+                "dir"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum hits to return (default 30).",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Maximum hits to return (default 30).",
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Search files and folders across accessible shares",
+        "tags": [
+          "Search"
+        ]
+      }
+    },
+    "/search/reindex": {
+      "post": {
+        "operationId": "reindexSearch",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Rebuild the cross-share file search index",
+        "tags": [
+          "Search"
+        ],
+        "x-permission": "settings:write"
+      }
+    },
+    "/search/status": {
+      "get": {
+        "operationId": "getSearchStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get search index status",
+        "tags": [
+          "Search"
+        ]
       }
     },
     "/settings/discovery": {

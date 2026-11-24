@@ -867,6 +867,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search files and folders across accessible shares */
+        get: operations["searchFiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/search/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebuild the cross-share file search index */
+        post: operations["reindexSearch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/search/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get search index status */
+        get: operations["getSearchStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/discovery": {
         parameters: {
             query?: never;
@@ -2250,6 +2301,33 @@ export interface components {
             id: components["schemas"]["Role"];
             name: string;
             permissions: components["schemas"]["Permission"][];
+        };
+        SearchHit: {
+            ext?: string;
+            isDir: boolean;
+            modTime: string;
+            name: string;
+            path: string;
+            /** Format: int64 */
+            shareId: number;
+            shareName: string;
+            /** Format: int64 */
+            size: number;
+        };
+        SearchResponse: {
+            indexedAt?: string;
+            /** Format: int64 */
+            indexedCount: number;
+            items: components["schemas"]["SearchHit"][];
+            query: string;
+        };
+        SearchStatus: {
+            /** Format: int64 */
+            indexedCount: number;
+            indexing: boolean;
+            /** Format: int64 */
+            lastDurationMs: number;
+            lastIndexedAt?: string;
         };
         ServerSettings: {
             /** @description Record who did what over SMB (the activity log). Needs Samba's full_audit module (Debian, Ubuntu: samba-vfs-modules). */
@@ -4568,6 +4646,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListRoleInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    searchFiles: {
+        parameters: {
+            query?: {
+                /** @description Search terms matching file or folder names and paths. */
+                q?: string;
+                /** @description Optional share ID to narrow results. */
+                shareId?: number;
+                /** @description Optional filter: all, file, or dir. */
+                kind?: "" | "all" | "file" | "dir";
+                /** @description Maximum hits to return (default 30). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    reindexSearch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSearchStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchStatus"];
                 };
             };
             /** @description Error */
