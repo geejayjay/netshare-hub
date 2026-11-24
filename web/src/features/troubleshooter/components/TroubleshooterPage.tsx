@@ -28,6 +28,26 @@ const healthQuery = {
   queryFn: () => unwrap(api.GET('/health')),
 }
 
+const mountsQuery = {
+  queryKey: ['system', 'mounts'],
+  queryFn: () => unwrap(api.GET('/system/mounts')),
+}
+
+function warningLabel(code: string): string {
+  switch (code) {
+    case 'read_only_mount':
+      return 'Read-only bind mount — writes will fail until remounted rw'
+    case 'on_root_disk':
+      return 'Folder resides on container root disk — use a dedicated bind mount (mp0)'
+    case 'uid_mapping_mismatch':
+      return 'Unmapped UID/GID (65534/nobody) — fix unprivileged LXC idmap or host ownership'
+    case 'path_missing':
+      return 'Folder does not exist on disk'
+    default:
+      return code
+  }
+}
+
 type ClientOS = 'windows' | 'macos' | 'linux'
 
 export function TroubleshooterPage() {
@@ -38,6 +58,7 @@ export function TroubleshooterPage() {
   const [copiedCmd, setCopiedCmd] = useState(false)
 
   const health = useQuery(healthQuery)
+  const mounts = useQuery({ ...mountsQuery, enabled: can('system:read') })
   const shares = useQuery({ ...sharesQuery({ pageSize: 200 }), enabled: can('shares:read') })
   const samba = useQuery({ ...sambaSettingsQuery, enabled: can('settings:read') })
   const discovery = useQuery({ ...discoveryQuery, enabled: can('settings:read') && modules.discovery })
@@ -246,6 +267,7 @@ export function TroubleshooterPage() {
 
   function rerunAll() {
     void health.refetch()
+    void mounts.refetch()
     void shares.refetch()
     void samba.refetch()
     if (modules.discovery) void discovery.refetch()
@@ -312,6 +334,59 @@ export function TroubleshooterPage() {
           )}
         </CardContent>
       </Card>
+
+      {mounts.data && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between gap-2 pb-3">
+            <CardTitle>LXC & Mount Health</CardTitle>
+            <div className="flex items-center gap-1.5">
+              <Badge tone="info" className="uppercase">
+                {mounts.data.environment}
+              </Badge>
+              {mounts.data.unprivileged && <Badge tone="neutral">unprivileged</Badge>}
+            </div>
+          </CardHeader>
+          <CardContent className="border-t border-border p-0">
+            {(mounts.data.checks ?? []).length === 0 ? (
+              <div className="px-5 py-4 text-xs text-fg-muted">No share paths to inspect yet.</div>
+            ) : (
+              <div className="divide-y divide-border">
+                {(mounts.data.checks ?? []).map((m) => {
+                  const warnings = m.warnings ?? []
+                  const hasWarn = warnings.length > 0
+                  return (
+                    <div key={m.path} className="flex flex-wrap items-start justify-between gap-3 px-5 py-3">
+                      <div className="flex min-w-0 items-start gap-2.5">
+                        {hasWarn ? (
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                        ) : (
+                          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+                        )}
+                        <div className="min-w-0">
+                          <code className="text-xs font-medium text-fg">{m.path}</code>
+                          <div className="text-[0.7rem] text-fg-subtle">
+                            Mount: <code>{m.mountPoint || '—'}</code>
+                            {m.fsType && ` · ${m.fsType}`}
+                            {m.readOnly && ' · ro'}
+                          </div>
+                          {hasWarn && (
+                            <ul className="mt-1 list-disc pl-4 text-xs text-warning">
+                              {warnings.map((w) => (
+                                <li key={w}>{warningLabel(w)}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                      <Badge tone={hasWarn ? 'warning' : 'success'}>{hasWarn ? 'Check' : 'OK'}</Badge>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {activeShare && (
         <Card>
