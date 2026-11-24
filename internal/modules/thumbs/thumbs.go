@@ -28,14 +28,14 @@ import (
 )
 
 const (
-	defaultSize      = 320
-	minSize          = 64
-	maxSize          = 640
-	maxImageBytes    = 32 << 20 // 32 MiB cap for pure-Go image decode
-	maxVideoBytes    = 64 << 20 // 64 MiB cap when piping video to ffmpeg
-	maxConcurrent    = 4
-	cacheRetention   = 30 * 24 * time.Hour
-	ffmpegTimeout    = 8 * time.Second
+	defaultSize    = 320
+	minSize        = 64
+	maxSize        = 640
+	maxImageBytes  = 32 << 20 // 32 MiB cap for pure-Go image decode
+	maxVideoBytes  = 64 << 20 // 64 MiB cap when piping video to ffmpeg
+	maxConcurrent  = 4
+	cacheRetention = 30 * 24 * time.Hour
+	ffmpegTimeout  = 8 * time.Second
 )
 
 // FileSource reads files strictly through the user's file worker.

@@ -99,7 +99,7 @@ func (r rule) next(now time.Time) time.Time {
 	}
 }
 
-func (t Task) schedule() string        { return ruleFromTask(t).describe() }
+func (t Task) schedule() string             { return ruleFromTask(t).describe() }
 func (t Task) next(now time.Time) time.Time { return ruleFromTask(t).next(now) }
 
 // Status is what the admin sees about a task.

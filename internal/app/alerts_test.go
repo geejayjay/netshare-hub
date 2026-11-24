@@ -177,5 +177,5 @@ func TestScheduledTasksAreListed(t *testing.T) {
 	want(t, "tasks", strings.Join(names, ", "),
 		"activity.cleanup (daily at 04:00), alerts.cleanup (daily at 03:30), jobs.cleanup (every 1h0m0s), "+
 			"search.reindex (daily at 03:00), shares.recycle-purge (daily at 02:45), smb-bans.expire (every 1m0s), "+
-			"smb-bans.forget (every 10m0s), storage.scan (daily at 04:30), uploads.cleanup (every 1h0m0s)")
+			"smb-bans.forget (every 10m0s), storage.scan (daily at 04:30), thumbs.cleanup (daily at 05:00), uploads.cleanup (every 1h0m0s)")
 }

@@ -708,6 +708,17 @@
             "description": "Create the folder if it does not exist. Its parent must exist.",
             "type": "boolean"
           },
+          "groupAccess": {
+            "description": "Groups given access: each member gets the level, unless they have an entry of their own.",
+            "items": {
+              "$ref": "#/components/schemas/ShareGroupAccessInput"
+            },
+            "maxItems": 500,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "guestAccess": {
             "description": "Anyone on the network can read without a password.",
             "type": "boolean"
@@ -756,6 +767,13 @@
           "readOnly": {
             "description": "Nobody can change files, whatever their level.",
             "type": "boolean"
+          },
+          "recycleDays": {
+            "description": "Keep deleted files this many days in the share's recycle bin (0: none).",
+            "format": "int64",
+            "maximum": 3650,
+            "minimum": 0,
+            "type": "integer"
           },
           "timeMachine": {
             "description": "Macs can back up into this share (see Share.timeMachine). Turns Mac support on.",
@@ -1005,6 +1023,10 @@
           },
           "username": {
             "type": "string"
+          },
+          "via": {
+            "description": "The group that gives this user access, when it is not their own entry.",
+            "type": "string"
           }
         },
         "required": [
@@ -1132,6 +1154,111 @@
           "field",
           "code",
           "message"
+        ],
+        "type": "object"
+      },
+      "Group": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/GroupMember"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Also the Linux group's name.",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "members",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "GroupMember": {
+        "additionalProperties": false,
+        "properties": {
+          "userId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "username"
+        ],
+        "type": "object"
+      },
+      "GroupPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "members": {
+            "description": "Replaces the members.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "GroupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "members": {
+            "description": "User ids. Only users with SMB access can be members.",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "maxLength": 32,
+            "minLength": 2,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -1465,6 +1592,25 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/DiskDevice"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ListGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Group"
             },
             "type": "array"
           },
@@ -2308,6 +2454,16 @@
               "null"
             ]
           },
+          "groupAccess": {
+            "items": {
+              "$ref": "#/components/schemas/ShareGroupAccessInput"
+            },
+            "maxItems": 500,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "guestAccess": {
             "type": "boolean"
           },
@@ -2958,6 +3114,21 @@
         ],
         "type": "object"
       },
+      "RestoreInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "The item's path in the share (where it was before it was deleted).",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
       "RestoreRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3397,6 +3568,13 @@
             "format": "date-time",
             "type": "string"
           },
+          "groupAccess": {
+            "description": "Groups given access: each member gets the level, unless they have an entry of their own.",
+            "items": {
+              "$ref": "#/components/schemas/ShareGroupAccess"
+            },
+            "type": "array"
+          },
           "guestAccess": {
             "description": "Anyone on the network can read without a password, and every user with SMB access can read with theirs.",
             "type": "boolean"
@@ -3436,6 +3614,11 @@
             "description": "Nobody can change files, whatever their level.",
             "type": "boolean"
           },
+          "recycleDays": {
+            "description": "Deleted files go to the share's recycle bin and are kept this many days (0: no recycle bin, deleting is permanent).",
+            "format": "int64",
+            "type": "integer"
+          },
           "timeMachine": {
             "description": "Macs can back up into this share with Time Machine. Its users need \"write\"; never a guest or read-only share.",
             "type": "boolean"
@@ -3461,9 +3644,11 @@
           "hideUnreadable",
           "timeMachine",
           "timeMachineMaxGiB",
+          "recycleDays",
           "networkRules",
           "access",
           "nfs",
+          "groupAccess",
           "createdAt",
           "updatedAt"
         ],
@@ -3516,6 +3701,55 @@
         },
         "required": [
           "userId",
+          "level"
+        ],
+        "type": "object"
+      },
+      "ShareGroupAccess": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "read",
+              "upload",
+              "write"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
+          "groupName",
+          "level"
+        ],
+        "type": "object"
+      },
+      "ShareGroupAccessInput": {
+        "additionalProperties": false,
+        "properties": {
+          "groupId": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "level": {
+            "enum": [
+              "read",
+              "upload",
+              "write"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "groupId",
           "level"
         ],
         "type": "object"
@@ -4019,6 +4253,14 @@
             "maxLength": 100,
             "type": "string"
           },
+          "groupAccess": {
+            "description": "Replaces the group access list.",
+            "items": {
+              "$ref": "#/components/schemas/ShareGroupAccessInput"
+            },
+            "maxItems": 500,
+            "type": "array"
+          },
           "guestAccess": {
             "type": "boolean"
           },
@@ -4043,6 +4285,13 @@
           },
           "readOnly": {
             "type": "boolean"
+          },
+          "recycleDays": {
+            "description": "0 turns the recycle bin off (what is in it stays).",
+            "format": "int64",
+            "maximum": 3650,
+            "minimum": 0,
+            "type": "integer"
           },
           "timeMachine": {
             "description": "Turning it on turns Mac support on.",
@@ -5310,7 +5559,7 @@
             "session": []
           }
         ],
-        "summary": "Delete files and folders (folders as a job). Permanent until the recycle bin exists.",
+        "summary": "Delete files and folders (folders as a job). On a share with a recycle bin, they go there; elsewhere it is permanent.",
         "tags": [
           "Files"
         ],
@@ -5780,6 +6029,191 @@
         "x-permission": "files:write"
       }
     },
+    "/files/{share}/recycle": {
+      "get": {
+        "operationId": "listRecycleBin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The folder, inside the share. Empty: the share's top folder.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "The folder, inside the share. Empty: the share's top folder.",
+              "maxLength": 4096,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The \"next\" value of the previous page.",
+            "explode": false,
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "description": "The \"next\" value of the previous page.",
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Entries per page (default 500).",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Entries per page (default 500).",
+              "format": "int64",
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a folder of the share's recycle bin (paths as they were before deleting)",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:read"
+      }
+    },
+    "/files/{share}/recycle/empty": {
+      "post": {
+        "operationId": "emptyRecycleBin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete everything in the share's recycle bin, for good",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:write"
+      }
+    },
+    "/files/{share}/recycle/restore": {
+      "post": {
+        "operationId": "restoreFromRecycleBin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Put a deleted file or folder back where it was",
+        "tags": [
+          "Files"
+        ],
+        "x-permission": "files:write"
+      }
+    },
     "/files/{share}/rename": {
       "post": {
         "operationId": "renameFile",
@@ -5837,6 +6271,234 @@
           "Files"
         ],
         "x-permission": "files:write"
+      }
+    },
+    "/groups": {
+      "get": {
+        "operationId": "listGroups",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List groups",
+        "tags": [
+          "Groups"
+        ],
+        "x-permission": "groups:read"
+      },
+      "post": {
+        "operationId": "createGroup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a group (a Linux group)",
+        "tags": [
+          "Groups"
+        ],
+        "x-permission": "groups:write"
+      }
+    },
+    "/groups/{id}": {
+      "delete": {
+        "operationId": "deleteGroup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete a group (its members lose the access it gave them)",
+        "tags": [
+          "Groups"
+        ],
+        "x-permission": "groups:write"
+      },
+      "get": {
+        "operationId": "getGroup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a group",
+        "tags": [
+          "Groups"
+        ],
+        "x-permission": "groups:read"
+      },
+      "patch": {
+        "operationId": "updateGroup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Group"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change a group's description or members",
+        "tags": [
+          "Groups"
+        ],
+        "x-permission": "groups:write"
       }
     },
     "/guard/bans": {

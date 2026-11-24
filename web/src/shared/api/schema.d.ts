@@ -255,7 +255,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Delete files and folders (folders as a job). Permanent until the recycle bin exists. */
+        /** Delete files and folders (folders as a job). On a share with a recycle bin, they go there; elsewhere it is permanent. */
         post: operations["deleteFiles"];
         delete?: never;
         options?: never;
@@ -399,6 +399,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/files/{share}/recycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a folder of the share's recycle bin (paths as they were before deleting) */
+        get: operations["listRecycleBin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{share}/recycle/empty": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete everything in the share's recycle bin, for good */
+        post: operations["emptyRecycleBin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/files/{share}/recycle/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put a deleted file or folder back where it was */
+        post: operations["restoreFromRecycleBin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files/{share}/rename": {
         parameters: {
             query?: never;
@@ -414,6 +465,43 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List groups */
+        get: operations["listGroups"];
+        put?: never;
+        /** Create a group (a Linux group) */
+        post: operations["createGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a group */
+        get: operations["getGroup"];
+        put?: never;
+        post?: never;
+        /** Delete a group (its members lose the access it gave them) */
+        delete: operations["deleteGroup"];
+        options?: never;
+        head?: never;
+        /** Change a group's description or members */
+        patch: operations["updateGroup"];
         trace?: never;
     };
     "/guard/bans": {
@@ -1627,6 +1715,8 @@ export interface components {
             comment?: string;
             /** @description Create the folder if it does not exist. Its parent must exist. */
             createDirectory?: boolean;
+            /** @description Groups given access: each member gets the level, unless they have an entry of their own. */
+            groupAccess?: components["schemas"]["ShareGroupAccessInput"][] | null;
             /** @description Anyone on the network can read without a password. */
             guestAccess?: boolean;
             /** @description Hide files and folders a user cannot read. Slows down listing very big folders. */
@@ -1646,6 +1736,11 @@ export interface components {
             preset?: string;
             /** @description Nobody can change files, whatever their level. */
             readOnly?: boolean;
+            /**
+             * Format: int64
+             * @description Keep deleted files this many days in the share's recycle bin (0: none).
+             */
+            recycleDays?: number;
             /** @description Macs can back up into this share (see Share.timeMachine). Turns Mac support on. */
             timeMachine?: boolean;
             /**
@@ -1733,6 +1828,8 @@ export interface components {
             /** Format: int64 */
             userId: number;
             username: string;
+            /** @description The group that gives this user access, when it is not their own entry. */
+            via?: string;
         };
         EffectiveAccess: {
             /** @enum {string} */
@@ -1771,6 +1868,34 @@ export interface components {
             field: string;
             /** @description Human-readable explanation, safe to show next to the field. */
             message: string;
+        };
+        Group: {
+            /** Format: date-time */
+            createdAt: string;
+            description: string;
+            /** Format: int64 */
+            id: number;
+            members: components["schemas"]["GroupMember"][];
+            /** @description Also the Linux group's name. */
+            name: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        GroupMember: {
+            /** Format: int64 */
+            userId: number;
+            username: string;
+        };
+        GroupPatch: {
+            description?: string;
+            /** @description Replaces the members. */
+            members?: number[];
+        };
+        GroupRequest: {
+            description?: string;
+            /** @description User ids. Only users with SMB access can be members. */
+            members?: number[] | null;
+            name: string;
         };
         Health: {
             /** @example ok */
@@ -1880,6 +2005,11 @@ export interface components {
         };
         ListDiskDevice: {
             items: components["schemas"]["DiskDevice"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListGroup: {
+            items: components["schemas"]["Group"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
@@ -2107,6 +2237,7 @@ export interface components {
         };
         PreviewAccessRequest: {
             access?: components["schemas"]["ShareAccessInput"][] | null;
+            groupAccess?: components["schemas"]["ShareGroupAccessInput"][] | null;
             guestAccess?: boolean;
             networkRules?: components["schemas"]["NetworkRule"][] | null;
             readOnly?: boolean;
@@ -2327,6 +2458,10 @@ export interface components {
             /** @description Needed to receive copies. */
             sshServer: boolean;
         };
+        RestoreInputBody: {
+            /** @description The item's path in the share (where it was before it was deleted). */
+            path: string;
+        };
         RestoreRequest: {
             /** @description The backup file (base64 in JSON). */
             backup: string;
@@ -2478,6 +2613,8 @@ export interface components {
             comment: string;
             /** Format: date-time */
             createdAt: string;
+            /** @description Groups given access: each member gets the level, unless they have an entry of their own. */
+            groupAccess: components["schemas"]["ShareGroupAccess"][];
             /** @description Anyone on the network can read without a password, and every user with SMB access can read with theirs. */
             guestAccess: boolean;
             /** @description Hide files and folders a user cannot read, over SMB and in the file manager. Slows down listing very big folders. */
@@ -2496,6 +2633,11 @@ export interface components {
             preset: string;
             /** @description Nobody can change files, whatever their level. */
             readOnly: boolean;
+            /**
+             * Format: int64
+             * @description Deleted files go to the share's recycle bin and are kept this many days (0: no recycle bin, deleting is permanent).
+             */
+            recycleDays: number;
             /** @description Macs can back up into this share with Time Machine. Its users need "write"; never a guest or read-only share. */
             timeMachine: boolean;
             /**
@@ -2524,6 +2666,19 @@ export interface components {
             level: "read" | "upload" | "write";
             /** Format: int64 */
             userId: number;
+        };
+        ShareGroupAccess: {
+            /** Format: int64 */
+            groupId: number;
+            groupName: string;
+            /** @enum {string} */
+            level: "read" | "upload" | "write";
+        };
+        ShareGroupAccessInput: {
+            /** Format: int64 */
+            groupId: number;
+            /** @enum {string} */
+            level: "read" | "upload" | "write";
         };
         Status: {
             customized: boolean;
@@ -2692,6 +2847,8 @@ export interface components {
             /** @description Replaces the whole access list. */
             access?: components["schemas"]["ShareAccessInput"][];
             comment?: string;
+            /** @description Replaces the group access list. */
+            groupAccess?: components["schemas"]["ShareGroupAccessInput"][];
             guestAccess?: boolean;
             hideUnreadable?: boolean;
             /** @description Replaces the whole list of network rules. */
@@ -2700,6 +2857,11 @@ export interface components {
             nfs?: components["schemas"]["NFS"];
             preset?: string;
             readOnly?: boolean;
+            /**
+             * Format: int64
+             * @description 0 turns the recycle bin off (what is in it stays).
+             */
+            recycleDays?: number;
             /** @description Turning it on turns Mac support on. */
             timeMachine?: boolean;
             /** Format: int64 */
@@ -3639,6 +3801,108 @@ export interface operations {
             };
         };
     };
+    listRecycleBin: {
+        parameters: {
+            query?: {
+                /** @description The folder, inside the share. Empty: the share's top folder. */
+                path?: string;
+                /** @description The "next" value of the previous page. */
+                after?: string;
+                /** @description Entries per page (default 500). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    emptyRecycleBin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    restoreFromRecycleBin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     renameFile: {
         parameters: {
             query?: never;
@@ -3661,6 +3925,163 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Entry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListGroup"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
                 };
             };
             /** @description Error */

@@ -40,6 +40,7 @@ import (
 	"netshare-hub/internal/modules/speedtest"
 	"netshare-hub/internal/modules/storage"
 	"netshare-hub/internal/modules/system"
+	"netshare-hub/internal/modules/thumbs"
 	"netshare-hub/internal/modules/users"
 	"netshare-hub/internal/platform/config"
 	"netshare-hub/internal/platform/db"
@@ -233,10 +234,12 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 
 	var fileClient *fileworker.Client
 	var fileService *files.Service
+	var thumbService *thumbs.Service
 	if mods.FileManager {
 		fileClient = fileworker.NewClient(osLayer.Workers)
 		fileService = files.NewService(database, fileClient, userService, shareService, jobService,
 			files.Options{MaxUploadBytes: cfg.MaxUploadBytes, UploadExpiry: opts.UploadExpiry})
+		thumbService = thumbs.NewService(cfg.DataDir, fileService)
 		fileService.SetRecycle(shareService)
 		jobService.Register(files.JobCopy, fileService.RunCopy)
 		jobService.Register(files.JobDelete, fileService.RunDelete)
@@ -244,6 +247,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 			fileService.SweepUploads(ctx) // abandoned uploads: a day without data
 			return nil
 		}})
+		tasks.Add(scheduler.Task{Name: "thumbs.cleanup", Daily: 5 * time.Hour, Run: thumbService.Cleanup})
 	}
 
 	var replicationService *replication.Service
@@ -317,6 +321,20 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 
 	router := chi.NewRouter()
 	router.Use(httpx.RequestID, httpx.RealIP, httpx.AccessLog, httpx.Recover, httpx.SecurityHeaders)
+	system.RegisterObservability(router, Version, time.Now(), func(ctx context.Context) system.MetricsSnapshot {
+		_, shareTotal, _ := shareService.List(ctx, page.Request{Page: 1, Size: 1})
+		_, userTotal, _ := userService.List(ctx, page.Request{Page: 1, Size: 1})
+		_, alertTotal, _ := alertService.List(ctx, alerts.Filter{ActiveOnly: true}, page.Request{Page: 1, Size: 1})
+		rep := storageService.Report()
+		return system.MetricsSnapshot{
+			Version:      Version,
+			ShareCount:   shareTotal,
+			UserCount:    userTotal,
+			ActiveAlerts: alertTotal,
+			StorageBytes: rep.TotalBytes,
+			StorageFiles: rep.TotalFiles,
+		}
+	})
 
 	var api huma.API
 	router.Route(APIPrefix, func(r chi.Router) {
@@ -364,6 +382,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 			files.Register(api, fileService)
 			files.RegisterUploads(r, fileService)
 			files.RegisterRecycle(api, fileService)
+			thumbs.Register(api, r, thumbService)
 		}
 		if mods.ActivityLog {
 			activity.Register(api, activityService)
