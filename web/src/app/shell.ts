@@ -1,9 +1,11 @@
 import {
   Activity,
+  ClipboardList,
   Database,
   FolderClosed,
   FolderOpen,
   FolderSync,
+  Gauge,
   HardDrive,
   LayoutDashboard,
   Monitor,
@@ -49,6 +51,7 @@ export const navigation: NavItem[] = [
   },
   { to: '/sessions', label: 'Sessions', icon: Monitor, group: 'Security & Insight', permission: 'system:read', module: 'sessions' },
   { to: '/activity', label: 'Activity Feed', icon: Activity, group: 'Security & Insight', permission: 'audit:read', module: 'activityLog' },
+  { to: '/audit', label: 'Audit Log', icon: ClipboardList, group: 'Security & Insight', permission: 'audit:read' },
   {
     to: '/security',
     label: 'Security & Guard',
@@ -58,6 +61,7 @@ export const navigation: NavItem[] = [
     module: ['ransomwareGuard', 'bruteForce'],
   },
   { to: '/troubleshooter', label: 'Troubleshooter', icon: Stethoscope, group: 'Security & Insight', permission: 'system:read' },
+  { to: '/speedtest', label: 'Speed Test', icon: Gauge, group: 'Security & Insight', permission: 'system:read' },
   { to: '/logs', label: 'Server Logs', icon: ScrollText, group: 'Security & Insight', permission: 'system:read' },
   { to: '/users', label: 'Users', icon: Users, group: 'Administration', permission: 'users:read' },
   { to: '/settings', label: 'Settings', icon: Settings, group: 'Administration', permission: 'settings:read' },

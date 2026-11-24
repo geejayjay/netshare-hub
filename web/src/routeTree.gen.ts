@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppActivityRouteImport } from './routes/_app/activity'
+import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppBlockRouteImport } from './routes/_app/block'
 import { Route as AppFilesRouteImport } from './routes/_app/files'
 import { Route as AppLogsRouteImport } from './routes/_app/logs'
@@ -23,6 +24,7 @@ import { Route as AppSecurityRouteImport } from './routes/_app/security'
 import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSharesRouteImport } from './routes/_app/shares'
+import { Route as AppSpeedtestRouteImport } from './routes/_app/speedtest'
 import { Route as AppTroubleshooterRouteImport } from './routes/_app/troubleshooter'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
 
@@ -48,6 +50,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppActivityRoute = AppActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAuditRoute = AppAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => AppRoute,
 } as any)
 const AppBlockRoute = AppBlockRouteImport.update({
@@ -95,6 +102,11 @@ const AppSharesRoute = AppSharesRouteImport.update({
   path: '/shares',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSpeedtestRoute = AppSpeedtestRouteImport.update({
+  id: '/speedtest',
+  path: '/speedtest',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTroubleshooterRoute = AppTroubleshooterRouteImport.update({
   id: '/troubleshooter',
   path: '/troubleshooter',
@@ -111,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/activity': typeof AppActivityRoute
+  '/audit': typeof AppAuditRoute
   '/block': typeof AppBlockRoute
   '/files': typeof AppFilesRoute
   '/logs': typeof AppLogsRoute
@@ -120,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/sessions': typeof AppSessionsRoute
   '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
+  '/speedtest': typeof AppSpeedtestRoute
   '/troubleshooter': typeof AppTroubleshooterRoute
   '/users': typeof AppUsersRoute
 }
@@ -127,6 +141,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/activity': typeof AppActivityRoute
+  '/audit': typeof AppAuditRoute
   '/block': typeof AppBlockRoute
   '/files': typeof AppFilesRoute
   '/logs': typeof AppLogsRoute
@@ -136,6 +151,7 @@ export interface FileRoutesByTo {
   '/sessions': typeof AppSessionsRoute
   '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
+  '/speedtest': typeof AppSpeedtestRoute
   '/troubleshooter': typeof AppTroubleshooterRoute
   '/users': typeof AppUsersRoute
   '/': typeof AppIndexRoute
@@ -146,6 +162,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/_app/activity': typeof AppActivityRoute
+  '/_app/audit': typeof AppAuditRoute
   '/_app/block': typeof AppBlockRoute
   '/_app/files': typeof AppFilesRoute
   '/_app/logs': typeof AppLogsRoute
@@ -155,6 +172,7 @@ export interface FileRoutesById {
   '/_app/sessions': typeof AppSessionsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/shares': typeof AppSharesRoute
+  '/_app/speedtest': typeof AppSpeedtestRoute
   '/_app/troubleshooter': typeof AppTroubleshooterRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/': typeof AppIndexRoute
@@ -166,6 +184,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/activity'
+    | '/audit'
     | '/block'
     | '/files'
     | '/logs'
@@ -175,6 +194,7 @@ export interface FileRouteTypes {
     | '/sessions'
     | '/settings'
     | '/shares'
+    | '/speedtest'
     | '/troubleshooter'
     | '/users'
   fileRoutesByTo: FileRoutesByTo
@@ -182,6 +202,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/activity'
+    | '/audit'
     | '/block'
     | '/files'
     | '/logs'
@@ -191,6 +212,7 @@ export interface FileRouteTypes {
     | '/sessions'
     | '/settings'
     | '/shares'
+    | '/speedtest'
     | '/troubleshooter'
     | '/users'
     | '/'
@@ -200,6 +222,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/_app/activity'
+    | '/_app/audit'
     | '/_app/block'
     | '/_app/files'
     | '/_app/logs'
@@ -209,6 +232,7 @@ export interface FileRouteTypes {
     | '/_app/sessions'
     | '/_app/settings'
     | '/_app/shares'
+    | '/_app/speedtest'
     | '/_app/troubleshooter'
     | '/_app/users'
     | '/_app/'
@@ -255,6 +279,13 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/activity'
       preLoaderRoute: typeof AppActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/audit': {
+      id: '/_app/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AppAuditRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/block': {
@@ -320,6 +351,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSharesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/speedtest': {
+      id: '/_app/speedtest'
+      path: '/speedtest'
+      fullPath: '/speedtest'
+      preLoaderRoute: typeof AppSpeedtestRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/troubleshooter': {
       id: '/_app/troubleshooter'
       path: '/troubleshooter'
@@ -339,6 +377,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
+  AppAuditRoute: typeof AppAuditRoute
   AppBlockRoute: typeof AppBlockRoute
   AppFilesRoute: typeof AppFilesRoute
   AppLogsRoute: typeof AppLogsRoute
@@ -348,6 +387,7 @@ interface AppRouteChildren {
   AppSessionsRoute: typeof AppSessionsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppSharesRoute: typeof AppSharesRoute
+  AppSpeedtestRoute: typeof AppSpeedtestRoute
   AppTroubleshooterRoute: typeof AppTroubleshooterRoute
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -355,6 +395,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppActivityRoute: AppActivityRoute,
+  AppAuditRoute: AppAuditRoute,
   AppBlockRoute: AppBlockRoute,
   AppFilesRoute: AppFilesRoute,
   AppLogsRoute: AppLogsRoute,
@@ -364,6 +405,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSessionsRoute: AppSessionsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppSharesRoute: AppSharesRoute,
+  AppSpeedtestRoute: AppSpeedtestRoute,
   AppTroubleshooterRoute: AppTroubleshooterRoute,
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
