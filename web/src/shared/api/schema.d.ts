@@ -280,6 +280,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/files/thumbnails/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report whether image and video thumbnails are supported */
+        get: operations["getThumbnailCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files/zip": {
         parameters: {
             query?: never;
@@ -2636,6 +2653,10 @@ export interface components {
             users: number;
             warnings: string[];
         };
+        ThumbnailCapabilities: {
+            images: boolean;
+            video: boolean;
+        };
         TransferRequest: {
             /**
              * @description When a file with the same name is there already: "rename" keeps both (default), "replace" overwrites it, "skip" leaves it.
@@ -3369,6 +3390,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Result"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getThumbnailCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThumbnailCapabilities"];
                 };
             };
             /** @description Error */

@@ -3913,6 +3913,22 @@
         ],
         "type": "object"
       },
+      "ThumbnailCapabilities": {
+        "additionalProperties": false,
+        "properties": {
+          "images": {
+            "type": "boolean"
+          },
+          "video": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "images",
+          "video"
+        ],
+        "type": "object"
+      },
       "TransferRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5346,6 +5362,42 @@
           "Files"
         ],
         "x-permission": "files:write"
+      }
+    },
+    "/files/thumbnails/capabilities": {
+      "get": {
+        "operationId": "getThumbnailCapabilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailCapabilities"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Report whether image and video thumbnails are supported",
+        "tags": [
+          "Files"
+        ]
       }
     },
     "/files/zip": {

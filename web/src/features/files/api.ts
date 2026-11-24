@@ -1,4 +1,4 @@
-import { infiniteQueryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
 import { API_BASE, api, unwrap, type Schema } from '@/shared/api'
 
 export type FileEntry = Schema<'Entry'>
@@ -88,4 +88,15 @@ export function usePrepareZip() {
   return useMutation({
     mutationFn: (items: FileItem[]) => unwrap(api.POST('/files/zip', { body: { items } })),
   })
+}
+
+export const thumbnailCapabilitiesQuery = queryOptions({
+  queryKey: ['files', 'thumbnails', 'capabilities'],
+  queryFn: () => unwrap(api.GET('/files/thumbnails/capabilities')),
+  staleTime: 5 * 60_000,
+})
+
+export function thumbnailUrl(share: string, path: string, size = 320): string {
+  const params = new URLSearchParams({ share, path, size: String(size) })
+  return `${API_BASE}/files/thumbnail?${params.toString()}`
 }

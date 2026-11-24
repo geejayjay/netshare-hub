@@ -36,6 +36,7 @@ import { Badge, Button, Card, Dialog, Input, Select, Spinner } from '@/shared/ui
 import {
   fileDownloadUrl,
   fileEntriesInfiniteQuery,
+  thumbnailCapabilitiesQuery,
   useCopyFiles,
   useCreateFolder,
   useDeleteFiles,
@@ -47,6 +48,7 @@ import {
 } from '../api'
 import { collectDroppedBatch, collectPickerBatch } from '../drop-entries'
 import { enqueueUploadBatch } from '../upload-store'
+import { EntryThumbnail } from './EntryThumbnail'
 import { FilePreviewDialog, getPreviewKind } from './FilePreviewDialog'
 
 interface FilesPageProps {
@@ -84,6 +86,8 @@ type SortKey = 'name' | '-name' | '-size' | '-modTime'
 
 export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
   const myShares = useQuery(mySharesQuery)
+  const thumbCaps = useQuery(thumbnailCapabilitiesQuery)
+  const videoThumbsEnabled = Boolean(thumbCaps.data?.video)
   const shareList = useMemo(() => myShares.data?.items ?? [], [myShares.data])
   const activeShare = share || shareList[0]?.name || ''
   const activeShareMeta = shareList.find((s) => s.name === activeShare)
@@ -177,7 +181,7 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => (view === 'table' ? 44 : 132),
+    estimateSize: () => (view === 'table' ? 44 : 164),
     overscan: 12,
   })
 
@@ -745,22 +749,28 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
                                 isChecked && 'border-primary bg-primary-soft/30',
                               )}
                             >
-                              <div className="flex items-start justify-between gap-2">
+                              <div className="relative flex flex-col gap-2">
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
                                   onChange={() => toggleSelect(entry.name)}
                                   aria-label={`Select ${entry.name}`}
-                                  className="mt-0.5 accent-primary"
+                                  className="absolute top-1.5 left-1.5 z-10 accent-primary"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEntry(entry)}
-                                  className="grid size-9 place-items-center rounded-lg bg-surface shadow-xs ring-1 ring-border"
+                                  className="flex h-20 w-full items-center justify-center"
                                 >
-                                  {entryIcon(entry)}
+                                  <EntryThumbnail
+                                    share={activeShare}
+                                    path={joinPath(path, entry.name)}
+                                    name={entry.name}
+                                    isDir={entry.isDir}
+                                    videoEnabled={videoThumbsEnabled}
+                                    fallback={entryIcon(entry)}
+                                  />
                                 </button>
-                                <div className="w-4" />
                               </div>
                               <button
                                 type="button"
