@@ -141,6 +141,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/block/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whole disks on this machine, and whether each is in use */
+        get: operations["listBlockDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/block/disks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List disks */
+        get: operations["listBlockDisks"];
+        put?: never;
+        /** Create a disk for one computer */
+        post: operations["createBlockDisk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/block/disks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a disk */
+        get: operations["getBlockDisk"];
+        put?: never;
+        post?: never;
+        /** Stop serving a disk (an image file is kept) */
+        delete: operations["deleteBlockDisk"];
+        options?: never;
+        head?: never;
+        /** Change a disk (its client is reconnected) */
+        patch: operations["updateBlockDisk"];
+        trace?: never;
+    };
+    "/block/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this machine can serve iSCSI / NVMe disks */
+        get: operations["getBlockStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files/copy": {
         parameters: {
             query?: never;
@@ -492,6 +563,215 @@ export interface paths {
         };
         /** List shares the signed-in user can access */
         get: operations["listMyShares"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List replication jobs */
+        get: operations["listReplicationJobs"];
+        put?: never;
+        /** Create a replication job */
+        post: operations["createReplicationJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a replication job */
+        get: operations["getReplicationJob"];
+        put?: never;
+        post?: never;
+        /** Delete a replication job (the copies are kept) */
+        delete: operations["deleteReplicationJob"];
+        options?: never;
+        head?: never;
+        /** Change a replication job */
+        patch: operations["updateReplicationJob"];
+        trace?: never;
+    };
+    "/replication/jobs/{id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview what a run would change (a dry run; nothing is changed) */
+        post: operations["previewReplicationJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/jobs/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ReplicationRun a job now (a background job) */
+        post: operations["runReplicationJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/jobs/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A job's runs, newest first */
+        get: operations["listReplicationRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/pair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pair a sender (called by the other NetShare Hub, with a pairing code) */
+        post: operations["pairReplication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/peers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List paired NetShare Hubs */
+        get: operations["listReplicationPeers"];
+        put?: never;
+        /** Pair with another NetShare Hub (with a code made there) */
+        post: operations["addReplicationPeer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/peers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Forget a peer (and its jobs) */
+        delete: operations["deleteReplicationPeer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/receivers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List receiving folders */
+        get: operations["listReplicationReceivers"];
+        put?: never;
+        /** Add a receiving folder and get its pairing code */
+        post: operations["addReplicationReceiver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/receivers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stop receiving (the copies are kept) */
+        delete: operations["deleteReplicationReceiver"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/receivers/{id}/pairing-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make a new pairing code (pairing again replaces the sender) */
+        post: operations["newReplicationPairingCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/replication/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What this machine can do */
+        get: operations["getReplicationStatus"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1001,6 +1281,91 @@ export interface components {
              */
             windowMinutes: number;
         };
+        BlockDisk: {
+            /** @description The client must also give the CHAP secret (iSCSI). The secret is never shown again. */
+            chap: boolean;
+            chapUser?: string;
+            /** @description The one computer that may connect: its iSCSI initiator name (iqn...) or NVMe host name (nqn...). */
+            client: string;
+            /** @description The client is connected now (iSCSI only). */
+            connected?: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description A whole disk given to the client, by its /dev/disk/by-id link. */
+            device?: string;
+            /** Format: int64 */
+            id: number;
+            /** @description Image-backed: the folder of the image file (<folder>/d<id>.img). */
+            imageFolder?: string;
+            listen: string;
+            name: string;
+            /** Format: int64 */
+            port: number;
+            /** @enum {string} */
+            protocol: "iscsi" | "nvmeof";
+            readOnly: boolean;
+            /** Format: int64 */
+            sizeGiB?: number;
+            /** @description The iSCSI target name or NVMe subsystem name to connect to. */
+            target: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        BlockDiskInput: {
+            /** @description 12-16 characters (Windows' limit). */
+            chapSecret?: string;
+            chapUser?: string;
+            client: string;
+            /** @description When giving a whole disk: its path again. */
+            confirmDevice?: string;
+            /** @description Must be true: only ONE computer may ever use this disk; two at once destroy its contents. */
+            confirmSingleClient: boolean;
+            /** @description Or give a whole disk (see GET /block/devices). Its contents become the client's. */
+            device?: string;
+            /** @description Make an image file in this folder (not a share). */
+            imageFolder?: string;
+            /** @description The address to listen on (default 0.0.0.0: every address). */
+            listen?: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description Default 3260 (iSCSI) or 4420 (NVMe/TCP).
+             */
+            port?: number;
+            /**
+             * @description iSCSI works on Windows, macOS (with an initiator) and Linux, and can require a CHAP secret. NVMe/TCP is faster, but Windows has no built-in client, and it checks only the host name, which a client can copy: use it on a network you trust.
+             * @enum {string}
+             */
+            protocol: "iscsi" | "nvmeof";
+            /** @description iSCSI only. */
+            readOnly?: boolean;
+            /** Format: int64 */
+            sizeGiB?: number;
+        };
+        BlockDiskPatch: {
+            chapSecret?: string;
+            /** @description Empty (with an empty secret) turns CHAP off. */
+            chapUser?: string;
+            client?: string;
+            listen?: string;
+            name?: string;
+            /** Format: int64 */
+            port?: number;
+            readOnly?: boolean;
+            /**
+             * Format: int64
+             * @description Grow only: shrinking would cut off the client's data.
+             */
+            sizeGiB?: number;
+        };
+        BlockStatus: {
+            hint?: string;
+            iscsi: boolean;
+            nvmeof: boolean;
+        };
+        CodeOutputBody: {
+            code: string;
+        };
         CreateShareRequest: {
             /** @description Users who may use the share. Without any (and without guest access), nobody can connect. */
             access?: components["schemas"]["ShareAccessInput"][] | null;
@@ -1069,6 +1434,16 @@ export interface components {
         DiscoveryUpdate: {
             mdns?: boolean;
             wsd?: boolean;
+        };
+        DiskDevice: {
+            inUse?: string;
+            kernel: string;
+            model?: string;
+            /** Format: int64 */
+            partitions: number;
+            path: string;
+            /** Format: int64 */
+            sizeBytes: number;
         };
         Effective: {
             /** @enum {string} */
@@ -1212,6 +1587,16 @@ export interface components {
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
+        ListBlockDisk: {
+            items: components["schemas"]["BlockDisk"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListDiskDevice: {
+            items: components["schemas"]["DiskDevice"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
         ListIncident: {
             items: components["schemas"]["Incident"][];
             /** @description Present only when the list is paginated. */
@@ -1234,6 +1619,26 @@ export interface components {
         };
         ListPreset: {
             items: components["schemas"]["Preset"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListReplicationJob: {
+            items: components["schemas"]["ReplicationJob"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListReplicationPeer: {
+            items: components["schemas"]["ReplicationPeer"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListReplicationReceiver: {
+            items: components["schemas"]["ReplicationReceiver"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListReplicationRun: {
+            items: components["schemas"]["ReplicationRun"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
@@ -1371,7 +1776,7 @@ export interface components {
             next: number;
         };
         /** @enum {string} */
-        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage" | "sessions:manage" | "backup:manage";
+        Permission: "users:read" | "users:write" | "groups:read" | "groups:write" | "shares:read" | "shares:write" | "files:read" | "files:write" | "settings:read" | "settings:write" | "audit:read" | "system:read" | "jobs:manage" | "alerts:manage" | "sessions:manage" | "backup:manage" | "replication:manage" | "block:manage";
         Preset: {
             /** @enum {string} */
             defaultLevel: "read" | "upload" | "write";
@@ -1413,6 +1818,197 @@ export interface components {
             /** @description The new name (no folders: use move for that). */
             name: string;
             path: string;
+        };
+        ReplicationJob: {
+            /** Format: int64 */
+            atMinute: number;
+            /**
+             * Format: int64
+             * @description Bandwidth limit in KiB/s (0: no limit).
+             */
+            bandwidthKiB: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description Scheduled runs happen. Manual runs work either way. */
+            enabled: boolean;
+            /** @description rsync patterns of files to leave out (like *.tmp or cache/). */
+            excludes: string[];
+            /** Format: int64 */
+            id: number;
+            readonly lastRun?: components["schemas"]["ReplicationRun"];
+            /** @description A folder on this machine (a second disk). It may not be or hold a share. */
+            localPath?: string;
+            /** @description Delete files at the destination that are gone from the share. Off: deleted files are kept there. */
+            mirror: boolean;
+            name: string;
+            /** Format: date-time */
+            nextRunAt?: string;
+            /**
+             * Format: int64
+             * @description A paired NetShare Hub.
+             */
+            peerId?: number;
+            readonly peerName?: string;
+            /** @enum {string} */
+            schedule: "manual" | "hourly" | "daily" | "weekly";
+            /** Format: int64 */
+            shareId: number;
+            readonly shareName: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: int64 */
+            weekday: number;
+        };
+        ReplicationJobPatch: {
+            /** Format: int64 */
+            atMinute?: number;
+            /** Format: int64 */
+            bandwidthKiB?: number;
+            enabled?: boolean;
+            excludes?: string[];
+            localPath?: string;
+            mirror?: boolean;
+            name?: string;
+            /** Format: int64 */
+            peerId?: number;
+            /** @enum {string} */
+            schedule?: "manual" | "hourly" | "daily" | "weekly";
+            /** Format: int64 */
+            weekday?: number;
+        };
+        ReplicationJobRequest: {
+            /** Format: int64 */
+            atMinute?: number;
+            /** Format: int64 */
+            bandwidthKiB?: number;
+            /** @description Default true. */
+            enabled?: boolean;
+            excludes?: string[] | null;
+            /** @description A folder on this machine (a second disk). */
+            localPath?: string;
+            /** @description Delete files at the destination that are gone from the share. */
+            mirror?: boolean;
+            name: string;
+            /**
+             * Format: int64
+             * @description A paired NetShare Hub.
+             */
+            peerId?: number;
+            /** @enum {string} */
+            schedule?: "manual" | "hourly" | "daily" | "weekly";
+            /** Format: int64 */
+            shareId: number;
+            /** Format: int64 */
+            weekday?: number;
+        };
+        ReplicationPairRequest: {
+            /** @description HMAC-SHA256 over the request, keyed with the code's secret. */
+            mac: string;
+            nonce: string;
+            publicKey: string;
+            /** @description The receiving folder, from the pairing code. */
+            receiver: string;
+        };
+        ReplicationPairResponse: {
+            hostKey: string;
+            /** @description HMAC-SHA256 over the whole exchange, keyed with the code's secret. */
+            mac: string;
+        };
+        ReplicationPeer: {
+            /** Format: date-time */
+            createdAt: string;
+            host: string;
+            /** @description The peer's SSH host key, pinned when it was paired. */
+            hostKey: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** Format: int64 */
+            sshPort: number;
+            url: string;
+        };
+        ReplicationPeerRequest: {
+            /** @description The pairing code made on the other NetShare Hub (Replication, Receiving folders). */
+            code: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description The other machine's SSH port (default 22).
+             */
+            sshPort?: number;
+            /** @description The other NetShare Hub's web address, like http://192.168.1.20:8080. */
+            url: string;
+        };
+        ReplicationReceiver: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            paired: boolean;
+            /** Format: date-time */
+            pairedAt?: string;
+            /** Format: date-time */
+            pairingExpires?: string;
+            path: string;
+        };
+        ReplicationReceiverCode: {
+            /** @description Enter it on the sending NetShare Hub within 15 minutes. It works once. */
+            code: string;
+            receiver: components["schemas"]["ReplicationReceiver"];
+        };
+        ReplicationReceiverRequest: {
+            name: string;
+            /** @description A new folder for the copies, like /srv/replicas/office. It may not be or hold a share. */
+            path: string;
+        };
+        ReplicationRun: {
+            /** Format: int64 */
+            bytes: number;
+            /** @description A preview's list of changes (at most 1000), as rsync itemizes them. */
+            changes: string[];
+            /** Format: int64 */
+            created: number;
+            /** Format: int64 */
+            deleted: number;
+            /** @description A preview: nothing was changed. */
+            dryRun: boolean;
+            error?: string;
+            /**
+             * Format: int64
+             * @description Files and folders at the source.
+             */
+            files: number;
+            /** Format: date-time */
+            finishedAt?: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            jobId: number;
+            /** Format: date-time */
+            queuedAt: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "done" | "partial" | "failed" | "cancelled";
+            /** @description The background job that runs it (see /jobs). */
+            taskId: string;
+            /**
+             * Format: int64
+             * @description Files copied (or, in a preview, that would be).
+             */
+            transferred: number;
+            truncated: boolean;
+        };
+        ReplicationStatus: {
+            hints: string[];
+            /** @description Needed to receive copies (comes with rsync 3.2.4 or newer). */
+            rrsync: boolean;
+            rsync: boolean;
+            /** @description Needed to copy to a peer. */
+            sshClient: boolean;
+            /** @description Needed to receive copies. */
+            sshServer: boolean;
         };
         RestoreRequest: {
             /** @description The backup file (base64 in JSON). */
@@ -2029,6 +2625,221 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listBlockDevices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListDiskDevice"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listBlockDisks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListBlockDisk"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createBlockDisk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockDiskInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockDisk"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getBlockDisk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockDisk"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteBlockDisk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateBlockDisk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockDiskPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockDisk"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getBlockStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockStatus"];
                 };
             };
             /** @description Error */
@@ -2796,6 +3607,531 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListMyShare"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listReplicationJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListReplicationJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createReplicationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplicationJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplicationJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getReplicationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplicationJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteReplicationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateReplicationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplicationJobPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplicationJob"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    previewReplicationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    runReplicationJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listReplicationRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListReplicationRun"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    pairReplication: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplicationPairRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplicationPairResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listReplicationPeers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListReplicationPeer"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    addReplicationPeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplicationPeerRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplicationPeer"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteReplicationPeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listReplicationReceivers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListReplicationReceiver"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    addReplicationReceiver: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplicationReceiverRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplicationReceiverCode"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteReplicationReceiver: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    newReplicationPairingCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getReplicationStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplicationStatus"];
                 };
             };
             /** @description Error */
