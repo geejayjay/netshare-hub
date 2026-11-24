@@ -13,9 +13,9 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  InfoTip,
   Input,
   Spinner,
   StatCard,
@@ -70,17 +70,17 @@ function GuardPolicyForm({ initial, canEdit }: { initial: GuardSettings; canEdit
             {
               id: 'off',
               title: 'Off',
-              desc: 'Do not analyze SMB file patterns.',
+              info: 'Disables automated SMB file-pattern analysis.',
             },
             {
               id: 'learning',
-              title: 'Learning (Alert only)',
-              desc: 'Raise critical alerts and log incidents without blocking users. Recommended first.',
+              title: 'Learning',
+              info: 'Alert-only monitoring. Raises critical alerts and logs incidents without blocking users. Recommended first.',
             },
             {
               id: 'protect',
-              title: 'Protect (Auto-block)',
-              desc: 'Immediately switch the user to read-only on all shares and disconnect their session.',
+              title: 'Protect',
+              info: 'Auto-containment. Immediately switches the suspicious user to read-only across all shares and disconnects their session.',
             },
           ] as const
         ).map((opt) => (
@@ -90,27 +90,27 @@ function GuardPolicyForm({ initial, canEdit }: { initial: GuardSettings; canEdit
             disabled={!canEdit}
             onClick={() => setMode(opt.id)}
             className={cn(
-              'flex flex-col gap-1 rounded-xl border p-4 text-left transition-all',
+              'flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-all',
               mode === opt.id
                 ? 'border-primary bg-primary-soft/50 ring-1 ring-primary/30'
                 : 'border-border bg-bg hover:border-border-strong',
               !canEdit && 'pointer-events-none opacity-60',
             )}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-fg">{opt.title}</span>
-              {mode === opt.id && <CheckCircle2 className="size-4 text-primary" />}
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-fg">{opt.title}</span>
+              <InfoTip content={opt.info} label={`About ${opt.title} mode`} />
             </div>
-            <p className="text-xs leading-relaxed text-fg-muted">{opt.desc}</p>
+            {mode === opt.id && <CheckCircle2 className="size-4 text-primary" />}
           </button>
         ))}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField
-          label="Suspicious renames per minute"
+          label="Suspicious renames / min"
           htmlFor="guard-renames"
-          hint="Triggers when one client renames this many files to unusual extensions in 60s."
+          info="Triggers when one user on one host renames this many files to unusual or known-bad extensions within 60 seconds."
         >
           <Input
             id="guard-renames"
@@ -124,9 +124,9 @@ function GuardPolicyForm({ initial, canEdit }: { initial: GuardSettings; canEdit
         </FormField>
 
         <FormField
-          label="Ransom-note folder threshold"
+          label="Ransom-note folders"
           htmlFor="guard-notes"
-          hint="Triggers when known ransom note filenames appear in this many distinct folders."
+          info="Triggers when known ransom note filenames (e.g. HOW_TO_DECRYPT) appear in this many distinct folders within 60 seconds."
         >
           <Input
             id="guard-notes"
@@ -143,7 +143,7 @@ function GuardPolicyForm({ initial, canEdit }: { initial: GuardSettings; canEdit
       {canEdit && (
         <div className="flex justify-end">
           <Button type="submit" loading={saveGuard.isPending}>
-            Save Guard settings
+            Save changes
           </Button>
         </div>
       )}
@@ -190,25 +190,25 @@ function BanPolicyForm({ initial, canEdit }: { initial: BanSettings; canEdit: bo
       {saveBans.error !== null && <Alert tone="danger" title={errorMessage(saveBans.error)} />}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg p-4">
-          <div>
-            <div className="text-sm font-medium text-fg">Enable automatic bans</div>
-            <div className="text-xs text-fg-muted">Also enables Samba authentication audit logging.</div>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-medium text-fg">Automatic bans</span>
+            <InfoTip content="Counts failed SMB logins and bans abusive IPs with exponential backoff. Also enables Samba auth logging." />
           </div>
           <Switch checked={banEnabled} disabled={!canEdit} onChange={setBanEnabled} aria-label="Enable brute-force bans" />
         </div>
 
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg p-4">
-          <div>
-            <div className="text-sm font-medium text-fg">Follow device across DHCP</div>
-            <div className="text-xs text-fg-muted">Track local LAN MAC address if a banned host changes IP.</div>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-medium text-fg">Follow device MAC</span>
+            <InfoTip content="When a banned LAN device acquires a new DHCP address, recognize its hardware MAC address and ban the new IP too." />
           </div>
           <Switch checked={followDevice} disabled={!canEdit} onChange={setFollowDevice} aria-label="Follow device MAC" />
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <FormField label="Failed logins" htmlFor="ban-failures">
+        <FormField label="Failed logins" htmlFor="ban-failures" info="Number of failed attempts before triggering a ban.">
           <Input
             id="ban-failures"
             type="number"
@@ -219,7 +219,7 @@ function BanPolicyForm({ initial, canEdit }: { initial: BanSettings; canEdit: bo
             onChange={(e) => setFailures(e.target.value)}
           />
         </FormField>
-        <FormField label="Within (minutes)" htmlFor="ban-window">
+        <FormField label="Window (min)" htmlFor="ban-window" info="Rolling time window in minutes for counting failures.">
           <Input
             id="ban-window"
             type="number"
@@ -230,7 +230,7 @@ function BanPolicyForm({ initial, canEdit }: { initial: BanSettings; canEdit: bo
             onChange={(e) => setWindowMinutes(e.target.value)}
           />
         </FormField>
-        <FormField label="First ban (minutes)" htmlFor="ban-minutes">
+        <FormField label="First ban (min)" htmlFor="ban-minutes" info="Duration of the first offence. Repeat offences within a week last 4x longer.">
           <Input
             id="ban-minutes"
             type="number"
@@ -241,7 +241,7 @@ function BanPolicyForm({ initial, canEdit }: { initial: BanSettings; canEdit: bo
             onChange={(e) => setBanMinutes(e.target.value)}
           />
         </FormField>
-        <FormField label="Max ban (hours)" htmlFor="ban-max">
+        <FormField label="Max ban (hrs)" htmlFor="ban-max" info="Upper limit for escalated repeat bans.">
           <Input
             id="ban-max"
             type="number"
@@ -255,9 +255,9 @@ function BanPolicyForm({ initial, canEdit }: { initial: BanSettings; canEdit: bo
       </div>
 
       <FormField
-        label="Allow-list (never ban)"
+        label="Allow-list"
         htmlFor="ban-allowlist"
-        hint="One IP address or CIDR subnet per line (e.g. your admin workstation or VPN subnet)."
+        info="IPs or CIDR ranges that will never be banned (e.g. your workstation or VPN subnet). One entry per line."
       >
         <Textarea
           id="ban-allowlist"
@@ -271,7 +271,7 @@ function BanPolicyForm({ initial, canEdit }: { initial: BanSettings; canEdit: bo
       {canEdit && (
         <div className="flex justify-end">
           <Button type="submit" loading={saveBans.isPending}>
-            Save protection settings
+            Save changes
           </Button>
         </div>
       )}
@@ -298,37 +298,28 @@ export function SecurityPage() {
   const activeBanItems = (bans.data?.items ?? []).filter((b) => b.active)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Security & Guard"
-        description="Automated ransomware containment and SMB brute-force login protection."
+        info="Automated ransomware containment and SMB brute-force login protection."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
           label="Ransomware Guard"
           value={<span className="capitalize">{guardSettings.data?.mode ?? '—'}</span>}
-          detail={
-            guardSettings.data?.mode === 'protect'
-              ? 'Auto-isolating suspicious clients'
-              : guardSettings.data?.mode === 'learning'
-                ? 'Alert-only monitoring'
-                : 'Protection disabled'
-          }
           icon={<Shield />}
           tone={guardSettings.data?.mode === 'protect' ? 'success' : guardSettings.data?.mode === 'learning' ? 'warning' : 'neutral'}
         />
         <StatCard
           label="Active containments"
           value={blockedIncidents}
-          detail={`${incidentItems.length} total recorded incidents`}
           icon={<ShieldAlert />}
           tone={blockedIncidents > 0 ? 'danger' : 'success'}
         />
         <StatCard
-          label="Brute-force bans"
+          label="Active bans"
           value={activeBanItems.length}
-          detail={banSettings.data?.enabled ? 'Auto-ban active' : 'Auto-ban disabled'}
           icon={<BanIcon />}
           tone={activeBanItems.length > 0 ? 'warning' : 'info'}
         />
@@ -344,13 +335,13 @@ export function SecurityPage() {
       />
 
       {tab === 'ransomware' && (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-5">
           <Card>
             <CardHeader>
-              <CardTitle>Detection & Containment Policy</CardTitle>
-              <CardDescription>
-                Watches live SMB activity for mass suspicious renames and ransom notes across folders.
-              </CardDescription>
+              <CardTitle className="flex items-center gap-1.5">
+                Detection Policy
+                <InfoTip content="Watches live SMB activity for mass suspicious renames and ransom notes across folders." />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {guardSettings.isLoading ? (
@@ -371,10 +362,10 @@ export function SecurityPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Recorded Incidents</CardTitle>
-              <CardDescription>
-                Contained users can be restored to their original share permissions once the client machine is clean.
-              </CardDescription>
+              <CardTitle className="flex items-center gap-1.5">
+                Recorded Incidents
+                <InfoTip content="Contained users can be restored to their original share permissions once the client machine is clean." />
+              </CardTitle>
             </CardHeader>
             <CardContent className="p-0 pt-4">
               {incidents.isLoading ? (
@@ -387,10 +378,7 @@ export function SecurityPage() {
                 </div>
               ) : incidentItems.length === 0 ? (
                 <div className="p-8">
-                  <EmptyState
-                    title="No ransomware incidents"
-                    description="Everything looks clean. Detected anomalies will appear here with sample filenames."
-                  />
+                  <EmptyState title="No incidents recorded" />
                 </div>
               ) : (
                 <div className="divide-y divide-border border-t border-border">
@@ -400,24 +388,23 @@ export function SecurityPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-fg">{inc.username}</span>
                           <Badge tone={inc.blocked && !inc.restoredAt ? 'danger' : inc.restoredAt ? 'success' : 'warning'} dot>
-                            {inc.restoredAt ? 'Restored' : inc.blocked ? 'Blocked (Read-only)' : 'Alerted'}
+                            {inc.restoredAt ? 'Restored' : inc.blocked ? 'Blocked' : 'Alerted'}
                           </Badge>
                           <Badge tone="neutral">{inc.rule}</Badge>
                           <span className="text-xs text-fg-muted tabular-nums">
-                            {inc.count} hits from <code>{inc.clientIp}</code>
+                            {inc.count} hits · <code>{inc.clientIp}</code>
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
-                          <span>Shares:</span>
                           {inc.shares.map((sh) => (
                             <Badge key={sh} tone="neutral">
                               {sh}
                             </Badge>
                           ))}
-                          <span className="ml-2 text-fg-subtle">{formatDateTime(inc.at)}</span>
+                          <span className="text-fg-subtle">{formatDateTime(inc.at)}</span>
                         </div>
                         {inc.samples.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1.5">
+                          <div className="mt-0.5 flex flex-wrap gap-1.5">
                             {inc.samples.slice(0, 5).map((sample) => (
                               <code key={sample} className="rounded bg-surface-2 px-1.5 py-0.5 text-[0.7rem] text-fg-muted">
                                 {sample}
@@ -456,13 +443,13 @@ export function SecurityPage() {
       )}
 
       {tab === 'bruteforce' && (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-5">
           <Card>
             <CardHeader>
-              <CardTitle>SMB Brute-Force Protection</CardTitle>
-              <CardDescription>
-                Monitors failed SMB authentication attempts and automatically bans abusive IPs with exponential backoff.
-              </CardDescription>
+              <CardTitle className="flex items-center gap-1.5">
+                Brute-Force Policy
+                <InfoTip content="Monitors failed SMB logins and automatically bans abusive clients with escalating durations." />
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {banSettings.isLoading ? (
@@ -482,17 +469,17 @@ export function SecurityPage() {
           </Card>
 
           <Card>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3.5">
-              <div>
-                <h2 className="text-[0.9375rem] font-semibold">Banned Clients</h2>
-                <p className="text-xs text-fg-muted">IPs and LAN devices blocked from SMB authentication.</p>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-semibold">Banned Clients</h2>
+                <InfoTip content="IPs and LAN devices currently or previously blocked from SMB authentication." />
               </div>
               <Tabs
                 value={banFilter}
                 onChange={setBanFilter}
                 items={[
                   { id: 'active', label: 'Active' },
-                  { id: 'all', label: 'All history' },
+                  { id: 'all', label: 'History' },
                 ]}
               />
             </div>
@@ -507,10 +494,7 @@ export function SecurityPage() {
               </div>
             ) : (bans.data?.items ?? []).length === 0 ? (
               <div className="p-8">
-                <EmptyState
-                  title={banFilter === 'active' ? 'No active bans' : 'No bans recorded'}
-                  description="Repeated failed SMB logins will automatically appear here."
-                />
+                <EmptyState title={banFilter === 'active' ? 'No active bans' : 'No bans recorded'} />
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -520,7 +504,7 @@ export function SecurityPage() {
                       <th className="px-4 py-2.5">Address / MAC</th>
                       <th className="px-4 py-2.5">Status</th>
                       <th className="px-4 py-2.5">Offences</th>
-                      <th className="px-4 py-2.5">Tried accounts</th>
+                      <th className="px-4 py-2.5">Accounts</th>
                       <th className="px-4 py-2.5">Until</th>
                       <th className="px-4 py-2.5 text-right">Actions</th>
                     </tr>
@@ -530,7 +514,7 @@ export function SecurityPage() {
                       <tr key={ban.id} className="hover:bg-surface-2/40">
                         <td className="px-4 py-3 font-mono text-xs">
                           <div className="font-medium text-fg">{ban.address}</div>
-                          {ban.mac && <div className="text-[0.6875rem] text-fg-subtle">MAC {ban.mac}</div>}
+                          {ban.mac && <div className="text-[0.6875rem] text-fg-subtle">{ban.mac}</div>}
                         </td>
                         <td className="px-4 py-3">
                           <Badge tone={ban.active ? 'danger' : 'neutral'} dot>
@@ -565,7 +549,7 @@ export function SecurityPage() {
                               }
                             >
                               <Unlock className="size-3.5" />
-                              Lift ban
+                              Lift
                             </Button>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-xs text-fg-subtle">

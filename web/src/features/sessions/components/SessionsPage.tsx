@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Lock, Monitor, PlugZap, RefreshCw, ShieldCheck, Unplug } from 'lucide-react'
+import { FileText, Lock, Monitor, RefreshCw, ShieldCheck, Unplug } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { notify } from '@/features/notifications'
 import { EmptyState, ErrorState, PageHeader, PermissionGate, SearchInput } from '@/shared/components'
@@ -30,10 +30,10 @@ export function SessionsPage() {
   const totalOpenFiles = items.reduce((sum, s) => sum + s.openFiles, 0)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
-        title="Active SMB Sessions"
-        description="Live client connections to Samba, protocol encryption status, and open files."
+        title="Active Sessions"
+        info="Live Samba client connections (auto-refreshes every 10s). Disconnecting terminates only that SMB session; permitted clients can reconnect."
         actions={
           <Button variant="secondary" size="sm" onClick={() => void sessions.refetch()}>
             <RefreshCw className={cn('size-3.5', sessions.isFetching && 'animate-spin')} />
@@ -43,27 +43,9 @@ export function SessionsPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Connected clients"
-          value={items.length}
-          detail="Auto-refreshes every 10s"
-          icon={<Monitor />}
-          tone="info"
-        />
-        <StatCard
-          label="Encrypted sessions"
-          value={encryptedCount}
-          detail={items.length > 0 ? `${Math.round((encryptedCount / items.length) * 100)}% of active traffic` : 'No active traffic'}
-          icon={<Lock />}
-          tone="success"
-        />
-        <StatCard
-          label="Open file handles"
-          value={totalOpenFiles}
-          detail="Across all connected shares"
-          icon={<FileText />}
-          tone="warning"
-        />
+        <StatCard label="Connected clients" value={items.length} icon={<Monitor />} tone="info" />
+        <StatCard label="Encrypted" value={encryptedCount} icon={<Lock />} tone="success" />
+        <StatCard label="Open files" value={totalOpenFiles} icon={<FileText />} tone="warning" />
       </div>
 
       <Card>
@@ -177,11 +159,6 @@ export function SessionsPage() {
           </div>
         )}
       </Card>
-
-      <div className="flex items-center gap-2 text-xs text-fg-subtle">
-        <PlugZap className="size-3.5" />
-        <span>Disconnecting a session terminates only that SMB connection; the client can reconnect if permitted.</span>
-      </div>
     </div>
   )
 }

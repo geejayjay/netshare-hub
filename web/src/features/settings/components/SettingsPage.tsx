@@ -13,9 +13,9 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
+  InfoTip,
   Input,
   Select,
   Spinner,
@@ -71,14 +71,14 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
   }
 
   return (
-    <form onSubmit={handleSaveSamba} className="flex flex-col gap-6">
+    <form onSubmit={handleSaveSamba} className="flex flex-col gap-5">
       {submitError !== null && <Alert tone="danger" title={errorMessage(submitError)} />}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField
-          label="Server name (NetBIOS)"
+          label="Server name"
           htmlFor="smb-server-name"
-          hint="1–15 letters, digits or dashes. Leave blank to use system hostname."
+          info="NetBIOS name (\\NAME): 1–15 letters, digits or dashes. Leave blank to use the system hostname."
           error={errors.serverName}
         >
           <Input
@@ -94,7 +94,7 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
         <FormField
           label="Workgroup"
           htmlFor="smb-workgroup"
-          hint="Windows workgroup name (typically WORKGROUP)."
+          info="Windows workgroup name (1–15 letters, digits or dashes). Leave blank for system default (usually WORKGROUP)."
           error={errors.workgroup}
         >
           <Input
@@ -109,7 +109,12 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <FormField label="Minimum protocol" htmlFor="smb-min-proto" error={errors.minProtocol}>
+        <FormField
+          label="Minimum protocol"
+          htmlFor="smb-min-proto"
+          info="Oldest SMB dialect clients may negotiate. SMB1 is permanently disabled."
+          error={errors.minProtocol}
+        >
           <Select
             id="smb-min-proto"
             value={minProtocol}
@@ -125,7 +130,12 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
           </Select>
         </FormField>
 
-        <FormField label="Maximum protocol" htmlFor="smb-max-proto" error={errors.maxProtocol}>
+        <FormField
+          label="Maximum protocol"
+          htmlFor="smb-max-proto"
+          info="Newest SMB dialect clients may negotiate."
+          error={errors.maxProtocol}
+        >
           <Select
             id="smb-max-proto"
             value={maxProtocol}
@@ -141,7 +151,12 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
           </Select>
         </FormField>
 
-        <FormField label="Transport encryption" htmlFor="smb-encryption" error={errors.encryption}>
+        <FormField
+          label="Encryption"
+          htmlFor="smb-encryption"
+          info="Required refuses clients that cannot encrypt and requires minimum protocol SMB 3.00 or newer."
+          error={errors.encryption}
+        >
           <Select
             id="smb-encryption"
             value={encryption}
@@ -155,7 +170,12 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
           </Select>
         </FormField>
 
-        <FormField label="SMB Multichannel" htmlFor="smb-multichannel" error={errors.multichannel}>
+        <FormField
+          label="Multichannel"
+          htmlFor="smb-multichannel"
+          info="Allows clients to aggregate multiple network links simultaneously for higher throughput."
+          error={errors.multichannel}
+        >
           <Select
             id="smb-multichannel"
             value={multichannel}
@@ -170,29 +190,20 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <div className="flex items-start justify-between gap-3 rounded-xl border border-border bg-bg p-4">
-          <div className="flex items-start gap-2.5">
-            <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
-            <div>
-              <div className="text-sm font-medium text-fg">macOS SMB extensions (fruit)</div>
-              <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
-                Faster Finder browsing, Spotlight metadata, and Time Machine compatibility. Requires{' '}
-                <code>samba-vfs-modules</code>.
-              </p>
-            </div>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="size-4 shrink-0 text-primary" />
+            <span className="text-sm font-medium text-fg">macOS extensions</span>
+            <InfoTip content="Enables Samba's fruit, catia, and streams_xattr modules for faster Finder browsing and Time Machine compatibility. Requires samba-vfs-modules." />
           </div>
           <Switch checked={macSupport} disabled={!canEdit} onChange={setMacSupport} aria-label="Enable macOS extensions" />
         </div>
 
-        <div className="flex items-start justify-between gap-3 rounded-xl border border-border bg-bg p-4">
-          <div className="flex items-start gap-2.5">
-            <Cpu className="mt-0.5 size-4 shrink-0 text-primary" />
-            <div>
-              <div className="text-sm font-medium text-fg">SMB Activity Logging (full_audit)</div>
-              <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
-                Records file reads, writes, renames, and deletes for the Activity Feed and Ransomware Guard.
-              </p>
-            </div>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <Cpu className="size-4 shrink-0 text-primary" />
+            <span className="text-sm font-medium text-fg">SMB activity logging</span>
+            <InfoTip content="Uses Samba's full_audit module to record reads, writes, renames, and deletes for the Activity Feed and Ransomware Guard." />
           </div>
           <Switch checked={activityLog} disabled={!canEdit} onChange={setActivityLog} aria-label="Enable SMB activity log" />
         </div>
@@ -201,10 +212,10 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
       {canEdit && (
         <div className="flex items-center justify-between border-t border-border pt-4">
           <span className="text-xs text-fg-subtle">
-            {initial.updatedAt && `Last updated ${formatRelativeTime(initial.updatedAt)}`}
+            {initial.updatedAt && `Updated ${formatRelativeTime(initial.updatedAt)}`}
           </span>
           <Button type="submit" loading={saveSamba.isPending}>
-            Save Samba settings
+            Save changes
           </Button>
         </div>
       )}
@@ -214,7 +225,7 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
 
 function DiscoveryCard({
   title,
-  subtitle,
+  info,
   service,
   systemd,
   canEdit,
@@ -222,7 +233,7 @@ function DiscoveryCard({
   onToggle,
 }: {
   title: string
-  subtitle: string
+  info: string
   service: DiscoveryService
   systemd: boolean
   canEdit: boolean
@@ -232,15 +243,16 @@ function DiscoveryCard({
   const disabled = !canEdit || !systemd || !service.installed || loading
 
   return (
-    <Card className="p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary">
-            <Radio className="size-5" />
+    <Card className="p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary">
+            <Radio className="size-4" />
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold text-fg">{title}</h3>
+              <InfoTip content={info} label={`About ${title}`} />
               {!service.installed ? (
                 <Badge tone="warning">Not installed</Badge>
               ) : service.running ? (
@@ -256,8 +268,7 @@ function DiscoveryCard({
                 <code className="rounded bg-surface-2 px-1.5 py-0.5 text-[0.7rem] text-fg-muted">{service.unit}</code>
               )}
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-fg-muted">{subtitle}</p>
-            {service.hint && <p className="mt-2 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs text-fg-muted">{service.hint}</p>}
+            {service.hint && <p className="mt-1 text-xs text-fg-muted">{service.hint}</p>}
           </div>
         </div>
 
@@ -278,10 +289,10 @@ export function SettingsPage() {
   const saveDiscovery = useUpdateDiscovery()
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Settings"
-        description="Configure server-wide Samba behavior, LAN discovery daemons, and scheduled maintenance."
+        info="Server-wide Samba protocol options, LAN discovery daemons (mDNS and WS-Discovery), and background maintenance tasks."
       />
 
       <Tabs
@@ -297,10 +308,10 @@ export function SettingsPage() {
       {tab === 'samba' && (
         <Card>
           <CardHeader>
-            <CardTitle>Samba Global Configuration</CardTitle>
-            <CardDescription>
-              Applied across all SMB shares. SMB1 is permanently disabled for security.
-            </CardDescription>
+            <CardTitle className="flex items-center gap-1.5">
+              Samba Global Configuration
+              <InfoTip content="Applied across every SMB share. Saving validates the configuration and reloads Samba." />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {samba.isLoading ? (
@@ -317,7 +328,7 @@ export function SettingsPage() {
       )}
 
       {tab === 'discovery' && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {discovery.isLoading ? (
             <div className="flex justify-center py-12">
               <Spinner />
@@ -327,14 +338,12 @@ export function SettingsPage() {
           ) : discovery.data ? (
             <>
               {!discovery.data.systemd && (
-                <Alert tone="warning" title="Systemd is not available on this host">
-                  Discovery daemons reflect their current status, but cannot be toggled automatically without systemd.
-                </Alert>
+                <Alert tone="warning" title="Systemd unavailable — daemon toggles are read-only on this host." />
               )}
 
               <DiscoveryCard
                 title="mDNS / Bonjour (Avahi)"
-                subtitle="Broadcasts this server to macOS Finder, Linux file managers, and advertises Apple Time Machine shares automatically."
+                info="Broadcasts this server to macOS Finder, Linux file managers, and advertises Apple Time Machine shares automatically."
                 service={discovery.data.mdns}
                 systemd={discovery.data.systemd}
                 canEdit={canEdit}
@@ -351,8 +360,8 @@ export function SettingsPage() {
               />
 
               <DiscoveryCard
-                title="WS-Discovery (Windows Network)"
-                subtitle="Makes this server appear automatically inside Windows File Explorer under the Network neighborhood."
+                title="WS-Discovery (Windows)"
+                info="Advertises this server in Windows File Explorer under Network neighborhood."
                 service={discovery.data.wsd}
                 systemd={discovery.data.systemd}
                 canEdit={canEdit}
@@ -375,10 +384,10 @@ export function SettingsPage() {
 
       {tab === 'tasks' && (
         <Card>
-          <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-            <div>
-              <h2 className="text-[0.9375rem] font-semibold">Scheduled Maintenance Tasks</h2>
-              <p className="text-xs text-fg-muted">Internal periodic jobs run by NetShare Hub.</p>
+          <div className="flex items-center justify-between border-b border-border px-5 py-3">
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm font-semibold">Scheduled Tasks</h2>
+              <InfoTip content="Periodic maintenance jobs run automatically by NetShare Hub." />
             </div>
             <Button variant="secondary" size="sm" onClick={() => void tasks.refetch()}>
               <RefreshCw className={cn('size-3.5', tasks.isFetching && 'animate-spin')} />

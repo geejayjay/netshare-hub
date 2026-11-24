@@ -1,31 +1,36 @@
 import type { AnyFieldApi } from '@tanstack/react-form'
 import type { ComponentProps, ReactNode } from 'react'
-import { Input, Label, Select } from '@/shared/ui'
+import { InfoTip, Input, Label, Select } from '@/shared/ui'
 
-/** Label + control + hint/error, laid out the same way for every field. */
+/** Label + optional (i) hover info + control + compact hint/error. */
 export function FormField({
   label,
   htmlFor,
   error,
   hint,
+  info,
   children,
 }: {
   label: string
   htmlFor: string
   error?: string
   hint?: string
+  info?: ReactNode
   children: ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        {info && <InfoTip content={info} label={`About ${label}`} />}
+      </div>
       {children}
       {error ? (
-        <p id={`${htmlFor}-error`} role="alert" className="text-sm text-danger">
+        <p id={`${htmlFor}-error`} role="alert" className="text-xs text-danger">
           {error}
         </p>
       ) : (
-        hint && <p className="text-sm text-fg-muted">{hint}</p>
+        hint && <p className="text-xs text-fg-subtle">{hint}</p>
       )}
     </div>
   )
@@ -47,6 +52,7 @@ interface BoundFieldProps {
   field: AnyFieldApi
   label: string
   hint?: string
+  info?: ReactNode
   /** Error for this field returned by the API (see fieldErrors()). */
   serverError?: string
 }
@@ -56,12 +62,13 @@ export function TextField({
   field,
   label,
   hint,
+  info,
   serverError,
   ...input
 }: BoundFieldProps & Omit<ComponentProps<'input'>, 'value' | 'onChange' | 'onBlur' | 'id' | 'name'>) {
   const error = fieldMessage(field, serverError)
   return (
-    <FormField label={label} htmlFor={field.name} error={error} hint={hint}>
+    <FormField label={label} htmlFor={field.name} error={error} hint={hint} info={info}>
       <Input
         id={field.name}
         name={field.name}
@@ -81,12 +88,13 @@ export function SelectField({
   field,
   label,
   hint,
+  info,
   serverError,
   options,
 }: BoundFieldProps & { options: { value: string; label: string }[] }) {
   const error = fieldMessage(field, serverError)
   return (
-    <FormField label={label} htmlFor={field.name} error={error} hint={hint}>
+    <FormField label={label} htmlFor={field.name} error={error} hint={hint} info={info}>
       <Select
         id={field.name}
         name={field.name}

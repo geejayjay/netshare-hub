@@ -49,10 +49,9 @@ export function DashboardPage() {
     : (myShares.data?.items.length ?? 0)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
-        title={`Welcome back, ${user.displayName || user.username}`}
-        description="Real-time overview of your SMB file server, active connections, and security posture."
+        title={`Welcome, ${user.displayName || user.username}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {health.data && (
@@ -66,7 +65,7 @@ export function DashboardPage() {
               className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3.5 text-sm font-medium text-primary-fg shadow-xs transition-colors hover:bg-primary-hover"
             >
               <FolderOpen className="size-4" />
-              Open File Manager
+              File Manager
             </Link>
           </div>
         }
@@ -138,20 +137,13 @@ export function DashboardPage() {
         {/* Left 2 columns: Recent Activity (or My Shares for plain users) */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between gap-2 pb-4">
-            <div>
-              <CardTitle>{can('audit:read') ? 'Recent SMB Activity' : 'Your Network Shares'}</CardTitle>
-              <CardDescription>
-                {can('audit:read')
-                  ? 'Latest file operations observed across all shares.'
-                  : 'Folders you can mount over SMB or browse directly.'}
-              </CardDescription>
-            </div>
+            <CardTitle>{can('audit:read') ? 'Recent Activity' : 'Your Shares'}</CardTitle>
             {can('audit:read') && (
               <Link
                 to="/activity"
                 className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
               >
-                Full log <ArrowRight className="size-3.5" />
+                View all <ArrowRight className="size-3.5" />
               </Link>
             )}
           </CardHeader>
@@ -227,7 +219,6 @@ export function DashboardPage() {
                   <Server className="size-4 text-primary" />
                   Server & Discovery
                 </CardTitle>
-                <CardDescription>Live Samba protocol and LAN advertisement state.</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-2.5 border-t border-border pt-4 text-xs">
                 <div className="flex items-center justify-between">

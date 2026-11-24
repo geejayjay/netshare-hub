@@ -83,11 +83,11 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
         header: 'Network',
         cell: ({ row }) =>
           row.original.networkRules.length === 0 ? (
-            <span className="text-xs text-fg-subtle">Any host</span>
+            <span className="text-xs text-fg-subtle">Any</span>
           ) : (
             <Badge tone="info" className="tabular-nums">
               <Globe className="size-3" />
-              {row.original.networkRules.length} {row.original.networkRules.length === 1 ? 'rule' : 'rules'}
+              {row.original.networkRules.length}
             </Badge>
           ),
       },
@@ -170,10 +170,10 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
   )
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Shares"
-        description="Manage SMB folders, access presets, Time Machine targets, and per-share firewall rules."
+        info="SMB network folders, access presets, Time Machine targets, and per-share IP/CIDR rules."
         actions={
           <PermissionGate permission="shares:write">
             <Button
@@ -190,27 +190,9 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Total shares"
-          value={shares.data?.page?.total ?? items.length}
-          detail="Active SMB definitions"
-          icon={<FolderOpen />}
-          tone="info"
-        />
-        <StatCard
-          label="Time Machine"
-          value={tmCount}
-          detail="macOS backup targets on this page"
-          icon={<HardDrive />}
-          tone="success"
-        />
-        <StatCard
-          label="Network-restricted"
-          value={restrictedCount}
-          detail="Shares with IP/CIDR allow or block rules"
-          icon={<Lock />}
-          tone="warning"
-        />
+        <StatCard label="Total shares" value={shares.data?.page?.total ?? items.length} icon={<FolderOpen />} tone="info" />
+        <StatCard label="Time Machine" value={tmCount} icon={<HardDrive />} tone="success" />
+        <StatCard label="Network rules" value={restrictedCount} icon={<Lock />} tone="warning" />
       </div>
 
       <Card>
@@ -218,11 +200,9 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
           <SearchInput
             value={params.q ?? ''}
             onChange={(q) => onParamsChange({ ...params, q: q || undefined, page: undefined })}
-            placeholder="Search shares by name or path…"
+            placeholder="Search shares…"
           />
-          <span className="text-xs text-fg-subtle tabular-nums">
-            {shares.data?.page?.total ?? items.length} configured
-          </span>
+          <span className="text-xs text-fg-subtle tabular-nums">{shares.data?.page?.total ?? items.length} total</span>
         </div>
         <DataTable
           columns={columns}
@@ -233,12 +213,7 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
           sort={params.sort}
           onSortChange={(sort) => onParamsChange({ ...params, sort, page: undefined })}
           onPageChange={(page) => onParamsChange({ ...params, page })}
-          empty={
-            <EmptyState
-              title="No shares yet"
-              description={params.q ? 'Try a different search.' : 'Create your first SMB share to expose a folder.'}
-            />
-          }
+          empty={<EmptyState title="No shares yet" description={params.q ? 'Try a different search.' : undefined} />}
         />
       </Card>
 

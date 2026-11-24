@@ -5,7 +5,7 @@ import { notify } from '@/features/notifications'
 import { errorMessage, fieldErrors } from '@/shared/api'
 import { FormField } from '@/shared/components'
 import { cn } from '@/shared/lib/cn'
-import { Alert, Badge, Button, Dialog, Input, Label, Select, Spinner, Switch, Tabs, type Tone } from '@/shared/ui'
+import { Alert, Badge, Button, Dialog, InfoTip, Input, Label, Select, Spinner, Switch, Tabs, type Tone } from '@/shared/ui'
 import {
   sharePresetsQuery,
   shareUsersQuery,
@@ -23,7 +23,6 @@ type AccessLevel = ShareAccessInput['level']
 
 interface ShareEditorDialogProps {
   open: boolean
-  /** When provided, edits an existing share; otherwise creates a new one. */
   share?: Share | null
   onClose: () => void
 }
@@ -203,18 +202,21 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
         value={tab}
         onChange={setTab}
         items={[
-          { id: 'general', label: 'General & Preset', icon: <Sparkles className="size-3.5" /> },
-          { id: 'access', label: 'Access Matrix', icon: <Users className="size-3.5" />, badge: accessList.length },
-          { id: 'network', label: 'Network Rules', icon: <Globe className="size-3.5" />, badge: networkRules.length },
-          { id: 'preview', label: 'Effective Preview', icon: <Eye className="size-3.5" /> },
+          { id: 'general', label: 'General', icon: <Sparkles className="size-3.5" /> },
+          { id: 'access', label: 'Access', icon: <Users className="size-3.5" />, badge: accessList.length },
+          { id: 'network', label: 'Network', icon: <Globe className="size-3.5" />, badge: networkRules.length },
+          { id: 'preview', label: 'Preview', icon: <Eye className="size-3.5" /> },
         ]}
       />
 
       {tab === 'general' && (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-4">
           {presetItems.length > 0 && (
             <div className="flex flex-col gap-2">
-              <Label>Share preset</Label>
+              <div className="flex items-center gap-1.5">
+                <Label>Preset</Label>
+                <InfoTip content="Quickly fills recommended read-only, guest, and Time Machine options. You can customize any option afterwards." />
+              </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {presetItems.map((p) => {
                   const selected = preset === p.id
@@ -224,20 +226,20 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
                       type="button"
                       onClick={() => applyPreset(p)}
                       className={cn(
-                        'flex flex-col gap-1 rounded-lg border p-3 text-left transition-all',
+                        'flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition-all',
                         selected
                           ? 'border-primary bg-primary-soft/50 ring-1 ring-primary/30'
                           : 'border-border bg-bg hover:border-border-strong',
                       )}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-fg">{p.name}</span>
-                        <div className="flex items-center gap-1">
-                          {p.timeMachine && <Badge tone="info">Time Machine</Badge>}
-                          {selected && <Check className="size-4 text-primary" />}
-                        </div>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-medium text-fg">{p.name}</span>
+                        {p.description && <InfoTip content={p.description} label={`About ${p.name}`} />}
                       </div>
-                      <p className="text-xs leading-relaxed text-fg-muted">{p.description}</p>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {p.timeMachine && <Badge tone="info">TM</Badge>}
+                        {selected && <Check className="size-4 text-primary" />}
+                      </div>
                     </button>
                   )
                 })}
@@ -246,7 +248,12 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
           )}
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Share name" htmlFor="share-name" error={errors.name} hint="Letters, numbers, dashes">
+            <FormField
+              label="Share name"
+              htmlFor="share-name"
+              info="The network name clients connect to (\\server\name). Letters, numbers, and dashes."
+              error={errors.name}
+            >
               <Input
                 id="share-name"
                 value={name}
@@ -257,7 +264,12 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
               />
             </FormField>
 
-            <FormField label="Folder path" htmlFor="share-path" error={errors.path} hint="Absolute server path">
+            <FormField
+              label="Folder path"
+              htmlFor="share-path"
+              info="Full absolute folder path on the server."
+              error={errors.path}
+            >
               <Input
                 id="share-path"
                 value={path}
@@ -271,9 +283,9 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
 
           {!isEdit && (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg px-3.5 py-2.5">
-              <div>
-                <div className="text-sm font-medium text-fg">Create folder if missing</div>
-                <div className="text-xs text-fg-muted">Automatically create the directory (parent must exist).</div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium text-fg">Create folder if missing</span>
+                <InfoTip content="Automatically creates the directory on disk if it does not exist yet (its parent directory must exist)." />
               </div>
               <Switch checked={createDirectory} onChange={setCreateDirectory} aria-label="Create folder if missing" />
             </div>
@@ -284,23 +296,17 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
               id="share-comment"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Shared team documents or media library"
+              placeholder="Optional note shown to users"
               maxLength={100}
             />
           </FormField>
 
-          <div className="flex flex-col gap-3 rounded-xl border border-border bg-bg p-4">
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-bg px-4 py-3">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="grid size-8 place-items-center rounded-lg bg-primary-soft text-primary">
-                  <HardDrive className="size-4" />
-                </span>
-                <div>
-                  <div className="text-sm font-medium text-fg">Apple Time Machine backup target</div>
-                  <div className="text-xs text-fg-muted">
-                    Enables macOS fruit extensions and advertises this share for Time Machine backups.
-                  </div>
-                </div>
+              <div className="flex items-center gap-2">
+                <HardDrive className="size-4 text-primary" />
+                <span className="text-sm font-medium text-fg">Apple Time Machine</span>
+                <InfoTip content="Enables macOS fruit extensions and advertises this share for Time Machine backups. Requires authenticated write users." />
               </div>
               <Switch
                 checked={timeMachine}
@@ -317,9 +323,9 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
 
             {timeMachine && (
               <FormField
-                label="Time Machine quota (GiB)"
+                label="Quota (GiB)"
                 htmlFor="tm-max-gib"
-                hint="Set to 0 to expose the full underlying disk size."
+                info="Maximum disk size reported to Time Machine. Set to 0 to expose the full underlying disk."
                 error={errors.timeMachineMaxGiB}
               >
                 <Input
@@ -338,19 +344,19 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
 
       {tab === 'access' && (
         <div className="flex flex-col gap-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg p-3">
-              <div>
-                <div className="text-xs font-medium text-fg">Read-only share</div>
-                <div className="text-[0.7rem] text-fg-muted">Blocks all writes</div>
+          <div className="grid gap-2.5 sm:grid-cols-3">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg px-3 py-2.5">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium text-fg">Read-only</span>
+                <InfoTip content="Prevents all writes regardless of per-user permissions." />
               </div>
               <Switch checked={readOnly} disabled={timeMachine} onChange={setReadOnly} aria-label="Read-only share" />
             </div>
 
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg p-3">
-              <div>
-                <div className="text-xs font-medium text-fg">Guest read access</div>
-                <div className="text-[0.7rem] text-fg-muted">No password needed</div>
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg px-3 py-2.5">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium text-fg">Guest read</span>
+                <InfoTip content="Anyone on the network can browse and read without a password." />
               </div>
               <Switch
                 checked={guestAccess}
@@ -360,19 +366,22 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
               />
             </div>
 
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg p-3">
-              <div>
-                <div className="text-xs font-medium text-fg">Hide unreadable</div>
-                <div className="text-[0.7rem] text-fg-muted">Access-based enum</div>
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg px-3 py-2.5">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium text-fg">Hide unreadable</span>
+                <InfoTip content="Hides files and folders a user cannot open (access-based enumeration). May slow down very large directories." />
               </div>
               <Switch checked={hideUnreadable} onChange={setHideUnreadable} aria-label="Hide unreadable files" />
             </div>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border">
-            <div className="flex items-center justify-between border-b border-border bg-surface-2/60 px-4 py-2.5 text-xs font-medium text-fg-muted">
+            <div className="flex items-center justify-between border-b border-border bg-surface-2/60 px-4 py-2 text-xs font-medium text-fg-muted">
               <span>User</span>
-              <span>Access level</span>
+              <span className="inline-flex items-center gap-1">
+                Level
+                <InfoTip content="Read = view only · Drop box = upload without viewing others' files · Write = full read & write." />
+              </span>
             </div>
 
             {users.isLoading ? (
@@ -387,12 +396,10 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
                   const current = access[u.id] ?? 'none'
                   return (
                     <div key={u.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-fg">{u.username}</span>
-                          {u.displayName && <span className="text-xs text-fg-muted">{u.displayName}</span>}
-                          {u.disabled && <Badge tone="danger">disabled</Badge>}
-                        </div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="text-sm font-medium text-fg">{u.username}</span>
+                        {u.displayName && <span className="text-xs text-fg-muted">{u.displayName}</span>}
+                        {u.disabled && <Badge tone="danger">disabled</Badge>}
                       </div>
                       <div className="inline-flex rounded-lg border border-border bg-surface-2 p-0.5">
                         {(['none', 'read', 'upload', 'write'] as const).map((lvl) => {
@@ -425,11 +432,10 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
 
       {tab === 'network' && (
         <div className="flex flex-col gap-4">
-          <p className="text-xs leading-relaxed text-fg-muted">
-            Restrict which IP addresses or CIDR subnets can connect to this share. When any{' '}
-            <span className="font-medium text-fg">allow</span> rule exists, only matching addresses may connect;{' '}
-            <span className="font-medium text-fg">block</span> rules always deny access.
-          </p>
+          <div className="flex items-center gap-1.5">
+            <Label>IP & CIDR rules</Label>
+            <InfoTip content="When any 'allow' rule exists, only matching addresses may connect. 'Block' rules always deny access. Leave empty to allow any host." />
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Select
@@ -455,13 +461,13 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
             />
             <Button variant="secondary" onClick={addNetworkRule}>
               <Plus className="size-4" />
-              Add rule
+              Add
             </Button>
           </div>
 
           {networkRules.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-fg-muted">
-              No network restrictions — any IP on the network can reach this share.
+            <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-fg-muted">
+              No rules — any host on the network may connect.
             </div>
           ) : (
             <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
@@ -499,39 +505,39 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
             <>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border border-border bg-bg p-3">
-                  <div className="text-[0.7rem] font-medium text-fg-subtle uppercase">Guests</div>
+                  <div className="text-[0.6875rem] font-medium text-fg-subtle uppercase">Guests</div>
                   <div className="mt-1">
                     <Badge tone={levelTone(preview.data.guests)}>{preview.data.guests}</Badge>
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-bg p-3">
-                  <div className="text-[0.7rem] font-medium text-fg-subtle uppercase">Other accounts</div>
+                  <div className="text-[0.6875rem] font-medium text-fg-subtle uppercase">Others</div>
                   <div className="mt-1">
                     <Badge tone={levelTone(preview.data.others)}>{preview.data.others}</Badge>
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-bg p-3">
-                  <div className="text-[0.7rem] font-medium text-fg-subtle uppercase">Network</div>
+                  <div className="text-[0.6875rem] font-medium text-fg-subtle uppercase">Network</div>
                   <div className="mt-1 text-xs font-medium text-fg">{preview.data.network || 'Any host'}</div>
                 </div>
               </div>
 
               {preview.data.note && (
-                <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2/50 px-3.5 py-2.5 text-xs text-fg-muted">
-                  <Shield className="mt-0.5 size-4 shrink-0 text-primary" />
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2/50 px-3 py-2 text-xs text-fg-muted">
+                  <Shield className="size-3.5 shrink-0 text-primary" />
                   <span>{preview.data.note}</span>
                 </div>
               )}
 
               <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
                 {preview.data.users.length === 0 ? (
-                  <div className="p-6 text-center text-sm text-fg-muted">No users assigned yet.</div>
+                  <div className="p-6 text-center text-xs text-fg-muted">No users assigned yet.</div>
                 ) : (
                   preview.data.users.map((u) => (
                     <div key={u.userId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-sm font-medium text-fg">{u.username}</span>
-                        {u.reason && <span className="text-xs text-fg-muted">— {u.reason}</span>}
+                        {u.reason && <InfoTip content={u.reason} label={`Reason for ${u.username}`} />}
                       </div>
                       <Badge tone={levelTone(u.level)} dot>
                         {u.level}
@@ -571,17 +577,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
 export function ShareEditorDialog({ open, share, onClose }: ShareEditorDialogProps) {
   const isEdit = Boolean(share)
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      size="lg"
-      title={isEdit ? `Edit share — ${share?.name}` : 'Create SMB share'}
-      description={
-        isEdit
-          ? 'Configure preset behavior, per-user access rules, Time Machine, and network restrictions.'
-          : 'Expose a folder on the server over SMB with presets and fine-grained access control.'
-      }
-    >
+    <Dialog open={open} onClose={onClose} size="lg" title={isEdit ? `Edit share — ${share?.name}` : 'New SMB share'}>
       <ShareEditorBody key={share ? `edit-${share.id}-${share.updatedAt}` : 'create'} share={share} onClose={onClose} />
     </Dialog>
   )

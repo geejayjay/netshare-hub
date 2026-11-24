@@ -108,10 +108,10 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
   }, [roles.data, session, deleteUser])
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Users"
-        description="Manage accounts, roles, and SMB network access credentials."
+        info="Manage accounts, RBAC roles, and SMB network credentials."
         actions={
           <PermissionGate permission="users:write">
             <Button onClick={() => setCreating(true)}>
@@ -123,27 +123,9 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard
-          label="Total users"
-          value={users.data?.page?.total ?? items.length}
-          detail="Registered accounts"
-          icon={<UsersIcon />}
-          tone="info"
-        />
-        <StatCard
-          label="Active accounts"
-          value={activeCount}
-          detail="Enabled on this page"
-          icon={<UserCheck />}
-          tone="success"
-        />
-        <StatCard
-          label="Administrators"
-          value={adminCount}
-          detail="Full server access"
-          icon={<Shield />}
-          tone="warning"
-        />
+        <StatCard label="Total users" value={users.data?.page?.total ?? items.length} icon={<UsersIcon />} tone="info" />
+        <StatCard label="Active" value={activeCount} icon={<UserCheck />} tone="success" />
+        <StatCard label="Admins" value={adminCount} icon={<Shield />} tone="warning" />
       </div>
 
       <Card>

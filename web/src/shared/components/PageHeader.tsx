@@ -1,20 +1,26 @@
 import type { ReactNode } from 'react'
+import { InfoTip } from '@/shared/ui'
 
-/** The title row at the top of every page: title, optional description, optional actions. */
+/** The title row at the top of every page: crisp title, optional (i) info tip or short subtitle, optional actions. */
 export function PageHeader({
   title,
   description,
+  info,
   actions,
 }: {
   title: string
   description?: string
+  info?: ReactNode
   actions?: ReactNode
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
+    <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight text-fg">{title}</h1>
+          {info && <InfoTip content={info} label={`About ${title}`} />}
+        </div>
+        {description && <p className="mt-0.5 text-xs text-fg-muted">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </header>

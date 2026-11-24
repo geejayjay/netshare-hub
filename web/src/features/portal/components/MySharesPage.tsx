@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '@/shared/components'
 import { cn } from '@/shared/lib/cn'
 import { useSession } from '@/shared/session/session'
-import { Badge, Button, Card } from '@/shared/ui'
+import { Badge, Button, Card, InfoTip } from '@/shared/ui'
 import { mySharesQuery, type MyShare } from '../api'
 
 type OsTab = 'windows' | 'macos' | 'linux'
@@ -96,12 +96,13 @@ function ShareCard({ share, host, username }: { share: MyShare; host: string; us
               <Terminal className="size-3.5 shrink-0 text-fg-subtle" />
               <code className="truncate text-xs font-medium text-fg">{info.address}</code>
             </div>
-            <Button size="icon" variant="ghost" className="size-7 shrink-0" aria-label={`Copy ${share.name} address`} onClick={copyAddress}>
-              {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              <InfoTip content={info.steps} label={`How to connect on ${os}`} />
+              <Button size="icon" variant="ghost" className="size-7" aria-label={`Copy ${share.name} address`} onClick={copyAddress}>
+                {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+              </Button>
+            </div>
           </div>
-
-          <p className="text-xs leading-relaxed text-fg-muted">{info.steps}</p>
         </div>
       </div>
     </Card>
@@ -114,10 +115,10 @@ export function MySharesPage() {
   const host = typeof window !== 'undefined' ? window.location.hostname : 'server'
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="My Shares"
-        description="Network folders assigned to your account, with quick browser access and OS mount commands."
+        info="SMB network folders assigned to your account. Select your OS to copy the mount address or click Browse to open in the web File Manager."
       />
 
       {shares.isLoading ? (

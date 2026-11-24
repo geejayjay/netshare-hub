@@ -404,7 +404,7 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
     <div className="relative flex flex-col gap-5" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
       <PageHeader
         title="File Manager"
-        description="Browse, preview, organize, and upload files directly across your SMB shares."
+        info="Drag & drop files to upload (resumable via tus). Shortcuts: F2 to rename, Delete to remove selected, Esc to clear selection."
         actions={
           activeShare && (
             <div className="flex flex-wrap items-center gap-2">
@@ -869,7 +869,11 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
               ))}
             </Select>
           </FormField>
-          <FormField label="Destination folder" htmlFor="dest-path" hint="Leave blank for the share's top folder.">
+          <FormField
+            label="Destination folder"
+            htmlFor="dest-path"
+            info="Path inside the destination share. Leave blank for the share's top folder."
+          >
             <Input
               id="dest-path"
               value={destPath}

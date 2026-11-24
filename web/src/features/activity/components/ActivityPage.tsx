@@ -62,10 +62,10 @@ export function ActivityPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title="Activity Feed"
-        description="Real-time audit trail of SMB file reads, writes, renames, and deletions across all shares."
+        info="SMB audit stream of connects, writes, renames, deletes, and logins across all shares. Enable SMB activity logging in Settings to record events."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => void feed.refetch()}>
