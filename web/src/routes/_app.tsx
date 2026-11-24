@@ -7,7 +7,7 @@ import { UploadTray } from '@/features/files'
 import { JobsButton } from '@/features/jobs'
 import { GlobalSearchButton } from '@/features/search'
 import { AppLayout } from '@/layouts'
-import { ThemeSwitcher } from '@/shared/components'
+import { OfflineBanner, ThemeSwitcher } from '@/shared/components'
 import { ModulesProvider, modulesQuery } from '@/shared/modules/modules'
 import { SessionProvider } from '@/shared/session/session'
 
@@ -43,7 +43,12 @@ function AppRoute() {
               <ThemeSwitcher className="ml-1 max-sm:hidden" />
             </>
           }
-          banner={<CriticalAlertBanner />}
+          banner={
+            <>
+              <OfflineBanner />
+              <CriticalAlertBanner />
+            </>
+          }
         >
           <Outlet />
         </AppLayout>

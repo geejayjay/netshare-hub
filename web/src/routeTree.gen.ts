@@ -23,6 +23,7 @@ import { Route as AppReplicationRouteImport } from './routes/_app/replication'
 import { Route as AppSecurityRouteImport } from './routes/_app/security'
 import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AppShareTargetRouteImport } from './routes/_app/share-target'
 import { Route as AppSharesRouteImport } from './routes/_app/shares'
 import { Route as AppSpeedtestRouteImport } from './routes/_app/speedtest'
 import { Route as AppStorageRouteImport } from './routes/_app/storage'
@@ -98,6 +99,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
+const AppShareTargetRoute = AppShareTargetRouteImport.update({
+  id: '/share-target',
+  path: '/share-target',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSharesRoute = AppSharesRouteImport.update({
   id: '/shares',
   path: '/shares',
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/security': typeof AppSecurityRoute
   '/sessions': typeof AppSessionsRoute
   '/settings': typeof AppSettingsRoute
+  '/share-target': typeof AppShareTargetRoute
   '/shares': typeof AppSharesRoute
   '/speedtest': typeof AppSpeedtestRoute
   '/storage': typeof AppStorageRoute
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/security': typeof AppSecurityRoute
   '/sessions': typeof AppSessionsRoute
   '/settings': typeof AppSettingsRoute
+  '/share-target': typeof AppShareTargetRoute
   '/shares': typeof AppSharesRoute
   '/speedtest': typeof AppSpeedtestRoute
   '/storage': typeof AppStorageRoute
@@ -179,6 +187,7 @@ export interface FileRoutesById {
   '/_app/security': typeof AppSecurityRoute
   '/_app/sessions': typeof AppSessionsRoute
   '/_app/settings': typeof AppSettingsRoute
+  '/_app/share-target': typeof AppShareTargetRoute
   '/_app/shares': typeof AppSharesRoute
   '/_app/speedtest': typeof AppSpeedtestRoute
   '/_app/storage': typeof AppStorageRoute
@@ -202,6 +211,7 @@ export interface FileRouteTypes {
     | '/security'
     | '/sessions'
     | '/settings'
+    | '/share-target'
     | '/shares'
     | '/speedtest'
     | '/storage'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/security'
     | '/sessions'
     | '/settings'
+    | '/share-target'
     | '/shares'
     | '/speedtest'
     | '/storage'
@@ -242,6 +253,7 @@ export interface FileRouteTypes {
     | '/_app/security'
     | '/_app/sessions'
     | '/_app/settings'
+    | '/_app/share-target'
     | '/_app/shares'
     | '/_app/speedtest'
     | '/_app/storage'
@@ -356,6 +368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/share-target': {
+      id: '/_app/share-target'
+      path: '/share-target'
+      fullPath: '/share-target'
+      preLoaderRoute: typeof AppShareTargetRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/shares': {
       id: '/_app/shares'
       path: '/shares'
@@ -405,6 +424,7 @@ interface AppRouteChildren {
   AppSecurityRoute: typeof AppSecurityRoute
   AppSessionsRoute: typeof AppSessionsRoute
   AppSettingsRoute: typeof AppSettingsRoute
+  AppShareTargetRoute: typeof AppShareTargetRoute
   AppSharesRoute: typeof AppSharesRoute
   AppSpeedtestRoute: typeof AppSpeedtestRoute
   AppStorageRoute: typeof AppStorageRoute
@@ -424,6 +444,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSecurityRoute: AppSecurityRoute,
   AppSessionsRoute: AppSessionsRoute,
   AppSettingsRoute: AppSettingsRoute,
+  AppShareTargetRoute: AppShareTargetRoute,
   AppSharesRoute: AppSharesRoute,
   AppSpeedtestRoute: AppSpeedtestRoute,
   AppStorageRoute: AppStorageRoute,
