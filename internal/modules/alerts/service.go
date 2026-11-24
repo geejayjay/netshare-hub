@@ -41,10 +41,18 @@ type Service struct {
 
 	mu        sync.Mutex
 	published map[int64]time.Time
+	onRaise   func(Alert)
 }
 
 func NewService(repo *Repo, events Publisher) *Service {
 	return &Service{repo: repo, events: events, now: time.Now, published: map[int64]time.Time{}}
+}
+
+// SetOnRaise registers a callback fired whenever a new alert is raised (Count == 1).
+func (s *Service) SetOnRaise(fn func(Alert)) {
+	s.mu.Lock()
+	s.onRaise = fn
+	s.mu.Unlock()
 }
 
 // canSee is who receives alerts: those who may see the system's state.
@@ -103,6 +111,14 @@ func (s *Service) Raise(ctx context.Context, in Raise) (Alert, error) {
 	}
 	slog.Log(ctx, level, "alert", "kind", a.Kind, "key", a.Key, "severity", a.Severity, "count", a.Count, "title", a.Title)
 	s.publish(a, a.Count == 1)
+	if a.Count == 1 {
+		s.mu.Lock()
+		fn := s.onRaise
+		s.mu.Unlock()
+		if fn != nil {
+			fn(a)
+		}
+	}
 	return a, nil
 }
 

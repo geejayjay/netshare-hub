@@ -588,6 +588,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List external notification channels */
+        get: operations["listNotificationChannels"];
+        put?: never;
+        /** Create a notification channel */
+        post: operations["createNotificationChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a notification channel */
+        delete: operations["deleteNotificationChannel"];
+        options?: never;
+        head?: never;
+        /** Update a notification channel */
+        patch: operations["updateNotificationChannel"];
+        trace?: never;
+    };
+    "/notifications/channels/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a test notification to a channel */
+        post: operations["testNotificationChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/replication/jobs": {
         parameters: {
             query?: never;
@@ -1429,6 +1482,40 @@ export interface components {
             iscsi: boolean;
             nvmeof: boolean;
         };
+        ChannelConfig: {
+            from?: string;
+            host?: string;
+            password?: string;
+            /** Format: int64 */
+            port?: number;
+            secret?: string;
+            to?: string;
+            token?: string;
+            url?: string;
+            username?: string;
+        };
+        ChannelInput: {
+            config: components["schemas"]["ChannelConfig"];
+            enabled?: boolean;
+            /** @enum {string} */
+            kind: "ntfy" | "gotify" | "webhook" | "smtp";
+            /** @enum {string} */
+            minSeverity?: "info" | "warning" | "error" | "critical";
+            name: string;
+        };
+        ChannelPatch: {
+            config?: components["schemas"]["ChannelConfig"];
+            enabled?: boolean;
+            /** @enum {string} */
+            minSeverity?: "info" | "warning" | "error" | "critical";
+            name?: string;
+        };
+        ChannelTestResult: {
+            error?: string;
+            /** Format: int64 */
+            latencyMs: number;
+            ok: boolean;
+        };
         CodeOutputBody: {
             code: string;
         };
@@ -1686,6 +1773,9 @@ export interface components {
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
+        ListChannelsOutputBody: {
+            items: components["schemas"]["NotificationChannel"][];
+        };
         ListDiskDevice: {
             items: components["schemas"]["DiskDevice"][];
             /** @description Present only when the list is paginated. */
@@ -1878,6 +1968,22 @@ export interface components {
             action: "allow" | "block";
             /** @description An IP address (192.168.1.50) or a range in CIDR form (192.168.1.0/24). IPv4 or IPv6. */
             address: string;
+        };
+        NotificationChannel: {
+            config: components["schemas"]["ChannelConfig"];
+            createdAt: string;
+            enabled: boolean;
+            hasSecret: boolean;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "ntfy" | "gotify" | "webhook" | "smtp";
+            lastError?: string;
+            lastSentAt?: string;
+            /** @enum {string} */
+            minSeverity: "info" | "warning" | "error" | "critical";
+            name: string;
+            updatedAt: string;
         };
         Page: {
             items: components["schemas"]["ActivityEntry"][];
@@ -3751,6 +3857,163 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListMyShare"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listNotificationChannels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListChannelsOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createNotificationChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationChannel"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteNotificationChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateNotificationChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationChannel"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    testNotificationChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelTestResult"];
                 };
             };
             /** @description Error */

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Archive, Clock, Cpu, Radio, Server, Sparkles } from 'lucide-react'
+import { Archive, Bell, Clock, Cpu, Radio, Server, Sparkles } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { notify } from '@/features/notifications'
 import { errorMessage, fieldErrors } from '@/shared/api'
@@ -31,9 +31,10 @@ import {
   type SambaSettings,
 } from '../api'
 import { BackupPanel } from './BackupPanel'
+import { NotificationsPanel } from './NotificationsPanel'
 import { ScheduledTasksPanel } from './ScheduledTasksPanel'
 
-type SettingsTab = 'samba' | 'discovery' | 'tasks' | 'backup'
+type SettingsTab = 'samba' | 'discovery' | 'notifications' | 'tasks' | 'backup'
 
 function SambaSettingsForm({ initial, canEdit, activityEnabled }: { initial: SambaSettings; canEdit: boolean; activityEnabled: boolean }) {
   const saveSamba = useUpdateSambaSettings()
@@ -304,6 +305,7 @@ export function SettingsPage() {
         items={[
           { id: 'samba', label: 'Samba Server', icon: <Server className="size-3.5" /> },
           ...(modules.discovery ? [{ id: 'discovery' as const, label: 'Discovery', icon: <Radio className="size-3.5" /> }] : []),
+          { id: 'notifications' as const, label: 'Notifications', icon: <Bell className="size-3.5" /> },
           ...(can('system:read') ? [{ id: 'tasks' as const, label: 'Scheduled Tasks', icon: <Clock className="size-3.5" /> }] : []),
           ...(modules.backup && can('backup:manage')
             ? [{ id: 'backup' as const, label: 'Backup & Restore', icon: <Archive className="size-3.5" /> }]
@@ -392,6 +394,8 @@ export function SettingsPage() {
           ) : null}
         </div>
       )}
+
+      {tab === 'notifications' && <NotificationsPanel canEdit={canEdit} />}
 
       {tab === 'tasks' && can('system:read') && <ScheduledTasksPanel canEdit={canEdit} />}
 

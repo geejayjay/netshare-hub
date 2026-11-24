@@ -558,6 +558,122 @@
         ],
         "type": "object"
       },
+      "ChannelConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ChannelInput": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ChannelConfig"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "ntfy",
+              "gotify",
+              "webhook",
+              "smtp"
+            ],
+            "type": "string"
+          },
+          "minSeverity": {
+            "enum": [
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "config"
+        ],
+        "type": "object"
+      },
+      "ChannelPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ChannelConfig"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "minSeverity": {
+            "enum": [
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ChannelTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "latencyMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "latencyMs"
+        ],
+        "type": "object"
+      },
       "CodeOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -1328,6 +1444,21 @@
         ],
         "type": "object"
       },
+      "ListChannelsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ListDiskDevice": {
         "additionalProperties": false,
         "properties": {
@@ -1999,6 +2130,69 @@
         "required": [
           "action",
           "address"
+        ],
+        "type": "object"
+      },
+      "NotificationChannel": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ChannelConfig"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "hasSecret": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "ntfy",
+              "gotify",
+              "webhook",
+              "smtp"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "type": "string"
+          },
+          "lastSentAt": {
+            "type": "string"
+          },
+          "minSeverity": {
+            "enum": [
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "enabled",
+          "minSeverity",
+          "config",
+          "hasSecret",
+          "createdAt",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -5971,6 +6165,233 @@
         "tags": [
           "Shares"
         ]
+      }
+    },
+    "/notifications/channels": {
+      "get": {
+        "operationId": "listNotificationChannels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListChannelsOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List external notification channels",
+        "tags": [
+          "Notifications"
+        ],
+        "x-permission": "settings:read"
+      },
+      "post": {
+        "operationId": "createNotificationChannel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationChannel"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create a notification channel",
+        "tags": [
+          "Notifications"
+        ],
+        "x-permission": "settings:write"
+      }
+    },
+    "/notifications/channels/{id}": {
+      "delete": {
+        "operationId": "deleteNotificationChannel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Delete a notification channel",
+        "tags": [
+          "Notifications"
+        ],
+        "x-permission": "settings:write"
+      },
+      "patch": {
+        "operationId": "updateNotificationChannel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationChannel"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Update a notification channel",
+        "tags": [
+          "Notifications"
+        ],
+        "x-permission": "settings:write"
+      }
+    },
+    "/notifications/channels/{id}/test": {
+      "post": {
+        "operationId": "testNotificationChannel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelTestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Send a test notification to a channel",
+        "tags": [
+          "Notifications"
+        ],
+        "x-permission": "settings:write"
       }
     },
     "/replication/jobs": {

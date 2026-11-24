@@ -9,6 +9,10 @@ export type TaskStatus = Schema<'Status'>
 export type UpdateTaskRequest = Schema<'UpdateRequest'>
 export type RestoreRequest = Schema<'RestoreRequest'>
 export type BackupSummary = Schema<'Summary'>
+export type NotificationChannel = Schema<'NotificationChannel'>
+export type ChannelInput = Schema<'ChannelInput'>
+export type ChannelPatch = Schema<'ChannelPatch'>
+export type ChannelTestResult = Schema<'ChannelTestResult'>
 
 export const sambaSettingsQuery = queryOptions({
   queryKey: ['settings', 'samba'],
@@ -24,6 +28,44 @@ export const systemTasksQuery = queryOptions({
   queryKey: ['system', 'tasks'],
   queryFn: () => unwrap(api.GET('/system/tasks')),
 })
+
+export const notificationChannelsQuery = queryOptions({
+  queryKey: ['notifications', 'channels'],
+  queryFn: () => unwrap(api.GET('/notifications/channels')),
+})
+
+export function useCreateNotificationChannel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ChannelInput) => unwrap(api.POST('/notifications/channels', { body })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications', 'channels'] }),
+  })
+}
+
+export function useUpdateNotificationChannel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: ChannelPatch }) =>
+      unwrap(api.PATCH('/notifications/channels/{id}', { params: { path: { id } }, body })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications', 'channels'] }),
+  })
+}
+
+export function useDeleteNotificationChannel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => unwrap(api.DELETE('/notifications/channels/{id}', { params: { path: { id } } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications', 'channels'] }),
+  })
+}
+
+export function useTestNotificationChannel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => unwrap(api.POST('/notifications/channels/{id}/test', { params: { path: { id } } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications', 'channels'] }),
+  })
+}
 
 export function useUpdateSambaSettings() {
   const qc = useQueryClient()
