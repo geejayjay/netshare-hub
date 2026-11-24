@@ -17,6 +17,7 @@ import { Route as AppActivityRouteImport } from './routes/_app/activity'
 import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppBlockRouteImport } from './routes/_app/block'
 import { Route as AppFilesRouteImport } from './routes/_app/files'
+import { Route as AppGroupsRouteImport } from './routes/_app/groups'
 import { Route as AppLogsRouteImport } from './routes/_app/logs'
 import { Route as AppMySharesRouteImport } from './routes/_app/my-shares'
 import { Route as AppReplicationRouteImport } from './routes/_app/replication'
@@ -67,6 +68,11 @@ const AppBlockRoute = AppBlockRouteImport.update({
 const AppFilesRoute = AppFilesRouteImport.update({
   id: '/files',
   path: '/files',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppGroupsRoute = AppGroupsRouteImport.update({
+  id: '/groups',
+  path: '/groups',
   getParentRoute: () => AppRoute,
 } as any)
 const AppLogsRoute = AppLogsRouteImport.update({
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AppAuditRoute
   '/block': typeof AppBlockRoute
   '/files': typeof AppFilesRoute
+  '/groups': typeof AppGroupsRoute
   '/logs': typeof AppLogsRoute
   '/my-shares': typeof AppMySharesRoute
   '/replication': typeof AppReplicationRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/audit': typeof AppAuditRoute
   '/block': typeof AppBlockRoute
   '/files': typeof AppFilesRoute
+  '/groups': typeof AppGroupsRoute
   '/logs': typeof AppLogsRoute
   '/my-shares': typeof AppMySharesRoute
   '/replication': typeof AppReplicationRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/_app/audit': typeof AppAuditRoute
   '/_app/block': typeof AppBlockRoute
   '/_app/files': typeof AppFilesRoute
+  '/_app/groups': typeof AppGroupsRoute
   '/_app/logs': typeof AppLogsRoute
   '/_app/my-shares': typeof AppMySharesRoute
   '/_app/replication': typeof AppReplicationRoute
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/block'
     | '/files'
+    | '/groups'
     | '/logs'
     | '/my-shares'
     | '/replication'
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
     | '/audit'
     | '/block'
     | '/files'
+    | '/groups'
     | '/logs'
     | '/my-shares'
     | '/replication'
@@ -247,6 +258,7 @@ export interface FileRouteTypes {
     | '/_app/audit'
     | '/_app/block'
     | '/_app/files'
+    | '/_app/groups'
     | '/_app/logs'
     | '/_app/my-shares'
     | '/_app/replication'
@@ -324,6 +336,13 @@ declare module '@tanstack/react-router' {
       path: '/files'
       fullPath: '/files'
       preLoaderRoute: typeof AppFilesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/groups': {
+      id: '/_app/groups'
+      path: '/groups'
+      fullPath: '/groups'
+      preLoaderRoute: typeof AppGroupsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/logs': {
@@ -418,6 +437,7 @@ interface AppRouteChildren {
   AppAuditRoute: typeof AppAuditRoute
   AppBlockRoute: typeof AppBlockRoute
   AppFilesRoute: typeof AppFilesRoute
+  AppGroupsRoute: typeof AppGroupsRoute
   AppLogsRoute: typeof AppLogsRoute
   AppMySharesRoute: typeof AppMySharesRoute
   AppReplicationRoute: typeof AppReplicationRoute
@@ -438,6 +458,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAuditRoute: AppAuditRoute,
   AppBlockRoute: AppBlockRoute,
   AppFilesRoute: AppFilesRoute,
+  AppGroupsRoute: AppGroupsRoute,
   AppLogsRoute: AppLogsRoute,
   AppMySharesRoute: AppMySharesRoute,
   AppReplicationRoute: AppReplicationRoute,

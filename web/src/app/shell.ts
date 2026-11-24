@@ -15,6 +15,7 @@ import {
   Shield,
   Stethoscope,
   Users,
+  UsersRound,
 } from 'lucide-react'
 import type { LayoutVariant, NavItem } from '@/layouts'
 
@@ -66,5 +67,6 @@ export const navigation: NavItem[] = [
   { to: '/speedtest', label: 'Speed Test', icon: Gauge, group: 'Security & Insight', permission: 'system:read' },
   { to: '/logs', label: 'Server Logs', icon: ScrollText, group: 'Security & Insight', permission: 'system:read' },
   { to: '/users', label: 'Users', icon: Users, group: 'Administration', permission: 'users:read' },
+  { to: '/groups', label: 'Groups', icon: UsersRound, group: 'Administration', permission: 'groups:read' },
   { to: '/settings', label: 'Settings', icon: Settings, group: 'Administration', permission: 'settings:read' },
 ]

@@ -43,6 +43,7 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium text-fg">{s.name}</span>
                 {s.timeMachine && <Badge tone="info">Time Machine</Badge>}
+                {s.recycleDays > 0 && <Badge tone="success">Recycle {s.recycleDays}d</Badge>}
                 {modules.nfs && s.nfs?.enabled && <Badge tone="info">NFS</Badge>}
                 {s.readOnly && <Badge tone="warning">Read-only</Badge>}
                 {s.guestAccess && <Badge tone="success">Guest</Badge>}
@@ -66,17 +67,22 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
         header: 'Access',
         cell: ({ row }) => {
           const s = row.original
-          if (s.access.length === 0) {
+          const groups = s.groupAccess ?? []
+          if (s.access.length === 0 && groups.length === 0) {
             return <span className="text-xs text-fg-muted">{s.guestAccess ? 'Guest only' : 'No users'}</span>
           }
+          const pills = [
+            ...groups.map((g) => ({ key: `g-${g.groupId}`, label: `@${g.groupName} · ${g.level}`, level: g.level })),
+            ...s.access.map((a) => ({ key: `u-${a.userId}`, label: `${a.username} · ${a.level}`, level: a.level })),
+          ]
           return (
             <div className="flex flex-wrap gap-1">
-              {s.access.slice(0, 4).map((a) => (
-                <Badge key={a.userId} tone={a.level === 'write' ? 'info' : a.level === 'upload' ? 'warning' : 'neutral'}>
-                  {a.username} · {a.level}
+              {pills.slice(0, 4).map((p) => (
+                <Badge key={p.key} tone={p.level === 'write' ? 'info' : p.level === 'upload' ? 'warning' : 'neutral'}>
+                  {p.label}
                 </Badge>
               ))}
-              {s.access.length > 4 && <Badge tone="neutral">+{s.access.length - 4}</Badge>}
+              {pills.length > 4 && <Badge tone="neutral">+{pills.length - 4}</Badge>}
             </div>
           )
         },

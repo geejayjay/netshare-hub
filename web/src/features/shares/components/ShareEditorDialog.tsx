@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { Check, Eye, Globe, HardDrive, Lock, Network, Plus, Shield, Sparkles, Trash2, Users } from 'lucide-react'
+import { Check, Eye, Globe, HardDrive, Lock, Network, Plus, Recycle, Shield, Sparkles, Trash2, Users, UsersRound } from 'lucide-react'
 import { useDeferredValue, useEffect, useState, type FormEvent } from 'react'
+import { groupsQuery } from '@/features/groups'
 import { notify } from '@/features/notifications'
 import { errorMessage, fieldErrors } from '@/shared/api'
 import { FormField } from '@/shared/components'
@@ -53,11 +54,20 @@ function initialAccessMap(share?: Share | null): Record<number, AccessLevel> {
   return map
 }
 
+function initialGroupAccessMap(share?: Share | null): Record<number, AccessLevel> {
+  const map: Record<number, AccessLevel> = {}
+  if (share) {
+    for (const entry of share.groupAccess ?? []) map[entry.groupId] = entry.level
+  }
+  return map
+}
+
 function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: () => void }) {
   const isEdit = Boolean(share)
   const modules = useModules()
   const presets = useQuery(sharePresetsQuery)
   const users = useQuery(shareUsersQuery)
+  const groups = useQuery(groupsQuery)
   const nfsStatus = useQuery({ ...nfsStatusQuery, enabled: modules.nfs })
   const createShare = useCreateShare()
   const updateShare = useUpdateShare()
@@ -78,7 +88,10 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
   const [hideUnreadable, setHideUnreadable] = useState(share?.hideUnreadable ?? false)
   const [timeMachine, setTimeMachine] = useState(share?.timeMachine ?? false)
   const [timeMachineMaxGiB, setTimeMachineMaxGiB] = useState(String(share?.timeMachineMaxGiB ?? 0))
+  const [recycleEnabled, setRecycleEnabled] = useState((share?.recycleDays ?? 0) > 0)
+  const [recycleDays, setRecycleDays] = useState(String(share?.recycleDays && share.recycleDays > 0 ? share.recycleDays : 30))
   const [access, setAccess] = useState<Record<number, AccessLevel>>(() => initialAccessMap(share))
+  const [groupAccess, setGroupAccess] = useState<Record<number, AccessLevel>>(() => initialGroupAccessMap(share))
   const [networkRules, setNetworkRules] = useState<NetworkRule[]>(() => share?.networkRules ?? [])
   const [newRuleAction, setNewRuleAction] = useState<NetworkRule['action']>('allow')
   const [newRuleAddress, setNewRuleAddress] = useState('')
@@ -94,12 +107,17 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
     userId: Number(userId),
     level,
   }))
+  const groupAccessList = Object.entries(groupAccess).map(([groupId, level]) => ({
+    groupId: Number(groupId),
+    level,
+  }))
 
-  const previewKey = JSON.stringify({ accessList, guestAccess, readOnly, timeMachine, networkRules })
+  const previewKey = JSON.stringify({ accessList, groupAccessList, guestAccess, readOnly, timeMachine, networkRules })
   useEffect(() => {
     if (tab !== 'preview') return
     preview.mutate({
       access: accessList,
+      groupAccess: groupAccessList,
       guestAccess,
       readOnly,
       timeMachine,
@@ -137,6 +155,15 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
     })
   }
 
+  function setGroupLevel(groupId: number, level: AccessLevel | 'none') {
+    setGroupAccess((prev) => {
+      const next = { ...prev }
+      if (level === 'none') delete next[groupId]
+      else next[groupId] = level
+      return next
+    })
+  }
+
   function addNetworkRule() {
     const addr = newRuleAddress.trim()
     if (!addr) return
@@ -167,6 +194,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
     e.preventDefault()
     setSubmitError(null)
     const maxGiB = Math.max(0, Number.parseInt(timeMachineMaxGiB || '0', 10) || 0)
+    const parsedRecycleDays = recycleEnabled ? Math.max(1, Math.min(365, Number.parseInt(recycleDays || '30', 10) || 30)) : 0
     const nfsPayload: ShareNFS | undefined = modules.nfs
       ? {
           enabled: nfsEnabled,
@@ -188,7 +216,9 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
             hideUnreadable,
             timeMachine,
             timeMachineMaxGiB: timeMachine ? maxGiB : 0,
+            recycleDays: parsedRecycleDays,
             access: accessList,
+            groupAccess: groupAccessList,
             networkRules,
             nfs: nfsPayload,
           },
@@ -216,7 +246,9 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
         hideUnreadable,
         timeMachine,
         timeMachineMaxGiB: timeMachine ? maxGiB : 0,
+        recycleDays: parsedRecycleDays,
         access: accessList,
+        groupAccess: groupAccessList,
         networkRules,
         nfs: nfsPayload,
       },
@@ -232,6 +264,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
 
   const presetItems = presets.data?.items ?? []
   const userItems = users.data?.items ?? []
+  const groupItems = groups.data?.items ?? []
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
@@ -242,7 +275,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
         onChange={setTab}
         items={[
           { id: 'general', label: 'General', icon: <Sparkles className="size-3.5" /> },
-          { id: 'access', label: 'Access', icon: <Users className="size-3.5" />, badge: accessList.length },
+          { id: 'access', label: 'Access', icon: <Users className="size-3.5" />, badge: accessList.length + groupAccessList.length },
           { id: 'network', label: 'Network', icon: <Globe className="size-3.5" />, badge: networkRules.length },
           ...(modules.nfs
             ? [{ id: 'nfs' as const, label: 'NFS', icon: <Network className="size-3.5" />, badge: nfsEnabled ? nfsClients.length : undefined }]
@@ -404,6 +437,40 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
               </FormField>
             )}
           </div>
+
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Recycle className="size-4 text-primary" />
+                <span className="text-sm font-medium text-fg">Recycle bin</span>
+                <InfoTip content="Moves deleted files (from SMB and the web File Manager) into a hidden .recycle folder and automatically purges them after the retention period." />
+              </div>
+              <Switch
+                checked={recycleEnabled}
+                disabled={timeMachine}
+                onChange={setRecycleEnabled}
+                aria-label="Enable recycle bin"
+              />
+            </div>
+
+            {recycleEnabled && (
+              <FormField
+                label="Retention (days)"
+                htmlFor="share-recycle-days"
+                info="Deleted items older than this many days are purged automatically by the daily cleanup task (1–365 days)."
+                error={errors.recycleDays}
+              >
+                <Input
+                  id="share-recycle-days"
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={recycleDays}
+                  onChange={(e) => setRecycleDays(e.target.value)}
+                />
+              </FormField>
+            )}
+          </div>
         </div>
       )}
 
@@ -439,6 +506,58 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
               <Switch checked={hideUnreadable} onChange={setHideUnreadable} aria-label="Hide unreadable files" />
             </div>
           </div>
+
+          {groupItems.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-border">
+              <div className="flex items-center justify-between border-b border-border bg-surface-2/60 px-4 py-2 text-xs font-medium text-fg-muted">
+                <span className="inline-flex items-center gap-1.5">
+                  <UsersRound className="size-3.5 text-primary" />
+                  Groups
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  Level
+                  <InfoTip content="Each member of a group inherits this level unless they have a direct user entry below. Multiple groups grant the highest level." />
+                </span>
+              </div>
+              <div className="divide-y divide-border">
+                {groupItems.map((g) => {
+                  const current = groupAccess[g.id] ?? 'none'
+                  return (
+                    <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="text-sm font-medium text-fg">{g.name}</span>
+                        <Badge tone="neutral">
+                          {g.members.length} {g.members.length === 1 ? 'member' : 'members'}
+                        </Badge>
+                      </div>
+                      <div className="inline-flex rounded-lg border border-border bg-surface-2 p-0.5">
+                        {(['none', 'read', 'upload', 'write'] as const).map((lvl) => {
+                          const disabled = timeMachine && (lvl === 'read' || lvl === 'upload')
+                          return (
+                            <button
+                              key={lvl}
+                              type="button"
+                              disabled={disabled}
+                              onClick={() => setGroupLevel(g.id, lvl)}
+                              className={cn(
+                                'rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors',
+                                current === lvl
+                                  ? 'bg-surface text-fg shadow-xs'
+                                  : 'text-fg-muted hover:text-fg',
+                                disabled && 'cursor-not-allowed opacity-40',
+                              )}
+                            >
+                              {lvl === 'upload' ? 'Drop box' : lvl}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="overflow-hidden rounded-xl border border-border">
             <div className="flex items-center justify-between border-b border-border bg-surface-2/60 px-4 py-2 text-xs font-medium text-fg-muted">
@@ -731,6 +850,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
                     <div key={u.userId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm font-medium text-fg">{u.username}</span>
+                        {u.via && <Badge tone="neutral">via {u.via}</Badge>}
                         {u.reason && <InfoTip content={u.reason} label={`Reason for ${u.username}`} />}
                       </div>
                       <Badge tone={levelTone(u.level)} dot>
@@ -754,6 +874,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
           )}
           {guestAccess && <Badge tone="info">Guest</Badge>}
           {timeMachine && <Badge tone="info">Time Machine</Badge>}
+          {recycleEnabled && <Badge tone="success">Recycle {recycleDays || 30}d</Badge>}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={onClose}>
