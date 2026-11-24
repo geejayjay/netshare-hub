@@ -90,6 +90,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List append-only administrative audit log entries */
+        get: operations["listAuditLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -1007,6 +1024,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/mounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect container/LXC bind mounts, read-only mounts, root-disk usage, and UID mapping */
+        get: operations["getSystemMounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/restore": {
         parameters: {
             query?: never;
@@ -1052,6 +1086,23 @@ export interface paths {
         put?: never;
         /** End one SMB session (the computer may connect again) */
         post: operations["disconnectSMBSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/speedtest/disk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Benchmark sequential disk write and read speed in a target folder */
+        post: operations["runDiskSpeedTest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1219,6 +1270,21 @@ export interface components {
             /** @enum {string} */
             source: "shares" | "uploads" | "security" | "storage" | "replication" | "system";
             title: string;
+        };
+        AuditEntry: {
+            action: string;
+            actor: string;
+            /** Format: int64 */
+            actorId: number;
+            after?: string;
+            /** Format: date-time */
+            at: string;
+            before?: string;
+            clientIp?: string;
+            /** Format: int64 */
+            id: number;
+            requestId?: string;
+            target: string;
         };
         Ban: {
             active: boolean;
@@ -1445,6 +1511,29 @@ export interface components {
             /** Format: int64 */
             sizeBytes: number;
         };
+        DiskTestRequest: {
+            /** @description Target folder to benchmark (defaults to the server data directory). */
+            path?: string;
+            /**
+             * Format: int64
+             * @description Test file size in MiB (1–128, default 32).
+             * @default 32
+             */
+            sizeMiB: number;
+        };
+        DiskTestResult: {
+            path: string;
+            /** Format: double */
+            readMBps: number;
+            /** Format: int64 */
+            readMs: number;
+            /** Format: int64 */
+            sizeMiB: number;
+            /** Format: double */
+            writeMBps: number;
+            /** Format: int64 */
+            writeMs: number;
+        };
         Effective: {
             /** @enum {string} */
             given: "read" | "upload" | "write";
@@ -1579,6 +1668,11 @@ export interface components {
         };
         ListAlert: {
             items: components["schemas"]["Alert"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
+        ListAuditEntry: {
+            items: components["schemas"]["AuditEntry"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
@@ -1717,6 +1811,21 @@ export interface components {
             ransomwareGuard: boolean;
             replication: boolean;
             sessions: boolean;
+        };
+        MountCheck: {
+            fsType?: string;
+            mountPoint: string;
+            onRootDisk: boolean;
+            path: string;
+            readOnly: boolean;
+            uidMismatch: boolean;
+            warnings: string[] | null;
+        };
+        MountReport: {
+            checks: components["schemas"]["MountCheck"][] | null;
+            /** @enum {string} */
+            environment: "host" | "lxc" | "docker";
+            unprivileged: boolean;
         };
         MyShare: {
             comment: string;
@@ -2534,6 +2643,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Alert"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listAuditLog: {
+        parameters: {
+            query?: {
+                actor?: string;
+                action?: string;
+                q?: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAuditEntry"];
                 };
             };
             /** @description Error */
@@ -4748,6 +4892,38 @@ export interface operations {
             };
         };
     };
+    getSystemMounts: {
+        parameters: {
+            query?: {
+                /** @description Optional folder paths to inspect; defaults to all configured share paths. */
+                path?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MountReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     restoreConfigBackup: {
         parameters: {
             query?: never;
@@ -4827,6 +5003,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    runDiskSpeedTest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiskTestRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiskTestResult"];
+                };
             };
             /** @description Error */
             default: {

@@ -154,6 +154,53 @@
         ],
         "type": "object"
       },
+      "AuditEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "actorId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "after": {
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "before": {
+            "type": "string"
+          },
+          "clientIp": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "actorId",
+          "actor",
+          "action",
+          "target"
+        ],
+        "type": "object"
+      },
       "Ban": {
         "additionalProperties": false,
         "properties": {
@@ -756,6 +803,62 @@
         ],
         "type": "object"
       },
+      "DiskTestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Target folder to benchmark (defaults to the server data directory).",
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "sizeMiB": {
+            "default": 32,
+            "description": "Test file size in MiB (1–128, default 32).",
+            "format": "int64",
+            "maximum": 128,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "DiskTestResult": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "readMBps": {
+            "format": "double",
+            "type": "number"
+          },
+          "readMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sizeMiB": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "writeMBps": {
+            "format": "double",
+            "type": "number"
+          },
+          "writeMs": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "sizeMiB",
+          "writeMBps",
+          "readMBps",
+          "writeMs",
+          "readMs"
+        ],
+        "type": "object"
+      },
       "Effective": {
         "additionalProperties": false,
         "properties": {
@@ -1155,6 +1258,25 @@
           "items": {
             "items": {
               "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          },
+          "page": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Present only when the list is paginated."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ListAuditEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
             },
             "type": "array"
           },
@@ -1663,6 +1785,78 @@
           "nfs",
           "replication",
           "blockStorage"
+        ],
+        "type": "object"
+      },
+      "MountCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "fsType": {
+            "type": "string"
+          },
+          "mountPoint": {
+            "type": "string"
+          },
+          "onRootDisk": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "uidMismatch": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "mountPoint",
+          "readOnly",
+          "onRootDisk",
+          "uidMismatch",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "MountReport": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/MountCheck"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "environment": {
+            "enum": [
+              "host",
+              "lxc",
+              "docker"
+            ],
+            "type": "string"
+          },
+          "unprivileged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "environment",
+          "unprivileged",
+          "checks"
         ],
         "type": "object"
       },
@@ -3969,6 +4163,95 @@
           "Alerts"
         ],
         "x-permission": "alerts:manage"
+      }
+    },
+    "/audit": {
+      "get": {
+        "operationId": "listAuditLog",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "actor",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "pageSize",
+            "schema": {
+              "default": 50,
+              "format": "int64",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAuditEntry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "List append-only administrative audit log entries",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "audit:read"
       }
     },
     "/auth/login": {
@@ -7354,6 +7637,61 @@
         ]
       }
     },
+    "/system/mounts": {
+      "get": {
+        "operationId": "getSystemMounts",
+        "parameters": [
+          {
+            "description": "Optional folder paths to inspect; defaults to all configured share paths.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "Optional folder paths to inspect; defaults to all configured share paths.",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MountReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Inspect container/LXC bind mounts, read-only mounts, root-disk usage, and UID mapping",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "system:read"
+      }
+    },
     "/system/restore": {
       "post": {
         "operationId": "restoreConfigBackup",
@@ -7477,6 +7815,53 @@
           "System"
         ],
         "x-permission": "sessions:manage"
+      }
+    },
+    "/system/speedtest/disk": {
+      "post": {
+        "operationId": "runDiskSpeedTest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiskTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiskTestResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Benchmark sequential disk write and read speed in a target folder",
+        "tags": [
+          "System"
+        ],
+        "x-permission": "system:read"
       }
     },
     "/system/tasks": {
