@@ -25,3 +25,19 @@ max_upload_bytes = 0
 
 # How long the SMB activity log is kept, in days.
 activity_retention_days = 90
+
+# Optional modules. A module that is off costs nothing: no pages, no API
+# routes, no background work, and the root agent does not offer its system
+# operations (it reads this same file, so restart both after a change).
+# Shares, users, sign-in and jobs are always on.
+[modules]
+file_manager = true      # browse, upload and download in the browser
+activity_log = true      # who did what over SMB (needs samba-vfs-modules)
+ransomware_guard = true  # needs activity_log
+brute_force = true       # ban addresses after failed SMB logins
+discovery = true         # switch WSD / mDNS from the UI
+sessions = true          # list and end SMB sessions
+backup = true            # encrypted backup and restore of the app's config
+nfs = false              # also export shares over NFS (needs nfs-kernel-server)
+replication = false      # copy shares to another folder or NetShare Hub
+block_storage = false    # iSCSI / NVMe-oF disks (Proxmox host or VM, not an LXC)

@@ -49,6 +49,7 @@ type Share struct {
 	TimeMachineMaxGiB int           `json:"timeMachineMaxGiB" doc:"The size Time Machine sees as the disk, in GiB (0: the real disk's size)."`
 	NetworkRules      []NetworkRule `json:"networkRules" nullable:"false" doc:"Which computers may connect. With any \"allow\" rule, only those addresses may; \"block\" rules never may. Empty: any address."`
 	Access            []ShareAccess `json:"access" nullable:"false" doc:"Users given access. Nobody else can connect, unless guest access is on."`
+	NFS               NFS           `json:"nfs" doc:"Export over NFS, to the listed computers only."`
 	CreatedAt         time.Time     `json:"createdAt"`
 	UpdatedAt         time.Time     `json:"updatedAt"`
 }
@@ -98,6 +99,7 @@ type CreateInput struct {
 	TimeMachineMaxGiB int
 	NetworkRules      []NetworkRule
 	Access            []AccessInput
+	NFS               *NFS
 }
 
 // UpdateInput changes only the fields that are set (non-nil).
@@ -112,6 +114,8 @@ type UpdateInput struct {
 	// NetworkRules and Access, when set, replace the whole list.
 	NetworkRules *[]NetworkRule
 	Access       *[]AccessInput
+	// NFS, when set, replaces the share's NFS settings.
+	NFS *NFS
 }
 
 // Users is what shares needs from the users module.
@@ -151,6 +155,7 @@ const (
 	CodePermissionsFailed      errs.Code = "SHARE_PERMISSIONS_FAILED"
 	CodeSambaConfigRefused     errs.Code = "SAMBA_CONFIG_REFUSED"
 	CodeSambaModuleMissing     errs.Code = "SAMBA_MODULE_MISSING"
+	CodeFolderReserved         errs.Code = "SHARE_FOLDER_RESERVED"
 )
 
 // TimeMachineNeedsMacSupport explains a refused "Mac support off".

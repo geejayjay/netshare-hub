@@ -185,3 +185,51 @@ func TestTailDirFollowsNewFilesAndCaps(t *testing.T) {
 		t.Errorf("followed %d new files, want at most %d", n, MaxFiles)
 	}
 }
+
+// The one consumer of a file reader loses nothing in a burst, however
+// small its buffer and however slow it reads: reading waits for it.
+func TestSubscribeWaitLosesNothing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	in := New()
+	events := in.SubscribeWait(ctx, "stream", 10)
+	const n = 20000
+	go func() {
+		_ = in.Read(ctx, strings.NewReader(strings.Repeat(fileLine, n)))
+		in.Close()
+	}()
+	got := 0
+	for range events {
+		got++
+		if got%1000 == 0 {
+			time.Sleep(time.Millisecond) // a slow reader
+		}
+	}
+	if got != n || in.Stats().Dropped["stream"] != 0 {
+		t.Errorf("got %d of %d, dropped %d", got, n, in.Stats().Dropped["stream"])
+	}
+}
+
+// When the consumer goes away, a waiting reader stops waiting.
+func TestSubscribeWaitStopsWithItsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	in := New()
+	in.SubscribeWait(ctx, "stream", 1) // never read
+	done := make(chan struct{})
+	go func() {
+		_ = in.Read(context.Background(), strings.NewReader(strings.Repeat(fileLine, 100)))
+		close(done)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-done:
+		t.Fatal("reading did not wait for the consumer")
+	default:
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reading kept waiting after the consumer went away")
+	}
+}

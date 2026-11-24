@@ -128,7 +128,7 @@ func runAgent(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return agent.Serve(ctx, cfg.AgentSocket, cfg.AgentUser, system, app.Version)
+	return agent.Serve(ctx, cfg.AgentSocket, cfg.AgentUser, app.TrimSystem(system, cfg.Modules), app.Version, app.AgentFeatures(cfg.Modules))
 }
 
 // openapi writes the API spec. The frontend's TypeScript types are generated
@@ -151,6 +151,7 @@ func openapi(args []string) error {
 	cfg := config.Default()
 	cfg.DataDir = dir
 	cfg.Sys = "fake" // only the routes are needed, never the real system
+	cfg.Modules = config.AllModules() // every module's routes and types
 	application, err := app.New(context.Background(), cfg, app.Options{})
 	if err != nil {
 		return err

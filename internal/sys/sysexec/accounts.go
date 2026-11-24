@@ -21,6 +21,9 @@ type Accounts struct {
 	// disabled or about to be deleted. The file workers use it to stop the
 	// account's worker.
 	onRevoke func(name string)
+	// onEnabled is called after an account is enabled or disabled (NFS
+	// exports acting as it are checked again).
+	onEnabled func()
 }
 
 func (a *Accounts) revoked(name string) {
@@ -240,6 +243,9 @@ func (a *Accounts) SetEnabled(ctx context.Context, name string, enabled bool) er
 	}
 	if !enabled {
 		a.revoked(name)
+	}
+	if a.onEnabled != nil {
+		a.onEnabled()
 	}
 	return nil
 }

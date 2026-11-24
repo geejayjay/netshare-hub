@@ -26,10 +26,24 @@ import (
 // Handler does the work of one job kind. See the package documentation.
 type Handler func(ctx context.Context, run *Run) error
 
+// Lanes keep kinds of work from waiting behind each other. Each lane has
+// its own slots: a copy that takes hours in the maintenance lane never
+// makes a user's file copy wait.
+const (
+	// LaneUser is for work a user is waiting on (file copies, moves,
+	// deletes). The default lane.
+	LaneUser = "user"
+	// LaneMaintenance is for long background work (replication,
+	// permission fixes).
+	LaneMaintenance = "maintenance"
+)
+
 // Options tune the engine. Zero values fall back to DefaultOptions.
 type Options struct {
-	// MaxConcurrent is how many jobs run at the same time, in total.
+	// MaxConcurrent is how many jobs of the user lane run at the same time.
 	MaxConcurrent int
+	// MaintenanceConcurrent is the same for the maintenance lane.
+	MaintenanceConcurrent int
 	// MaxAttempts is how often a job may be interrupted by a restart before
 	// it is given up as failed (so a job that crashes the server cannot
 	// bring it down forever).
@@ -44,11 +58,12 @@ type Options struct {
 
 func DefaultOptions() Options {
 	return Options{
-		MaxConcurrent: 2,
-		MaxAttempts:   5,
-		Retention:     7 * 24 * time.Hour,
-		SaveEvery:     time.Second,
-		PublishEvery:  250 * time.Millisecond,
+		MaxConcurrent:         2,
+		MaintenanceConcurrent: 1,
+		MaxAttempts:           5,
+		Retention:             7 * 24 * time.Hour,
+		SaveEvery:             time.Second,
+		PublishEvery:          250 * time.Millisecond,
 	}
 }
 
@@ -74,7 +89,8 @@ type Service struct {
 
 	mu       sync.Mutex
 	handlers map[string]Handler
-	running  map[string]context.CancelCauseFunc
+	lanes    map[string]string // kind -> lane
+	running  map[string]*running
 	started  bool
 	stopping bool
 	wake     chan struct{}
@@ -87,6 +103,9 @@ func NewService(repo *Repo, events Publisher, opts Options) *Service {
 	def := DefaultOptions()
 	if opts.MaxConcurrent <= 0 {
 		opts.MaxConcurrent = def.MaxConcurrent
+	}
+	if opts.MaintenanceConcurrent <= 0 {
+		opts.MaintenanceConcurrent = def.MaintenanceConcurrent
 	}
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = def.MaxAttempts
@@ -103,15 +122,27 @@ func NewService(repo *Repo, events Publisher, opts Options) *Service {
 	return &Service{
 		repo: repo, opts: opts, events: events, now: time.Now,
 		handlers: map[string]Handler{},
-		running:  map[string]context.CancelCauseFunc{},
+		lanes:    map[string]string{},
+		running:  map[string]*running{},
 		wake:     make(chan struct{}, 1),
 		stop:     make(chan struct{}),
 	}
 }
 
-// Register adds a job kind. Call it while wiring the application, before
-// Start. Kind names look like "module.action", e.g. "files.copy".
-func (s *Service) Register(kind string, h Handler) {
+// running is a job being run now.
+type running struct {
+	cancel context.CancelCauseFunc
+	lane   string
+	key    string // serial key, "" for none
+}
+
+// Register adds a job kind in the user lane. Call it while wiring the
+// application, before Start. Kind names look like "module.action", e.g.
+// "files.copy".
+func (s *Service) Register(kind string, h Handler) { s.RegisterIn(LaneUser, kind, h) }
+
+// RegisterIn adds a job kind in a lane.
+func (s *Service) RegisterIn(lane, kind string, h Handler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.started {
@@ -120,7 +151,11 @@ func (s *Service) Register(kind string, h Handler) {
 	if _, dup := s.handlers[kind]; dup {
 		panic("jobs: kind registered twice: " + kind)
 	}
+	if lane != LaneUser && lane != LaneMaintenance {
+		panic("jobs: unknown lane " + lane)
+	}
 	s.handlers[kind] = h
+	s.lanes[kind] = lane
 }
 
 // Submit is what a feature passes to start a job.
@@ -132,6 +167,13 @@ type Submit struct {
 	// Payload says what to do. It is stored as JSON and handed to the
 	// handler, also after a restart, so it must hold everything needed.
 	Payload any
+	// SerialKey, when set, keeps jobs with the same key from running at the
+	// same time (one copy per destination). A job waiting for its key does
+	// not take a slot: the next job that is free to run starts instead.
+	SerialKey string
+	// UniqueKey, when set, refuses the job (CodeJobDuplicate) while a job
+	// of the same kind with the same key is queued or running.
+	UniqueKey string
 }
 
 const maxTitleLen = 200
@@ -153,8 +195,14 @@ func (s *Service) Submit(ctx context.Context, in Submit) (Job, error) {
 		return Job{}, errs.Internal(fmt.Errorf("jobs: encode payload: %w", err))
 	}
 
+	if len(in.SerialKey) > 300 || len(in.UniqueKey) > 300 {
+		return Job{}, errs.Internal(errors.New("jobs: key too long"))
+	}
 	job := Job{ID: newID(), Kind: in.Kind, OwnerID: in.OwnerID, Title: title, Status: StatusQueued, CreatedAt: s.now().UTC().Truncate(time.Second)}
-	if err := s.repo.Insert(ctx, job, string(payload)); err != nil {
+	if err := s.repo.Insert(ctx, job, string(payload), in.SerialKey, in.UniqueKey); err != nil {
+		if errors.Is(err, errDuplicate) {
+			return Job{}, errs.Conflict(CodeJobDuplicate, "This job is already queued or running.")
+		}
 		return Job{}, err
 	}
 	slog.InfoContext(ctx, "job queued", "job", job.ID, "kind", job.Kind, "owner", job.OwnerID)
@@ -220,8 +268,8 @@ func (s *Service) Stop(ctx context.Context) {
 	}
 	s.stopping = true
 	close(s.stop)
-	for _, cancel := range s.running {
-		cancel(errShutdown)
+	for _, r := range s.running {
+		r.cancel(errShutdown)
 	}
 	s.mu.Unlock()
 
@@ -253,8 +301,8 @@ func (s *Service) Cancel(ctx context.Context, actor *httpx.Principal, id string)
 	}
 	if !wasQueued {
 		s.mu.Lock()
-		if cancel, ok := s.running[id]; ok {
-			cancel(errCancelled)
+		if r, ok := s.running[id]; ok {
+			r.cancel(errCancelled)
 		}
 		s.mu.Unlock()
 	}
@@ -313,30 +361,51 @@ func (s *Service) dispatch() {
 	}
 }
 
-// fill starts queued jobs until the concurrency limit is reached.
+// fill starts queued jobs in every lane until its slots are full. In each
+// lane the oldest job that is free to run starts first: a job whose serial
+// key is taken waits without holding a slot.
 func (s *Service) fill() {
-	for {
-		s.mu.Lock()
-		if s.stopping || len(s.running) >= s.opts.MaxConcurrent {
+	for _, lane := range []string{LaneUser, LaneMaintenance} {
+		for {
+			s.mu.Lock()
+			limit := s.opts.MaxConcurrent
+			if lane == LaneMaintenance {
+				limit = s.opts.MaintenanceConcurrent
+			}
+			n, busy := 0, []string{}
+			for _, r := range s.running {
+				if r.lane == lane {
+					n++
+				}
+				if r.key != "" {
+					busy = append(busy, r.key)
+				}
+			}
+			var kinds []string
+			for _, k := range s.kindsLocked() {
+				if s.lanes[k] == lane {
+					kinds = append(kinds, k)
+				}
+			}
+			stopping := s.stopping
 			s.mu.Unlock()
-			return
+			if stopping || n >= limit {
+				break
+			}
+			job, payload, checkpoint, ok, err := s.repo.Claim(context.Background(), kinds, busy, s.now())
+			if err != nil {
+				slog.Error("could not take the next job", "err", err)
+				return
+			}
+			if !ok {
+				break
+			}
+			s.launch(job, payload, checkpoint, lane)
 		}
-		kinds := s.kindsLocked()
-		s.mu.Unlock()
-
-		job, payload, checkpoint, ok, err := s.repo.Claim(context.Background(), kinds, s.now())
-		if err != nil {
-			slog.Error("could not take the next job", "err", err)
-			return
-		}
-		if !ok {
-			return
-		}
-		s.launch(job, payload, checkpoint)
 	}
 }
 
-func (s *Service) launch(job Job, payload, checkpoint string) {
+func (s *Service) launch(job Job, payload, checkpoint, lane string) {
 	// Jobs run detached from any request, and as background work: file
 	// operations they do through a file worker get low IO priority.
 	ctx, cancel := context.WithCancelCause(sys.WithBackground(context.Background()))
@@ -349,7 +418,7 @@ func (s *Service) launch(job Job, payload, checkpoint string) {
 		_ = s.repo.Requeue(context.Background(), job.ID)
 		return
 	}
-	s.running[job.ID] = cancel
+	s.running[job.ID] = &running{cancel: cancel, lane: lane, key: job.serialKey}
 	if job.CancelRequested {
 		cancel(errCancelled)
 	}
@@ -465,6 +534,19 @@ func newID() string {
 	b := make([]byte, 12)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// Active reports whether a job of the kind with this unique key is queued
+// or running.
+func (s *Service) Active(ctx context.Context, kind, uniqueKey string) (bool, error) {
+	return s.repo.Active(ctx, kind, uniqueKey)
+}
+
+// Statuses returns the status of each job id that still exists (a job
+// that is not in the map was removed: its owner was deleted, or it was
+// older than the retention time).
+func (s *Service) Statuses(ctx context.Context, ids []string) (map[string]Status, error) {
+	return s.repo.Statuses(ctx, ids)
 }
 
 // ActiveCount is how many jobs are queued or running (a config restore

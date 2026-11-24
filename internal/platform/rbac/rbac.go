@@ -35,6 +35,12 @@ const (
 	// BackupManage lets a user download a config backup (it holds every
 	// password hash) and restore one (it replaces every user and share).
 	BackupManage Permission = "backup:manage"
+	// ReplicationManage lets a user set up replication: copying shares to
+	// another folder or machine, and pairing machines.
+	ReplicationManage Permission = "replication:manage"
+	// BlockManage lets a user serve disks over iSCSI / NVMe (a whole disk
+	// of this machine can be given to another computer).
+	BlockManage Permission = "block:manage"
 )
 
 // all lists every permission. Add new ones here too: the Admin role gets the
@@ -42,7 +48,7 @@ const (
 var all = []Permission{
 	UsersRead, UsersWrite, GroupsRead, GroupsWrite, SharesRead, SharesWrite,
 	FilesRead, FilesWrite, SettingsRead, SettingsWrite, AuditRead, SystemRead,
-	JobsManage, AlertsManage, SessionsManage, BackupManage,
+	JobsManage, AlertsManage, SessionsManage, BackupManage, ReplicationManage, BlockManage,
 }
 
 // Role is a named bundle of permissions.

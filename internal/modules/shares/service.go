@@ -42,11 +42,15 @@ type Service struct {
 	users  Users
 	samba  sys.Samba
 	files  sys.Files
+	nfs    sys.NFS
 	jobs   Jobs
 	alerts Alerts
 	blocks Blocks
 	logins Logins
-	now    func() time.Time
+	// noActivity: the activity log module is off, so Samba never gets
+	// the audit settings, whatever the stored setting says.
+	noActivity bool
+	now        func() time.Time
 	// protected are folders that must never be exposed through a share, on
 	// top of the system folders: NetShare Hub's own data (the database holds
 	// password hashes).
@@ -58,12 +62,15 @@ type Service struct {
 }
 
 func NewService(repo *Repo, u Users, system sys.System, j Jobs, protected ...string) *Service {
-	return &Service{repo: repo, users: u, samba: system.Samba, files: system.Files, jobs: j, now: time.Now, protected: protected}
+	return &Service{repo: repo, users: u, samba: system.Samba, files: system.Files, nfs: system.NFS, jobs: j, now: time.Now, protected: protected}
 }
 
 // Paths returns every share's folder by name (the activity log shows paths
 // inside the share).
 func (s *Service) Paths(ctx context.Context) (map[string]string, error) { return s.repo.Paths(ctx) }
+
+// DisableActivityLog is called when the activity log module is off.
+func (s *Service) DisableActivityLog() { s.noActivity = true }
 
 // SetAlerts connects the alerts module (wired after both exist).
 func (s *Service) SetAlerts(a Alerts) { s.alerts = a }
@@ -84,7 +91,7 @@ func (s *Service) sambaConfig(ctx context.Context, q querier, shares []Share) (s
 	if err != nil {
 		return sys.SambaConfig{}, err
 	}
-	cfg := sys.SambaConfig{Server: server, Shares: specs, Audit: activity}
+	cfg := sys.SambaConfig{Server: server, Shares: specs, Audit: activity && !s.noActivity}
 	if s.logins != nil {
 		if cfg.Banned, err = s.logins.BannedAddresses(ctx); err != nil {
 			return sys.SambaConfig{}, err
@@ -260,12 +267,17 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 		}
 		v.Check(!taken, "name", "taken", "A share with this name already exists.")
 	}
-	if _, err := s.checkAccess(ctx, v, in.Access); err != nil {
+	byID, err := s.checkAccess(ctx, v, in.Access)
+	if err != nil {
 		return Share{}, err
 	}
 	checkUploads(v, in.Access, in.Rules)
 	checkTimeMachine(v, in.Access, in.Rules, in.TimeMachineMaxGiB)
 	in.NetworkRules = checkNetworkRules(v, in.NetworkRules)
+	if in.NFS != nil {
+		n := s.checkNFS(v, *in.NFS, in.Access, in.Rules, byID)
+		in.NFS = &n
+	}
 	if err := v.Err(); err != nil {
 		return Share{}, err
 	}
@@ -286,7 +298,7 @@ func (s *Service) Create(ctx context.Context, actor int64, in CreateInput) (Shar
 	in.Path = real
 
 	var id int64
-	err = s.change(ctx, func(tx *sql.Tx) (bool, error) {
+	err = s.changeWith(ctx, in.NFS != nil && in.NFS.Enabled, func(tx *sql.Tx) (bool, error) {
 		var err error
 		if id, err = s.repo.Insert(ctx, tx, in, s.now()); err != nil {
 			return false, err
@@ -355,22 +367,36 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 		in.TimeMachine != nil || in.TimeMachineMaxGiB != nil
 
 	access := accessOf(before)
+	byID := map[int64]users.User{}
 	if in.Access != nil {
-		if _, err := s.checkAccess(ctx, v, *in.Access); err != nil {
+		if byID, err = s.checkAccess(ctx, v, *in.Access); err != nil {
 			return Share{}, err
 		}
 		access = *in.Access
+	} else if byID, err = s.usersOf(ctx, []Share{before}); err != nil {
+		return Share{}, err
 	}
 	checkUploads(v, access, *rules)
 	checkTimeMachine(v, access, *rules, set.TimeMachineMaxGiB)
 	if in.NetworkRules != nil {
 		*in.NetworkRules = checkNetworkRules(v, *in.NetworkRules)
 	}
+	// NFS depends on the access list and the rules: check the result
+	// whenever any of them changes, so a change cannot leave an export
+	// acting as a user without access.
+	nfs := before.NFS
+	if in.NFS != nil {
+		nfs = *in.NFS
+	}
+	if in.NFS != nil || (s.nfs != nil && nfs.Enabled && (in.Access != nil || settingsChanged)) {
+		nfs = s.checkNFS(v, nfs, access, *rules, byID)
+		in.NFS = &nfs
+	}
 	if err := v.Err(); err != nil {
 		return Share{}, err
 	}
 
-	err = s.change(ctx, func(tx *sql.Tx) (bool, error) {
+	err = s.changeWith(ctx, in.NFS != nil && (in.NFS.Enabled || before.NFS.Enabled), func(tx *sql.Tx) (bool, error) {
 		if in.Comment != nil {
 			if err := s.repo.UpdateComment(ctx, tx, id, *in.Comment, s.now()); err != nil {
 				return false, err
@@ -396,7 +422,12 @@ func (s *Service) Update(ctx context.Context, actor int64, id int64, in UpdateIn
 				return false, err
 			}
 		}
-		return in.Comment != nil || settingsChanged || in.NetworkRules != nil || in.Access != nil, nil
+		if in.NFS != nil {
+			if err := s.repo.UpdateNFS(ctx, tx, id, *in.NFS, s.now()); err != nil {
+				return false, err
+			}
+		}
+		return in.Comment != nil || settingsChanged || in.NetworkRules != nil || in.Access != nil || in.NFS != nil, nil
 	})
 	if err != nil && !errs.Is(err, CodeSambaReloadFailed) {
 		return Share{}, err
@@ -443,13 +474,24 @@ func (s *Service) FixPermissions(ctx context.Context, actor int64, id int64) (jo
 func (s *Service) RevokeUser(ctx context.Context, userID int64) error {
 	return s.change(ctx, func(tx *sql.Tx) (bool, error) {
 		n, err := s.repo.DeleteUserAccess(ctx, tx, userID)
-		return n > 0, err
+		if err != nil {
+			return false, err
+		}
+		dropped, err := s.dropNFSUser(ctx, tx, userID)
+		return n > 0 || dropped, err
 	})
 }
 
 // change is the only way the database and the Samba config are modified.
 // edit reports whether it changed anything; if not, Samba is left alone.
 func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed bool, err error)) error {
+	return s.changeWith(ctx, false, edit)
+}
+
+// changeWith is change; nfsStrict means the edit changed NFS settings, so
+// an NFS server that refuses undoes the whole change (otherwise the SMB
+// change stands and an alert says NFS could not follow).
+func (s *Service) changeWith(ctx context.Context, nfsStrict bool, edit func(tx *sql.Tx) (changed bool, err error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -478,6 +520,13 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 	if err := applyFailure(applyErr); err != nil {
 		return err
 	}
+	// NFS follows the shares just applied (the root side reads them back).
+	nfsErr := s.exportNFS(ctx, shares, cfg.Shares)
+	if nfsErr != nil && nfsStrict {
+		_ = tx.Rollback()
+		s.restoreConfig(ctx)
+		return nfsError(nfsErr)
+	}
 
 	if err := tx.Commit(); err != nil {
 		// Extremely unlikely, but then Samba has a config the database does
@@ -485,6 +534,7 @@ func (s *Service) change(ctx context.Context, edit func(tx *sql.Tx) (changed boo
 		s.restoreConfig(ctx)
 		return err
 	}
+	s.nfsAlert(ctx, nfsErr)
 	return s.afterApply(ctx, applyErr)
 }
 
@@ -509,6 +559,9 @@ func applyFailure(applyErr error) error {
 	case errors.Is(applyErr, sys.ErrReloadFailed):
 		// The config is valid and on disk; only the running Samba did not
 		// pick it up yet. Keep database and config in step, and say so.
+	case errors.Is(applyErr, sys.ErrReservedFolder):
+		return errs.Invalid(CodeFolderReserved, "This folder holds block storage disk images or a replication receiving folder, "+
+			"which must not be reachable as files. Choose another folder. Nothing was changed.").WithCause(applyErr)
 	case errors.Is(applyErr, sys.ErrModuleMissing):
 		return errs.Invalid(CodeSambaModuleMissing,
 			"A Samba module this needs is not installed: the activity log needs full_audit; Mac support and Time Machine need fruit, catia and streams_xattr. "+

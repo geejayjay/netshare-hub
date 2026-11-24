@@ -38,6 +38,9 @@ type Samba struct {
 	// workers use it to restart the ones whose access changed, so none keeps
 	// reaching a share its user was just removed from.
 	afterApply func()
+	// reserved returns folders no share may be, hold or be inside: disk
+	// image folders and replication receiving folders.
+	reserved func() []string
 }
 
 func NewSamba(r Runner, managedConfig, mainConfig string, protected ...string) *Samba {
@@ -289,6 +292,13 @@ func (s *Samba) checkPath(sh sys.ShareSpec) error {
 		if !pathAllowed(p, s.protected) {
 			return fmt.Errorf("%w: share %q points into a protected folder", sys.ErrInvalid, sh.Name)
 		}
+		if s.reserved != nil {
+			for _, r := range s.reserved() {
+				if sys.Overlaps(p, r) {
+					return fmt.Errorf("%w: share %q would expose %s", sys.ErrReservedFolder, sh.Name, r)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -419,7 +429,10 @@ func (s *Samba) ensureInclude(ctx context.Context) error {
 }
 
 // writeAtomic replaces a file in one step, so a reader never sees half of it.
-func writeAtomic(path, content string) error {
+func writeAtomic(path, content string) error { return writeAtomicMode(path, content, 0o644) }
+
+// writeAtomicMode is writeAtomic with the new file's permissions.
+func writeAtomicMode(path, content string, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".netshare-hub-*.tmp")
 	if err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
@@ -427,7 +440,7 @@ func writeAtomic(path, content string) error {
 	defer os.Remove(tmp.Name())
 
 	if _, err = tmp.WriteString(content); err == nil {
-		err = tmp.Chmod(0o644)
+		err = tmp.Chmod(mode)
 	}
 	if closeErr := tmp.Close(); err == nil {
 		err = closeErr

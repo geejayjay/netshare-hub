@@ -6,10 +6,15 @@ services:
     volumes:
       - .:/workspace
       - go-mod-cache:/go/pkg/mod
+      # Kernel modules for the block storage tests (iSCSI and NVMe targets).
+      - /lib/modules:/lib/modules:ro
     ports:
       - "445:445"
       - "8080:8080"
     working_dir: /workspace
+    # The kernel NFS server and the mounts the NFS tests make need it.
+    # A disposable test container only: never run NetShare Hub like this.
+    privileged: true
 
 volumes:
   go-mod-cache:

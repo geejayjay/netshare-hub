@@ -29,7 +29,7 @@ import (
 //  2. Peer credentials: for every connection the kernel tells us the caller's
 //     real UID (SO_PEERCRED). Only root and allowUser are served. A process
 //     cannot fake this value.
-func Serve(ctx context.Context, socket, allowUser string, system sys.System, version string) error {
+func Serve(ctx context.Context, socket, allowUser string, system sys.System, version string, features Features) error {
 	if os.Geteuid() != 0 {
 		return errors.New("the agent must run as root")
 	}
@@ -55,7 +55,7 @@ func Serve(ctx context.Context, socket, allowUser string, system sys.System, ver
 	}
 
 	server := &http.Server{
-		Handler:           NewServer(system, authorize, version),
+		Handler:           NewServerWith(system, authorize, version, features),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       2 * time.Minute,

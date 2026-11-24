@@ -30,6 +30,9 @@ type subscriber struct {
 	name    string
 	ch      chan Event
 	dropped atomic.Uint64
+	// wait (SubscribeWait): emit waits for room instead of dropping, until
+	// wait is done.
+	wait context.Context
 }
 
 // Stats says how ingestion is going.
@@ -47,6 +50,18 @@ func New() *Ingester { return &Ingester{} }
 // Subscribe before starting the sources.
 func (in *Ingester) Subscribe(name string, buffer int) <-chan Event {
 	s := &subscriber{name: name, ch: make(chan Event, max(buffer, 1))}
+	in.mu.Lock()
+	in.subs = append(in.subs, s)
+	in.mu.Unlock()
+	return s.ch
+}
+
+// SubscribeWait is Subscribe for the ONE consumer of an ingester that
+// reads files: when its buffer is full, reading waits (the log file is the
+// buffer) instead of dropping events, until ctx is done. Use it only on an
+// ingester with no other subscriber: a slow consumer pauses ingestion.
+func (in *Ingester) SubscribeWait(ctx context.Context, name string, buffer int) <-chan Event {
+	s := &subscriber{name: name, ch: make(chan Event, max(buffer, 1)), wait: ctx}
 	in.mu.Lock()
 	in.subs = append(in.subs, s)
 	in.mu.Unlock()
@@ -85,6 +100,14 @@ func (in *Ingester) emit(ev Event) {
 	in.mu.RLock()
 	defer in.mu.RUnlock()
 	for _, s := range in.subs {
+		if s.wait != nil {
+			select {
+			case s.ch <- ev:
+			case <-s.wait.Done():
+				s.dropped.Add(1)
+			}
+			continue
+		}
 		select {
 		case s.ch <- ev:
 		default:

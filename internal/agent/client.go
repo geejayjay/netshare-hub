@@ -49,7 +49,7 @@ func NewClient(hc *http.Client, base string) *Client {
 
 // System returns the client as a sys.System.
 func (c *Client) System() sys.System {
-	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c, Audit: c, Discovery: c}
+	return sys.System{Accounts: c, Samba: c, Files: c, Workers: c, Audit: c, Discovery: c, NFS: c, Replication: c, Block: c}
 }
 
 // Ping checks that the agent is reachable and accepts this process.
@@ -115,6 +115,21 @@ func (c *Client) SetEnabled(ctx context.Context, name string, enabled bool) erro
 
 func (c *Client) DeleteUser(ctx context.Context, name string) error {
 	return c.call(ctx, opDeleteUser, deleteUserRequest{Name: name}, nil)
+}
+
+// --- sys.NFS ---
+
+func (c *Client) NFSStatus(ctx context.Context) (sys.NFSStatus, error) {
+	var res sys.NFSStatus
+	err := c.call(ctx, opNFSStatus, struct{}{}, &res)
+	return res, err
+}
+
+func (c *Client) ApplyExports(ctx context.Context, exports []sys.NFSExport) error {
+	if exports == nil {
+		exports = []sys.NFSExport{}
+	}
+	return c.call(ctx, opApplyExports, applyExportsRequest{Exports: exports}, nil)
 }
 
 // --- sys.Samba ---

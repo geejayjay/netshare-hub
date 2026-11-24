@@ -85,7 +85,10 @@ func (a *AuditLog) Events(ctx context.Context) (<-chan sambalog.Event, error) {
 		return nil, err
 	}
 	in := sambalog.New()
-	events := in.Subscribe("stream", 10000)
+	// Lossless: when the web server reads slower than Samba writes (a burst
+	// of thousands of renames is exactly what the ransomware guard must
+	// see), reading the files waits instead of dropping events.
+	events := in.SubscribeWait(ctx, "stream", 10000)
 	go func() {
 		_ = in.TailDir(ctx, pattern, a.poll)
 		in.Close()

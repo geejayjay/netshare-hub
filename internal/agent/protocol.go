@@ -55,11 +55,16 @@ const (
 	// a unit: the agent has the fixed list of units.
 	opDiscoveryStatus = "discovery.status"
 	opSetDiscovery    = "discovery.set"
-	opResolveDir      = "files.resolve-dir"
-	opCreateShareDir  = "files.create-share-dir"
-	opWorker          = "files.worker"
-	pathPrefix        = "/v1/"
-	maxRequestBytes   = 8 << 20
+	// opNFSStatus reads whether NFS can be served; opApplyExports sets the
+	// NFS exports. An export names a live share, never a folder: the agent
+	// reads the folder and access from the applied Samba config.
+	opNFSStatus      = "nfs.status"
+	opApplyExports   = "nfs.apply-exports"
+	opResolveDir     = "files.resolve-dir"
+	opCreateShareDir = "files.create-share-dir"
+	opWorker         = "files.worker"
+	pathPrefix       = "/v1/"
+	maxRequestBytes  = 8 << 20
 )
 
 // Request and response bodies. Each operation has its own type and unknown
@@ -124,6 +129,10 @@ type setDiscoveryRequest struct {
 	On      bool                 `json:"on"`
 }
 
+type applyExportsRequest struct {
+	Exports []sys.NFSExport `json:"exports"`
+}
+
 type disconnectRequest struct {
 	IP string `json:"ip"`
 }
@@ -153,6 +162,8 @@ type errorResponse struct {
 	// Share and Path say which share's folder failed (ACL errors only).
 	Share string `json:"share,omitempty"`
 	Path  string `json:"path,omitempty"`
+	// ExitCode is rsync's (replication errors only).
+	ExitCode int `json:"exitCode,omitempty"`
 }
 
 // Error codes on the wire, one per error the sys interfaces document.
@@ -170,6 +181,7 @@ const (
 	codeACLUnsupported = "acl_unsupported"
 	codeACLFailed      = "acl_failed"
 	codeModuleMissing  = "module_missing"
+	codeReserved       = "reserved_folder"
 	codeForbidden      = "forbidden"
 	codeBadRequest     = "bad_request"
 	codeInternal       = "internal"
@@ -179,7 +191,10 @@ const (
 func encodeError(err error) (status int, res errorResponse) {
 	var cfg *sys.ConfigError
 	var aclErr *sys.ACLError
+	var diskErr *sys.DiskError
 	switch {
+	case errors.As(err, &diskErr):
+		return encodeDiskError(diskErr)
 	case errors.As(err, &cfg):
 		return http.StatusUnprocessableEntity, errorResponse{Code: codeConfigRejected, Message: cfg.Output}
 	case errors.As(err, &aclErr):
@@ -190,6 +205,8 @@ func encodeError(err error) (status int, res errorResponse) {
 		return status, errorResponse{Code: code, Message: aclErr.Err.Error(), Share: aclErr.Share, Path: aclErr.Path}
 	case errors.Is(err, sys.ErrModuleMissing):
 		return http.StatusUnprocessableEntity, errorResponse{Code: codeModuleMissing, Message: err.Error()}
+	case errors.Is(err, sys.ErrReservedFolder):
+		return http.StatusUnprocessableEntity, errorResponse{Code: codeReserved, Message: err.Error()}
 	case errors.Is(err, sys.ErrInvalid):
 		return http.StatusUnprocessableEntity, errorResponse{Code: codeInvalid, Message: err.Error()}
 	case errors.Is(err, sys.ErrNameTaken):
@@ -217,6 +234,8 @@ func encodeError(err error) (status int, res errorResponse) {
 func decodeError(res errorResponse) error {
 	wrap := func(base error) error { return &remoteError{message: res.Message, base: base} }
 	switch res.Code {
+	case codeDiskFailed:
+		return decodeDiskError(res)
 	case codeConfigRejected:
 		return &sys.ConfigError{Output: res.Message}
 	case codeACLUnsupported:
@@ -225,6 +244,8 @@ func decodeError(res errorResponse) error {
 		return &sys.ACLError{Share: res.Share, Path: res.Path, Err: &remoteError{message: res.Message}}
 	case codeModuleMissing:
 		return wrap(sys.ErrModuleMissing)
+	case codeReserved:
+		return wrap(sys.ErrReservedFolder)
 	case codeInvalid:
 		return wrap(sys.ErrInvalid)
 	case codeNameTaken:

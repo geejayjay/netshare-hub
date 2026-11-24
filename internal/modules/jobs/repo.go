@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"netshare-hub/internal/platform/db"
@@ -18,13 +19,16 @@ type Repo struct {
 func NewRepo(d *db.DB) *Repo { return &Repo{db: d} }
 
 const columns = `id, kind, owner_id, title, status, progress_done, progress_total, message,
-	error_code, error_message, attempts, cancel_requested, created_at, started_at, finished_at`
+	error_code, error_message, attempts, cancel_requested, created_at, started_at, finished_at, serial_key`
+
+// errDuplicate: a job of the kind with the same unique key is active.
+var errDuplicate = errors.New("jobs: duplicate unique key")
 
 func scan(s interface{ Scan(...any) error }) (Job, error) {
 	var j Job
 	var created, started, finished int64
 	err := s.Scan(&j.ID, &j.Kind, &j.OwnerID, &j.Title, &j.Status, &j.Done, &j.Total, &j.Message,
-		&j.ErrorCode, &j.ErrorMessage, &j.Attempts, &j.CancelRequested, &created, &started, &finished)
+		&j.ErrorCode, &j.ErrorMessage, &j.Attempts, &j.CancelRequested, &created, &started, &finished, &j.serialKey)
 	j.CreatedAt = time.Unix(created, 0).UTC()
 	j.StartedAt = optionalTime(started)
 	j.FinishedAt = optionalTime(finished)
@@ -39,11 +43,53 @@ func optionalTime(unix int64) *time.Time {
 	return &t
 }
 
-func (r *Repo) Insert(ctx context.Context, j Job, payload string) error {
+func (r *Repo) Insert(ctx context.Context, j Job, payload, serialKey, uniqueKey string) error {
 	_, err := r.db.Write.ExecContext(ctx,
-		`INSERT INTO jobs (id, kind, owner_id, title, status, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		j.ID, j.Kind, j.OwnerID, j.Title, StatusQueued, payload, j.CreatedAt.Unix())
+		`INSERT INTO jobs (id, kind, owner_id, title, status, payload, created_at, serial_key, unique_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		j.ID, j.Kind, j.OwnerID, j.Title, StatusQueued, payload, j.CreatedAt.Unix(), serialKey, uniqueKey)
+	if err != nil && uniqueKey != "" && strings.Contains(err.Error(), "UNIQUE") {
+		return errDuplicate
+	}
 	return err
+}
+
+// Active reports whether a job of the kind with this unique key is queued
+// or running.
+func (r *Repo) Active(ctx context.Context, kind, uniqueKey string) (bool, error) {
+	var one int
+	err := r.db.Read.QueryRowContext(ctx,
+		"SELECT 1 FROM jobs WHERE kind = ? AND unique_key = ? AND status IN ('queued', 'running') LIMIT 1", kind, uniqueKey).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// Statuses returns the status of each job id that still exists.
+func (r *Repo) Statuses(ctx context.Context, ids []string) (map[string]Status, error) {
+	out := map[string]Status{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := r.db.Read.QueryContext(ctx,
+		"SELECT id, status FROM jobs WHERE id IN (?"+strings.Repeat(",?", len(ids)-1)+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var st Status
+		if err := rows.Scan(&id, &st); err != nil {
+			return nil, err
+		}
+		out[id] = st
+	}
+	return out, rows.Err()
 }
 
 // Get returns a job, or (Job{}, false, nil) when it does not exist.
@@ -91,7 +137,7 @@ func (r *Repo) List(ctx context.Context, ownerID int64, active bool, p page.Requ
 // same second are broken by insertion order, the table's rowid) of one of the given kinds as running
 // and returns it with its payload and checkpoint. ok is false when nothing
 // is waiting.
-func (r *Repo) Claim(ctx context.Context, kinds []string, now time.Time) (j Job, payload, checkpoint string, ok bool, err error) {
+func (r *Repo) Claim(ctx context.Context, kinds, busyKeys []string, now time.Time) (j Job, payload, checkpoint string, ok bool, err error) {
 	if len(kinds) == 0 {
 		return Job{}, "", "", false, nil
 	}
@@ -107,9 +153,17 @@ func (r *Repo) Claim(ctx context.Context, kinds []string, now time.Time) (j Job,
 		placeholders += ",?"
 		args = append(args, k)
 	}
+	keys := ""
+	if len(busyKeys) > 0 {
+		keys = " AND (serial_key = '' OR serial_key NOT IN (?" + strings.Repeat(",?", len(busyKeys)-1) + "))"
+		for _, k := range busyKeys {
+			args = append(args, k)
+		}
+	}
 	var id string
 	err = tx.QueryRowContext(ctx,
-		"SELECT id, payload, checkpoint FROM jobs WHERE status = 'queued' AND kind IN ("+placeholders+") ORDER BY created_at, rowid LIMIT 1",
+		"SELECT id, payload, checkpoint FROM jobs WHERE status = 'queued' AND kind IN ("+placeholders+")"+keys+
+			" ORDER BY created_at, rowid LIMIT 1",
 		args...).Scan(&id, &payload, &checkpoint)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Job{}, "", "", false, nil

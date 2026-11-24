@@ -22,20 +22,30 @@ import (
 	"netshare-hub/internal/modules/activity"
 	activitymigrations "netshare-hub/internal/modules/activity/migrations"
 	"netshare-hub/internal/modules/alerts"
+	"netshare-hub/internal/modules/audit"
 	"netshare-hub/internal/modules/auth"
 	"netshare-hub/internal/modules/backup"
+	"netshare-hub/internal/modules/block"
 	"netshare-hub/internal/modules/discovery"
 	"netshare-hub/internal/modules/files"
 	"netshare-hub/internal/modules/guard"
 	"netshare-hub/internal/modules/jobs"
+	"netshare-hub/internal/modules/notify"
+	"netshare-hub/internal/modules/replication"
 	"netshare-hub/internal/modules/scheduler"
+	"netshare-hub/internal/modules/search"
 	"netshare-hub/internal/modules/sessions"
 	"netshare-hub/internal/modules/shares"
+	"netshare-hub/internal/modules/speedtest"
+	"netshare-hub/internal/modules/storage"
 	"netshare-hub/internal/modules/system"
 	"netshare-hub/internal/modules/users"
 	"netshare-hub/internal/platform/config"
 	"netshare-hub/internal/platform/db"
 	"netshare-hub/internal/platform/httpx"
+	"netshare-hub/internal/platform/logger"
+	"netshare-hub/internal/platform/page"
+	"netshare-hub/internal/platform/rbac"
 	"netshare-hub/internal/platform/sse"
 	"netshare-hub/internal/sys"
 	"netshare-hub/internal/sys/sambalog"
@@ -81,6 +91,8 @@ type Options struct {
 	// JobKinds registers extra job kinds before the engine starts. Tests use
 	// it; features register their kinds in New.
 	JobKinds map[string]jobs.Handler
+	// MaintenanceJobKinds are the same, in the maintenance lane.
+	MaintenanceJobKinds map[string]jobs.Handler
 	// JobOptions tunes the job engine (tests use short intervals).
 	JobOptions jobs.Options
 	// UploadExpiry overrides how long an idle upload is kept (tests).
@@ -97,6 +109,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	osLayer = TrimSystem(osLayer, cfg.Modules)
 
 	database, err := db.Open(filepath.Join(cfg.DataDir, "netshare-hub.db"))
 	if err != nil {
@@ -115,52 +128,85 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	shareService := shares.NewService(shares.NewRepo(database), userService, osLayer, jobService, cfg.ProtectedDirs()...)
 	// Users must be taken off every share before their system account goes away.
 	userService.SetAccessRevoker(shareService)
-	jobService.Register(shares.JobFixPermissions, shareService.RunFixPermissions)
+	jobService.RegisterIn(jobs.LaneMaintenance, shares.JobFixPermissions, shareService.RunFixPermissions)
 	alertService := alerts.NewService(alerts.NewRepo(database), sseHub)
 	shareService.SetAlerts(alertService)
+	notifyService := notify.NewService(database)
+	alertService.SetOnRaise(notifyService.Enqueue)
+	mods := cfg.Modules
+	closeAll := func() { database.Close() }
 
-	// The activity log has its own database file: heavy SMB activity never
-	// touches the main one.
-	activityDB, err := db.Open(filepath.Join(cfg.DataDir, "activity.db"))
-	if err != nil {
-		database.Close()
-		return nil, err
-	}
-	if err := activityDB.Migrate(ctx, activitymigrations.FS, filepath.Join(cfg.DataDir, "backups", "activity")); err != nil {
-		activityDB.Close()
-		database.Close()
-		return nil, err
-	}
-	activityOpts := opts.Activity
-	if activityOpts.Retention == 0 {
-		activityOpts.Retention = time.Duration(cfg.ActivityRetentionDays) * 24 * time.Hour
-	}
-	activityService := activity.NewService(activityDB, shareService, activityOpts)
+	// Optional modules: each is built, started and scheduled only when it is
+	// on (config [modules]). The guard and ban services are always built,
+	// because they are only database-backed objects until started: the
+	// config backup carries their settings either way.
 	smbEvents := sambalog.New()
-	activityEvents := smbEvents.Subscribe("activity", 50000)
+	var loops []func(context.Context)
+	loops = append(loops, notifyService.Run)
+	tasks := scheduler.New()
+
+	var activityDB *db.DB
+	var activityService *activity.Service
+	if mods.ActivityLog {
+		// The activity log has its own database file: heavy SMB activity
+		// never touches the main one.
+		activityDB, err = db.Open(filepath.Join(cfg.DataDir, "activity.db"))
+		if err != nil {
+			closeAll()
+			return nil, err
+		}
+		closeAll = func() { activityDB.Close(); database.Close() }
+		if err := activityDB.Migrate(ctx, activitymigrations.FS, filepath.Join(cfg.DataDir, "backups", "activity")); err != nil {
+			closeAll()
+			return nil, err
+		}
+		activityOpts := opts.Activity
+		if activityOpts.Retention == 0 {
+			activityOpts.Retention = time.Duration(cfg.ActivityRetentionDays) * 24 * time.Hour
+		}
+		activityService = activity.NewService(activityDB, shareService, activityOpts)
+		events := smbEvents.Subscribe("activity", 50000)
+		loops = append(loops, func(ctx context.Context) { activityService.Record(ctx, events) })
+		tasks.Add(scheduler.Task{Name: "activity.cleanup", Daily: 4 * time.Hour, Run: activityService.Prune})
+	} else {
+		shareService.DisableActivityLog()
+	}
 
 	// The ransomware guard watches the same events, and tells shares which
 	// users may only read.
 	guardService := guard.NewService(database, userService, shareService, osLayer.Samba, alertService)
-	if err := guardService.Start(ctx); err != nil {
-		activityDB.Close()
-		database.Close()
-		return nil, err
+	if mods.RansomwareGuard {
+		if err := guardService.Start(ctx); err != nil {
+			closeAll()
+			return nil, err
+		}
+		shareService.SetBlocks(guardService)
+		events := smbEvents.Subscribe("guard", 50000)
+		loops = append(loops, func(ctx context.Context) { guardService.Run(ctx, events) })
 	}
-	shareService.SetBlocks(guardService)
-	guardEvents := smbEvents.Subscribe("guard", 50000)
 
 	// SMB brute-force protection: failed logins from the same events.
 	banService := guard.NewBans(database, shareService, osLayer.Samba, osLayer.Neighbors, alertService)
-	backupService := backup.NewService(database, userService, shareService, guardService, banService, jobService,
-		osLayer, cfg.DataDir, Version)
-	if err := banService.Start(ctx); err != nil {
-		activityDB.Close()
-		database.Close()
-		return nil, err
+	if mods.BruteForce {
+		if err := banService.Start(ctx); err != nil {
+			closeAll()
+			return nil, err
+		}
+		shareService.SetLogins(banService)
+		events := smbEvents.Subscribe("bans", 50000)
+		loops = append(loops, func(ctx context.Context) { banService.Run(ctx, events) })
+		tasks.Add(scheduler.Task{Name: "smb-bans.expire", Every: time.Minute, Run: banService.Expire})
+		tasks.Add(scheduler.Task{Name: "smb-bans.forget", Every: 10 * time.Minute, Run: banService.Purge})
 	}
-	shareService.SetLogins(banService)
-	banEvents := smbEvents.Subscribe("bans", 50000)
+	if mods.SMBEvents() {
+		loops = append(loops, func(ctx context.Context) { feedSMBEvents(ctx, osLayer.Audit, smbEvents) })
+	}
+
+	var backupService *backup.Service
+	if mods.Backup {
+		backupService = backup.NewService(database, userService, shareService, guardService, banService, jobService,
+			osLayer, cfg.DataDir, Version)
+	}
 	// Write the config once at start: login logging on, ended bans gone.
 	if err := shareService.Reapply(ctx); err != nil {
 		slog.WarnContext(ctx, "could not write the Samba config at start", "err", err)
@@ -168,30 +214,98 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 	for kind, h := range opts.JobKinds {
 		jobService.Register(kind, h)
 	}
-	fileClient := fileworker.NewClient(osLayer.Workers)
-	fileService := files.NewService(database, fileClient, userService, shareService, jobService,
-		files.Options{MaxUploadBytes: cfg.MaxUploadBytes, UploadExpiry: opts.UploadExpiry})
-	jobService.Register(files.JobCopy, fileService.RunCopy)
-	jobService.Register(files.JobDelete, fileService.RunDelete)
+	for kind, h := range opts.MaintenanceJobKinds {
+		jobService.RegisterIn(jobs.LaneMaintenance, kind, h)
+	}
 
-	// Everything timed, in one place.
-	tasks := scheduler.New()
-	tasks.Add(scheduler.Task{Name: "uploads.cleanup", Every: time.Hour, Run: func(ctx context.Context) error {
-		fileService.SweepUploads(ctx) // abandoned uploads: a day without data
-		return nil
-	}})
+	var fileClient *fileworker.Client
+	var fileService *files.Service
+	if mods.FileManager {
+		fileClient = fileworker.NewClient(osLayer.Workers)
+		fileService = files.NewService(database, fileClient, userService, shareService, jobService,
+			files.Options{MaxUploadBytes: cfg.MaxUploadBytes, UploadExpiry: opts.UploadExpiry})
+		jobService.Register(files.JobCopy, fileService.RunCopy)
+		jobService.Register(files.JobDelete, fileService.RunDelete)
+		tasks.Add(scheduler.Task{Name: "uploads.cleanup", Every: time.Hour, Run: func(ctx context.Context) error {
+			fileService.SweepUploads(ctx) // abandoned uploads: a day without data
+			return nil
+		}})
+	}
+
+	var replicationService *replication.Service
+	if mods.Replication {
+		replicationService = replication.NewService(database, shareService, jobService, alertService, osLayer.Replication,
+			cfg.ProtectedDirs()...)
+		jobService.RegisterIn(jobs.LaneMaintenance, replication.JobKind, replicationService.RunJob)
+		tasks.Add(scheduler.Task{Name: "replication.schedule", Every: time.Minute, Run: replicationService.Tick})
+	}
+
+	var blockService *block.Service
+	if mods.BlockStorage {
+		blockService = block.NewService(database, osLayer.Block, shareService, alertService, cfg.ProtectedDirs()...)
+		// The kernel forgets its targets at every reboot.
+		blockService.Reapply(ctx)
+	}
+
+	// Core tasks.
+	searchService := search.NewService(database, search.ProviderFuncs{
+		All: func(ctx context.Context) ([]search.ShareRef, error) {
+			list, _, err := shareService.List(ctx, page.Request{Page: 1, Size: 500})
+			if err != nil {
+				return nil, err
+			}
+			out := make([]search.ShareRef, 0, len(list))
+			for _, s := range list {
+				out = append(out, search.ShareRef{ID: s.ID, Name: s.Name, Path: s.Path})
+			}
+			return out, nil
+		},
+		Readable: func(ctx context.Context, userID int64) ([]int64, error) {
+			mine, err := shareService.ListForUser(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]int64, 0, len(mine))
+			for _, s := range mine {
+				if s.Level == shares.LevelRead || s.Level == shares.LevelWrite {
+					out = append(out, s.ID)
+				}
+			}
+			return out, nil
+		},
+	})
+	if mods.SMBEvents() {
+		ev := smbEvents.Subscribe("search", 4096)
+		loops = append(loops, func(ctx context.Context) { searchService.WatchSMBEvents(ctx, ev) })
+	}
+	tasks.Add(scheduler.Task{Name: "search.reindex", Daily: 3 * time.Hour, Run: searchService.Reindex})
+	storageService := storage.NewService(cfg.DataDir, func(ctx context.Context) ([]storage.ShareRef, error) {
+		list, _, err := shareService.List(ctx, page.Request{Page: 1, Size: 500})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]storage.ShareRef, 0, len(list))
+		for _, s := range list {
+			out = append(out, storage.ShareRef{ID: s.ID, Name: s.Name, Path: s.Path})
+		}
+		return out, nil
+	})
+	tasks.Add(scheduler.Task{Name: "storage.scan", Daily: 4*time.Hour + 30*time.Minute, Run: storageService.RunTask})
 	tasks.Add(scheduler.Task{Name: "jobs.cleanup", Every: time.Hour, Run: jobService.Cleanup})
 	tasks.Add(scheduler.Task{Name: "alerts.cleanup", Daily: 3*time.Hour + 30*time.Minute, Run: alertService.Prune})
-	tasks.Add(scheduler.Task{Name: "activity.cleanup", Daily: 4 * time.Hour, Run: activityService.Prune})
-	tasks.Add(scheduler.Task{Name: "smb-bans.expire", Every: time.Minute, Run: banService.Expire})
-	tasks.Add(scheduler.Task{Name: "smb-bans.forget", Every: 10 * time.Minute, Run: banService.Purge})
+	if err := tasks.Load(ctx, database); err != nil {
+		closeAll()
+		return nil, err
+	}
+
+	auditService := audit.NewService(database)
 
 	router := chi.NewRouter()
 	router.Use(httpx.RequestID, httpx.RealIP, httpx.AccessLog, httpx.Recover, httpx.SecurityHeaders)
 
 	var api huma.API
 	router.Route(APIPrefix, func(r chi.Router) {
-		r.Use(httpx.NoStore, auth.Middleware(authService))
+		r.Use(httpx.NoStore, auth.Middleware(authService), audit.Middleware(auditService))
 		r.NotFound(httpx.NotFound)
 		r.MethodNotAllowed(httpx.MethodNotAllowed)
 
@@ -200,21 +314,64 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 		api = humachi.New(r, apiConfig())
 
 		// Each module registers its own routes.
+		// Each module registers its own routes; a module that is off
+		// has none (its paths answer 404).
 		system.Register(api, Version)
+		system.RegisterModules(api, moduleList(mods))
+		system.RegisterLogs(api, logger.DefaultRing)
+		system.RegisterMounts(api, func(ctx context.Context) []string {
+			list, _, err := shareService.List(ctx, page.Request{Page: 1, Size: 500})
+			if err != nil {
+				return nil
+			}
+			paths := make([]string, 0, len(list))
+			for _, s := range list {
+				paths = append(paths, s.Path)
+			}
+			return paths
+		})
+		audit.Register(api, auditService)
+		speedtest.Register(api, r, cfg.DataDir)
 		auth.Register(api, authService, cfg.SecureCookies)
 		users.Register(api, userService)
 		shares.Register(api, shareService)
 		jobs.Register(api, jobService)
-		files.Register(api, fileService)
-		files.RegisterUploads(r, fileService)
 		alerts.Register(api, alertService)
-		activity.Register(api, activityService)
-		guard.Register(api, guardService)
-		guard.RegisterBans(api, banService)
-		sessions.Register(api, osLayer.Samba)
-		discovery.Register(api, osLayer.Discovery)
-		backup.Register(api, backupService)
+		notify.Register(api, notifyService)
+		search.Register(api, searchService)
+		storage.Register(api, storageService)
 		scheduler.Register(api, tasks)
+		if mods.NFS {
+			shares.RegisterNFS(api, shareService)
+		}
+		if mods.FileManager {
+			files.Register(api, fileService)
+			files.RegisterUploads(r, fileService)
+		}
+		if mods.ActivityLog {
+			activity.Register(api, activityService)
+		}
+		if mods.RansomwareGuard {
+			guard.Register(api, guardService)
+		}
+		if mods.BruteForce {
+			guard.RegisterBans(api, banService)
+		}
+		if mods.Sessions {
+			sessions.Register(api, osLayer.Samba)
+		}
+		if mods.Discovery {
+			discovery.Register(api, osLayer.Discovery)
+		}
+		if mods.Backup {
+			backup.Register(api, backupService)
+		}
+		if mods.Replication {
+			replication.Register(api, replicationService)
+		}
+		if mods.BlockStorage {
+			block.Register(api, blockService)
+		}
 	})
 
 	if opts.Static != nil {
@@ -223,25 +380,34 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 
 	// Every job kind is registered by now: resume interrupted jobs and start.
 	if err := jobService.Start(ctx); err != nil {
-		database.Close()
+		closeAll()
 		return nil, err
 	}
-
-	tasks.Start()
-	background, cancel := context.WithCancel(context.Background())
-	var loops sync.WaitGroup
-	loops.Add(4)
-	go func() { defer loops.Done(); activityService.Record(background, activityEvents) }()
-	go func() { defer loops.Done(); guardService.Run(background, guardEvents) }()
-	go func() { defer loops.Done(); banService.Run(background, banEvents) }()
-	go func() { defer loops.Done(); feedSMBEvents(background, osLayer.Audit, smbEvents) }()
-	stop := func() {
-		tasks.Stop()
-		cancel()
-		loops.Wait()
+	if replicationService != nil {
+		// Runs a crash left open (their job was given up or is gone).
+		if err := replicationService.Reconcile(ctx); err != nil {
+			slog.WarnContext(ctx, "could not close unfinished replication runs", "err", err)
+		}
 	}
 
-	slog.Info("application ready", "version", Version, "data_dir", cfg.DataDir)
+	logger.DefaultRing.SetListener(func(e logger.LogEntry) {
+		sseHub.PublishTo("log", e, func(p *httpx.Principal) bool { return p != nil && p.Can(rbac.SystemRead) })
+	})
+	tasks.Start()
+	background, cancel := context.WithCancel(context.Background())
+	var running sync.WaitGroup
+	for _, loop := range loops {
+		running.Add(1)
+		go func() { defer running.Done(); loop(background) }()
+	}
+	stop := func() {
+		logger.DefaultRing.SetListener(nil)
+		tasks.Stop()
+		cancel()
+		running.Wait()
+	}
+
+	slog.Info("application ready", "version", Version, "data_dir", cfg.DataDir, "modules", moduleList(mods))
 	return &App{Handler: router, API: api, Events: sseHub, Files: fileClient, Jobs: jobService, db: database, stop: stop, files: fileService,
 		SMBEvents: smbEvents, activityDB: activityDB}, nil
 }
@@ -300,7 +466,11 @@ func feedSMBEvents(ctx context.Context, source sys.Audit, out *sambalog.Ingester
 }
 
 // SweepUploads throws away abandoned uploads now (it also runs every hour).
-func (a *App) SweepUploads(ctx context.Context) { a.files.SweepUploads(ctx) }
+func (a *App) SweepUploads(ctx context.Context) {
+	if a.files != nil {
+		a.files.SweepUploads(ctx)
+	}
+}
 
 // Close releases resources.
 func (a *App) Close() error {
@@ -309,7 +479,9 @@ func (a *App) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	a.Jobs.Stop(ctx)
-	a.activityDB.Close()
+	if a.activityDB != nil {
+		a.activityDB.Close()
+	}
 	return a.db.Close()
 }
 

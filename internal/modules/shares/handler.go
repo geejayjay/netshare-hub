@@ -45,6 +45,7 @@ type CreateShareRequest struct {
 	TimeMachineMax  int                `json:"timeMachineMaxGiB,omitempty" minimum:"0" maximum:"1048576" doc:"The size Time Machine sees as the disk, in GiB (0: the real disk's size)."`
 	NetworkRules    []NetworkRule      `json:"networkRules,omitempty" maxItems:"128" doc:"Which computers may connect (see Share.networkRules)."`
 	Access          []ShareAccessInput `json:"access,omitempty" maxItems:"500" doc:"Users who may use the share. Without any (and without guest access), nobody can connect."`
+	NFS             *NFS               `json:"nfs,omitempty" doc:"Export over NFS (see Share.nfs)."`
 }
 
 // UpdateShareRequest changes only the fields that are present.
@@ -58,6 +59,7 @@ type UpdateShareRequest struct {
 	TimeMachineMax *int                `json:"timeMachineMaxGiB,omitempty" minimum:"0" maximum:"1048576"`
 	NetworkRules   *[]NetworkRule      `json:"networkRules,omitempty" maxItems:"128" doc:"Replaces the whole list of network rules."`
 	Access         *[]ShareAccessInput `json:"access,omitempty" maxItems:"500" doc:"Replaces the whole access list."`
+	NFS            *NFS                `json:"nfs,omitempty" doc:"Replaces the NFS settings."`
 }
 
 // PreviewAccessRequest is a share's access settings, to preview.
@@ -273,6 +275,7 @@ func (h *handler) create(ctx context.Context, in *createInput) (*shareOutput, er
 		TimeMachineMaxGiB: in.Body.TimeMachineMax,
 		NetworkRules:      in.Body.NetworkRules,
 		Access:            accessInputs(in.Body.Access),
+		NFS:               in.Body.NFS,
 	})
 	if err != nil {
 		return nil, err
@@ -284,7 +287,7 @@ func (h *handler) update(ctx context.Context, in *updateInput) (*shareOutput, er
 	update := UpdateInput{Comment: in.Body.Comment, ReadOnly: in.Body.ReadOnly,
 		GuestAccess: in.Body.GuestAccess, Preset: in.Body.Preset, HideUnreadable: in.Body.HideUnreadable,
 		TimeMachine: in.Body.TimeMachine, TimeMachineMaxGiB: in.Body.TimeMachineMax,
-		NetworkRules: in.Body.NetworkRules}
+		NetworkRules: in.Body.NetworkRules, NFS: in.Body.NFS}
 	if in.Body.Access != nil {
 		access := accessInputs(*in.Body.Access)
 		update.Access = &access

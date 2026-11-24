@@ -49,6 +49,10 @@ var (
 	// ErrACLUnsupported means a share's folder is on a filesystem without
 	// POSIX ACLs (for example ZFS without acltype=posixacl). Nothing changed.
 	ErrACLUnsupported = errors.New("filesystem does not support ACLs")
+	// ErrReservedFolder means a share would expose a folder another
+	// feature owns: disk images (block storage) or a replication
+	// receiving folder. Nothing was changed.
+	ErrReservedFolder = errors.New("folder is used by block storage or replication")
 	// ErrModuleMissing means a Samba module the config needs is not
 	// installed (full_audit and Apple's fruit, catia and streams_xattr are
 	// in Debian's samba-vfs-modules). A share that
@@ -249,4 +253,21 @@ type System struct {
 	Audit     Audit
 	Neighbors Neighbors
 	Discovery Discovery
+	// NFS is nil where NFS is not offered at all.
+	NFS NFS
+	// Replication is nil when the replication module is off.
+	Replication Replication
+	// Block is nil when the block storage module is off.
+	Block Block
+}
+
+// Message is an error from the system layer in words for an admin: without
+// the "agent: " prefix and the generic text of the sentinel it wraps
+// ("account not found: no share named x" becomes "no share named x").
+func Message(err error) string {
+	msg := strings.TrimPrefix(err.Error(), "agent: ")
+	for _, s := range []error{ErrNotFound, ErrInvalid, ErrDisabled, ErrNotManaged, ErrReservedFolder} {
+		msg = strings.TrimPrefix(msg, s.Error()+": ")
+	}
+	return msg
 }

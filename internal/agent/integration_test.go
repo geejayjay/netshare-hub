@@ -79,7 +79,7 @@ func TestAgentEndToEnd(t *testing.T) {
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- agent.Serve(ctx, socket, webUser, system, "itest") }()
+	go func() { done <- agent.Serve(ctx, socket, webUser, system, "itest", agent.AllFeatures()) }()
 	t.Cleanup(func() {
 		stop()
 		<-done

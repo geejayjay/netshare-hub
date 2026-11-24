@@ -71,6 +71,8 @@ type Job struct {
 	CreatedAt       time.Time  `json:"createdAt"`
 	StartedAt       *time.Time `json:"startedAt,omitempty"`
 	FinishedAt      *time.Time `json:"finishedAt,omitempty"`
+	// serialKey: see Submit.SerialKey.
+	serialKey string
 }
 
 // Error codes owned by this module.
@@ -80,6 +82,7 @@ const (
 	CodeJobInterrupted  errs.Code = "JOB_INTERRUPTED"
 	CodeUnknownJobKind  errs.Code = "UNKNOWN_JOB_KIND"
 	CodeJobAlreadyEnded errs.Code = "JOB_ALREADY_FINISHED"
+	CodeJobDuplicate    errs.Code = "JOB_ALREADY_QUEUED"
 )
 
 func errNotFound() error {

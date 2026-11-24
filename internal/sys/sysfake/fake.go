@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"netshare-hub/internal/fileworker"
 	"netshare-hub/internal/sys"
@@ -70,6 +71,13 @@ type Fake struct {
 	// tests may set it to a temporary directory.
 	FilesDir string
 
+	// Exports and ExportsFile are the last applied NFS exports.
+	Exports     []sys.NFSExport
+	ExportsFile string
+	nfs         sys.NFSStatus
+	replication *Replication
+	block       *Block
+
 	// MissingModules pretends these Samba modules are not installed.
 	MissingModules []string
 	disconnected   []netip.Addr
@@ -110,6 +118,7 @@ func New() *Fake {
 		dirs:     map[string]bool{},
 		failures: map[string]error{},
 		workers:  map[string]*fakeWorker{},
+		nfs:      sys.NFSStatus{Installed: true, Running: true, Supported: true},
 		discovery: sys.DiscoveryStatus{Systemd: true,
 			WSD:  sys.ServiceState{Installed: true, Unit: "wsdd.service"},
 			MDNS: sys.ServiceState{Installed: true, Unit: "avahi-daemon.service"}},
@@ -118,7 +127,113 @@ func New() *Fake {
 
 // System returns the fake as a sys.System.
 func (f *Fake) System() sys.System {
-	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f, Neighbors: f, Discovery: f}
+	return sys.System{Accounts: f, Samba: f, Files: f, Workers: f, Audit: f, Neighbors: f, Discovery: f, NFS: f,
+		Replication: f.Replication(), Block: f.Block()}
+}
+
+// --- sys.NFS ---
+
+// SetNFSStatus sets what NFSStatus reports (Exports is filled in).
+func (f *Fake) SetNFSStatus(st sys.NFSStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nfs = st
+}
+
+// CurrentExports returns the applied NFS exports file.
+func (f *Fake) CurrentExports() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ExportsFile
+}
+
+// NFSStatus reports the pretend NFS server: installed and running.
+func (f *Fake) NFSStatus(context.Context) (sys.NFSStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	st := f.nfs
+	st.Exports = append([]string{}, sys.ParseExportShares(f.ExportsFile)...)
+	return st, nil
+}
+
+// refreshExports re-checks the applied exports against the shares (the
+// real system's NFS.Refresh). f.mu is held.
+func (f *Fake) refreshExports() {
+	// Like the real system: requests are kept; only what is allowed now
+	// is exported.
+	var resolved []sys.ResolvedExport
+	for _, e := range f.Exports {
+		if r, err := f.resolveExport(e); err == nil {
+			resolved = append(resolved, r)
+		}
+	}
+	if content, err := sys.RenderExports(resolved); err == nil {
+		f.ExportsFile = content
+	}
+}
+
+// resolveExport is the real system's lookup: the share from the applied
+// config, the account from the managed ones. f.mu is held.
+func (f *Fake) resolveExport(e sys.NFSExport) (sys.ResolvedExport, error) {
+	var share *sys.ShareSpec
+	for i := range f.shares {
+		if strings.EqualFold(f.shares[i].Name, e.Share) {
+			share = &f.shares[i]
+		}
+	}
+	if share == nil {
+		return sys.ResolvedExport{}, fmt.Errorf("%w: no share named %q", sys.ErrInvalid, e.Share)
+	}
+	uid, gid := -1, -1
+	if e.AsUser != "" {
+		acc, ok := f.accounts[e.AsUser]
+		if !ok {
+			return sys.ResolvedExport{}, fmt.Errorf("%w: %q is not an account NetShare Hub manages", sys.ErrInvalid, e.AsUser)
+		}
+		if !acc.Enabled {
+			return sys.ResolvedExport{}, fmt.Errorf("%w: %q is disabled", sys.ErrDisabled, e.AsUser)
+		}
+		uid, gid = 1000+len(e.AsUser), 1000
+	}
+	r, err := sys.ResolveExport(e, *share, uid, gid)
+	if err != nil {
+		return sys.ResolvedExport{}, fmt.Errorf("%w: %v", sys.ErrInvalid, err)
+	}
+	return r, nil
+}
+
+// ApplyExports checks exports like the real system (against the applied
+// shares) and keeps them in Exports and ExportsFile.
+func (f *Fake) ApplyExports(_ context.Context, exports []sys.NFSExport) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(exports) > 0 && (!f.nfs.Installed || !f.nfs.Supported) {
+		return fmt.Errorf("%w: the NFS server cannot run here", sys.ErrNotFound)
+	}
+	var resolved []sys.ResolvedExport
+	for _, e := range exports {
+		if err := e.Check(); err != nil {
+			return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
+		}
+		r, err := f.resolveExport(e)
+		if errors.Is(err, sys.ErrDisabled) {
+			continue // left out while the account is disabled
+		}
+		if err != nil {
+			return err
+		}
+		resolved = append(resolved, r)
+	}
+	content, err := sys.RenderExports(resolved)
+	if err != nil {
+		return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
+	}
+	if err := f.fail("ApplyExports"); err != nil {
+		return err
+	}
+	f.Exports = append([]sys.NFSExport(nil), exports...)
+	f.ExportsFile = content
+	return nil
 }
 
 // --- sys.Audit ---
@@ -143,7 +258,9 @@ func (f *Fake) Events(ctx context.Context) (<-chan sambalog.Event, error) {
 }
 
 // EmitAudit sends an event to every open Events stream, as Samba's logs
-// would (a full stream drops it, like the real reader).
+// would. Like the real reader, a full stream waits for its reader (a
+// burst is never lost); after 5 seconds without a reader the event is
+// dropped, so a test without one cannot hang.
 func (f *Fake) EmitAudit(ev sambalog.Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -151,6 +268,10 @@ func (f *Fake) EmitAudit(ev sambalog.Event) {
 		select {
 		case ch <- ev:
 		default:
+			select {
+			case ch <- ev:
+			case <-time.After(5 * time.Second):
+			}
 		}
 	}
 }
@@ -296,6 +417,7 @@ func (f *Fake) SetEnabled(_ context.Context, name string, enabled bool) error {
 	if !enabled {
 		f.stopWorkers(name)
 	}
+	f.refreshExports()
 	return nil
 }
 
@@ -333,7 +455,27 @@ func (f *Fake) ApplyConfig(_ context.Context, cfg sys.SambaConfig) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", sys.ErrInvalid, err)
 	}
+	// Like the real system: disk image folders and replication receiving
+	// folders are never shared.
+	var reserved []string
+	if f.block != nil {
+		for _, d := range f.block.Disks() {
+			if d.ImageFolder != "" {
+				reserved = append(reserved, d.ImageFolder)
+			}
+		}
+	}
+	if f.replication != nil {
+		for _, rc := range f.replication.ReceiverList() {
+			reserved = append(reserved, rc.Path)
+		}
+	}
 	for i, sh := range shares {
+		for _, r := range reserved {
+			if sys.Overlaps(sh.Path, r) {
+				return fmt.Errorf("%w: share %q would expose %s", sys.ErrReservedFolder, sh.Name, r)
+			}
+		}
 		for _, other := range shares[:i] {
 			if sys.Overlaps(sh.Path, other.Path) {
 				return fmt.Errorf("%w: shares %q and %q overlap", sys.ErrInvalid, other.Name, sh.Name)
@@ -357,6 +499,8 @@ func (f *Fake) ApplyConfig(_ context.Context, cfg sys.SambaConfig) error {
 	f.Config = config
 	f.Applied++
 	f.shares = append([]sys.ShareSpec(nil), shares...)
+	// Like the real system: no NFS export outlives what its share allows.
+	f.refreshExports()
 	// Like the real system: restart the workers whose access changed.
 	for name := range f.workers {
 		if !sameRoots(f.workers[name].roots, sys.RootsFor(name, f.shares)) {

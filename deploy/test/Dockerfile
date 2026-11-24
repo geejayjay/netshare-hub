@@ -11,7 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         git \
+        kmod \
+        nfs-kernel-server \
+        nvme-cli \
+        libiscsi-bin \
+        openssh-client \
+        openssh-server \
         passwd \
+        rsync \
         samba \
         samba-common-bin \
         samba-vfs-modules \

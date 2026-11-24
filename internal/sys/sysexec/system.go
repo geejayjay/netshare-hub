@@ -44,17 +44,29 @@ func New(opts Options) (sys.System, error) {
 	workers := newWorkers(runner, accounts, DefaultManagedConfig, DefaultWorkerDir, webUID, webGID)
 	workers.exe = opts.WorkerExe
 
-	// A worker must not outlive the access it was started with.
+	nfs := NewNFS(runner, accounts, samba, DefaultExportsFile)
+	replication := NewReplication(runner, samba, DefaultReplicationDir, opts.Protected...)
+	block := NewBlock(samba, DefaultBlockDir, opts.Protected...)
+	samba.reserved = func() []string { return append(replication.ReservedFolders(), block.ReservedFolders()...) }
+	// A worker, or an NFS export, must not outlive the access it was
+	// started with.
 	accounts.onRevoke = workers.Stop
-	samba.afterApply = workers.Refresh
+	accounts.onEnabled = func() { nfs.Refresh(context.Background()) }
+	samba.afterApply = func() {
+		workers.Refresh()
+		nfs.Refresh(context.Background())
+	}
 
 	return sys.System{
-		Accounts:  accounts,
-		Samba:     samba,
-		Files:     NewFiles(runner, opts.Protected...),
-		Workers:   workers,
-		Audit:     NewAuditLog(runner, DefaultMainConfig),
-		Neighbors: NewNeighbors(),
-		Discovery: NewDiscovery(runner),
+		Accounts:    accounts,
+		Samba:       samba,
+		Files:       NewFiles(runner, opts.Protected...),
+		Workers:     workers,
+		Audit:       NewAuditLog(runner, DefaultMainConfig),
+		Neighbors:   NewNeighbors(),
+		Discovery:   NewDiscovery(runner),
+		NFS:         nfs,
+		Replication: replication,
+		Block:       block,
 	}, nil
 }

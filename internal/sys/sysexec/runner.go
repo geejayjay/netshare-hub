@@ -50,6 +50,9 @@ var allowed = map[string][]string{
 	"smbcontrol": {"/usr/bin/smbcontrol"},
 	"smbstatus":  {"/usr/bin/smbstatus"},
 	"systemctl":  {"/usr/bin/systemctl", "/bin/systemctl"},
+	"exportfs":   {"/usr/sbin/exportfs", "/sbin/exportfs"},
+	"rsync":      {"/usr/bin/rsync"},
+	"ssh-keygen": {"/usr/bin/ssh-keygen"},
 }
 
 const commandTimeout = 30 * time.Second

@@ -45,6 +45,60 @@ type Config struct {
 	MaxUploadBytes int64 `toml:"max_upload_bytes"`
 	// ActivityRetentionDays is how long the SMB activity log is kept.
 	ActivityRetentionDays int `toml:"activity_retention_days"`
+	// Modules switches optional features on or off (see Modules).
+	Modules Modules `toml:"modules"`
+}
+
+// Modules are the optional features. A module that is off costs nothing:
+// its routes, background work and scheduled tasks do not exist, and the
+// root agent does not offer its system operations at all (the agent reads
+// the same file), so a minimal setup also has a smaller privileged surface.
+// Shares, users, sign-in and jobs are the core and always on.
+//
+// They are bootstrap settings, not UI settings, on purpose: switching one
+// changes what the server and the agent ARE, so it takes a restart of both.
+type Modules struct {
+	// FileManager: browsing, uploads and downloads in the browser (per-user
+	// file workers). Off: shares are reached over SMB only.
+	FileManager bool `toml:"file_manager"`
+	// ActivityLog: the SMB activity log (Samba's audit log, read by the
+	// agent). Needed by the ransomware guard.
+	ActivityLog bool `toml:"activity_log"`
+	// RansomwareGuard watches SMB activity for mass encryption.
+	RansomwareGuard bool `toml:"ransomware_guard"`
+	// BruteForce bans addresses with many failed SMB logins.
+	BruteForce bool `toml:"brute_force"`
+	// Discovery: switching WSD (Windows) and mDNS (macOS) from the UI.
+	Discovery bool `toml:"discovery"`
+	// Sessions: the list of SMB sessions, and ending one.
+	Sessions bool `toml:"sessions"`
+	// Backup: encrypted backup and restore of the app's configuration.
+	Backup bool `toml:"backup"`
+	// NFS: exporting shares over NFS as well (needs nfs-kernel-server).
+	NFS bool `toml:"nfs"`
+	// Replication: copying shares to another folder or NetShare Hub.
+	Replication bool `toml:"replication"`
+	// BlockStorage: iSCSI / NVMe-oF disks (needs the kernel targets: on a
+	// Proxmox host or a VM, not in an unprivileged LXC).
+	BlockStorage bool `toml:"block_storage"`
+}
+
+// AllModules is every module on (the API spec is built with it, so the
+// frontend has the types of every module).
+func AllModules() Modules {
+	return Modules{FileManager: true, ActivityLog: true, RansomwareGuard: true, BruteForce: true, Discovery: true,
+		Sessions: true, Backup: true, NFS: true, Replication: true, BlockStorage: true}
+}
+
+// SMBEvents reports whether anything reads Samba's logs: without it the
+// agent never tails them.
+func (m Modules) SMBEvents() bool { return m.ActivityLog || m.RansomwareGuard || m.BruteForce }
+
+func (m Modules) check() error {
+	if m.RansomwareGuard && !m.ActivityLog {
+		return errors.New("modules.ransomware_guard needs modules.activity_log: the guard watches the activity log")
+	}
+	return nil
 }
 
 // ProtectedDirs are folders a share must never expose: NetShare Hub's own
@@ -72,6 +126,10 @@ func Default() Config {
 		AgentUser:     "netshare",
 
 		ActivityRetentionDays: 90,
+		// Everything built before step 4 is on; the newer, heavier
+		// protocols are opt-in.
+		Modules: Modules{FileManager: true, ActivityLog: true, RansomwareGuard: true, BruteForce: true,
+			Discovery: true, Sessions: true, Backup: true},
 	}
 }
 
@@ -105,6 +163,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Sys != "agent" && cfg.Sys != "real" && cfg.Sys != "fake" {
 		return cfg, fmt.Errorf(`sys must be "agent", "real" or "fake", got %q`, cfg.Sys)
+	}
+	if err := cfg.Modules.check(); err != nil {
+		return cfg, err
 	}
 	return cfg, nil
 }

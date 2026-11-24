@@ -27,16 +27,19 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-const columns = "id, name, path, comment, read_only, guest_access, preset, hide_unreadable, time_machine, time_machine_max_gib, network_rules, created_at, updated_at"
+const columns = "id, name, path, comment, read_only, guest_access, preset, hide_unreadable, time_machine, time_machine_max_gib, network_rules, nfs, created_at, updated_at"
 
 func scan(s interface{ Scan(...any) error }) (Share, error) {
 	var sh Share
 	var created, updated int64
-	var rules string
+	var rules, nfs string
 	err := s.Scan(&sh.ID, &sh.Name, &sh.Path, &sh.Comment, &sh.ReadOnly, &sh.GuestAccess, &sh.Preset, &sh.HideUnreadable,
-		&sh.TimeMachine, &sh.TimeMachineMaxGiB, &rules, &created, &updated)
+		&sh.TimeMachine, &sh.TimeMachineMaxGiB, &rules, &nfs, &created, &updated)
 	if err == nil {
 		err = json.Unmarshal([]byte(rules), &sh.NetworkRules)
+	}
+	if err == nil {
+		sh.NFS, err = parseNFS(nfs)
 	}
 	if sh.NetworkRules == nil {
 		sh.NetworkRules = []NetworkRule{}
@@ -181,10 +184,10 @@ func (r *Repo) query(ctx context.Context, q querier, query string, args ...any) 
 func (r *Repo) Insert(ctx context.Context, q querier, in CreateInput, now time.Time) (int64, error) {
 	res, err := q.ExecContext(ctx,
 		`INSERT INTO shares (name, path, comment, read_only, guest_access, preset, hide_unreadable, time_machine, time_machine_max_gib,
-			network_rules, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			network_rules, nfs, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.Name, in.Path, in.Comment, in.ReadOnly, in.GuestAccess, in.Preset, in.HideUnreadable, in.TimeMachine, in.TimeMachineMaxGiB,
-		rulesJSON(in.NetworkRules), now.Unix(), now.Unix())
+		rulesJSON(in.NetworkRules), nfsOf(in.NFS), now.Unix(), now.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -243,6 +246,19 @@ func (r *Repo) enableMacSupport(ctx context.Context, q querier, now time.Time) e
 func (r *Repo) UpdateNetworkRules(ctx context.Context, q querier, id int64, rules []NetworkRule, now time.Time) error {
 	_, err := q.ExecContext(ctx, "UPDATE shares SET network_rules = ?, updated_at = ? WHERE id = ?", rulesJSON(rules), now.Unix(), id)
 	return err
+}
+
+// UpdateNFS replaces a share's NFS settings.
+func (r *Repo) UpdateNFS(ctx context.Context, q querier, id int64, n NFS, now time.Time) error {
+	_, err := q.ExecContext(ctx, "UPDATE shares SET nfs = ?, updated_at = ? WHERE id = ?", nfsJSON(n), now.Unix(), id)
+	return err
+}
+
+func nfsOf(n *NFS) string {
+	if n == nil {
+		return nfsJSON(defaultNFS())
+	}
+	return nfsJSON(*n)
 }
 
 func rulesJSON(rules []NetworkRule) string {

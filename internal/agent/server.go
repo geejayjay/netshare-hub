@@ -28,6 +28,7 @@ type Authorizer func(r *http.Request) (Peer, bool)
 type Server struct {
 	system    sys.System
 	authorize Authorizer
+	features  Features
 	version   string
 	mux       *http.ServeMux
 
@@ -36,9 +37,15 @@ type Server struct {
 	mu sync.Mutex
 }
 
-// NewServer returns the agent handler in front of the real system layer.
+// NewServer returns the agent handler in front of the real system layer,
+// with every operation offered.
 func NewServer(system sys.System, authorize Authorizer, version string) *Server {
-	s := &Server{system: system, authorize: authorize, version: version, mux: http.NewServeMux()}
+	return NewServerWith(system, authorize, version, AllFeatures())
+}
+
+// NewServerWith offers only the operations of the features that are on.
+func NewServerWith(system sys.System, authorize Authorizer, version string, features Features) *Server {
+	s := &Server{system: system, authorize: authorize, version: version, features: features, mux: http.NewServeMux()}
 
 	register(s, opPing, func(context.Context, struct{}) (any, error) {
 		return pingResponse{Version: version}, nil
@@ -89,7 +96,9 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 		return system.Samba.FixPermissions(ctx, r.Share)
 	}, func(r fixPermissionsRequest) []any { return []any{"share", r.Share} })
 
-	s.mux.HandleFunc("POST "+pathPrefix+opAuditEvents, s.auditEvents)
+	if features.offers(opAuditEvents) {
+		s.mux.HandleFunc("POST "+pathPrefix+opAuditEvents, s.auditEvents)
+	}
 
 	register(s, opSessions, func(ctx context.Context, _ struct{}) (any, error) {
 		sessions, err := system.Samba.Sessions(ctx)
@@ -121,6 +130,35 @@ func NewServer(system sys.System, authorize Authorizer, version string) *Server 
 		}
 		return nil, system.Discovery.SetDiscovery(ctx, r.Service, r.On)
 	}, func(r setDiscoveryRequest) []any { return []any{"service", string(r.Service), "on", r.On} })
+
+	register(s, opNFSStatus, func(ctx context.Context, _ struct{}) (any, error) {
+		if system.NFS == nil {
+			return sys.NFSStatus{Reason: "NFS is not offered on this machine.", Exports: []string{}}, nil
+		}
+		return system.NFS.NFSStatus(ctx)
+	}, nil)
+
+	register(s, opApplyExports, func(ctx context.Context, r applyExportsRequest) (any, error) {
+		if system.NFS == nil {
+			if len(r.Exports) == 0 {
+				return nil, nil
+			}
+			return nil, sys.ErrNotFound
+		}
+		if len(r.Exports) > 1000 {
+			return nil, sys.ErrInvalid
+		}
+		return nil, system.NFS.ApplyExports(ctx, r.Exports)
+	}, func(r applyExportsRequest) []any {
+		names := make([]string, len(r.Exports))
+		for i, e := range r.Exports {
+			names[i] = e.Share
+		}
+		return []any{"exports", names}
+	})
+
+	registerReplication(s, system)
+	registerBlock(s, system)
 
 	register(s, opResolveDir, func(ctx context.Context, r pathRequest) (any, error) {
 		// Only answer for paths that could be shared at all, so the agent is
@@ -164,6 +202,9 @@ var concurrent = map[string]bool{opFixPermissions: true}
 // and write an audit line. describe returns the fields to audit; it must
 // never include a secret.
 func register[Req any](s *Server, op string, run func(context.Context, Req) (any, error), describe func(Req) []any) {
+	if !s.features.offers(op) {
+		return // the module is off: the operation does not exist
+	}
 	s.mux.HandleFunc("POST "+pathPrefix+op, func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		peer, ok := s.authorize(r)
@@ -242,12 +283,16 @@ func (s *Server) auditEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	flush := http.NewResponseController(w)
 	_ = flush.Flush()
+	// Flush when no more events are waiting, not after each one: a burst
+	// goes out in few writes.
 	enc := json.NewEncoder(w)
 	for ev := range events {
 		if err := enc.Encode(ev); err != nil {
 			return // the caller went away; the source ends with r.Context()
 		}
-		_ = flush.Flush()
+		if len(events) == 0 {
+			_ = flush.Flush()
+		}
 	}
 }
 
