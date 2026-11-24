@@ -120,6 +120,7 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
   const [destPath, setDestPath] = useState('')
   const [transferConflict, setTransferConflict] = useState<'rename' | 'replace' | 'skip'>('rename')
   const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileEntry } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -225,13 +226,54 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
     })
   }, [selectedItems, selected, deleteFiles])
 
-  // Keyboard shortcuts: Escape clears selection, Delete deletes selected, F2 renames single selected.
+  const handleOpenEntry = useCallback(
+    (entry: FileEntry) => {
+      if (entry.isDir) {
+        navigateTo({ share: activeShare, path: joinPath(path, entry.name) })
+      } else {
+        setPreviewEntry(entry)
+      }
+    },
+    [activeShare, navigateTo, path],
+  )
+
+  // Close context menu on any outside click or scroll.
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [contextMenu])
+
+  // Keyboard shortcuts: Escape, Ctrl/Cmd+A, Backspace (up folder), Enter (open), Delete, F2 (rename).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-      if (e.key === 'Escape' && selected.size > 0) {
-        setSelected(new Set())
+      if (e.key === 'Escape') {
+        if (contextMenu) {
+          setContextMenu(null)
+          return
+        }
+        if (selected.size > 0) setSelected(new Set())
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && filteredItems.length > 0) {
+        e.preventDefault()
+        setSelected(new Set(filteredItems.map((i) => i.name)))
+      } else if (e.key === 'Backspace' && path && activeShare) {
+        e.preventDefault()
+        const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+        navigateTo({ share: activeShare, path: parent })
+      } else if (e.key === 'Enter' && selected.size === 1) {
+        const name = Array.from(selected)[0]
+        const target = filteredItems.find((i) => i.name === name)
+        if (target) {
+          e.preventDefault()
+          handleOpenEntry(target)
+        }
       } else if (e.key === 'Delete' && selected.size > 0 && canWrite) {
         e.preventDefault()
         handleDeleteSelected()
@@ -247,7 +289,19 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selected, canWrite, filteredItems, handleDeleteSelected])
+  }, [selected, canWrite, filteredItems, handleDeleteSelected, contextMenu, path, activeShare, navigateTo, handleOpenEntry])
+
+  function openContextMenu(e: React.MouseEvent, entry: FileEntry) {
+    e.preventDefault()
+    if (!selected.has(entry.name)) {
+      setSelected(new Set([entry.name]))
+    }
+    const menuW = 200
+    const menuH = 260
+    const x = Math.min(e.clientX, Math.max(8, window.innerWidth - menuW - 8))
+    const y = Math.min(e.clientY, Math.max(8, window.innerHeight - menuH - 8))
+    setContextMenu({ x, y, entry })
+  }
 
   function toggleSelect(name: string) {
     setSelected((prev) => {
@@ -261,14 +315,6 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
   function toggleSelectAll() {
     if (selected.size === filteredItems.length) setSelected(new Set())
     else setSelected(new Set(filteredItems.map((i) => i.name)))
-  }
-
-  function handleOpenEntry(entry: FileEntry) {
-    if (entry.isDir) {
-      navigateTo({ share: activeShare, path: joinPath(path, entry.name) })
-    } else {
-      setPreviewEntry(entry)
-    }
   }
 
   function handleCreateFolder(e: FormEvent) {
@@ -643,6 +689,7 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
                       return (
                         <div
                           key={entry.name}
+                          onContextMenu={(e) => openContextMenu(e, entry)}
                           style={{
                             position: 'absolute',
                             top: 0,
@@ -744,6 +791,7 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
                           return (
                             <div
                               key={entry.name}
+                              onContextMenu={(e) => openContextMenu(e, entry)}
                               className={cn(
                                 'group flex flex-col justify-between rounded-xl border border-border bg-bg p-3 transition-all hover:border-border-strong',
                                 isChecked && 'border-primary bg-primary-soft/30',
@@ -920,6 +968,113 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
           </div>
         </form>
       </Dialog>
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          className="fixed z-50 w-48 overflow-hidden rounded-xl border border-border bg-surface p-1 text-xs shadow-pop"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              const target = contextMenu.entry
+              setContextMenu(null)
+              handleOpenEntry(target)
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-medium text-fg hover:bg-surface-2"
+          >
+            <Eye className="size-3.5 text-fg-muted" />
+            {contextMenu.entry.isDir ? 'Open folder' : 'Preview'}
+          </button>
+
+          {!contextMenu.entry.isDir && selected.size <= 1 && (
+            <a
+              href={fileDownloadUrl(activeShare, joinPath(path, contextMenu.entry.name))}
+              download={contextMenu.entry.name}
+              onClick={() => setContextMenu(null)}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-fg hover:bg-surface-2"
+            >
+              <Download className="size-3.5 text-fg-muted" />
+              Download
+            </a>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setContextMenu(null)
+              handleZipDownload()
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-fg hover:bg-surface-2"
+          >
+            <Archive className="size-3.5 text-fg-muted" />
+            Download as ZIP{selected.size > 1 ? ` (${selected.size})` : ''}
+          </button>
+
+          {canWrite && (
+            <>
+              <div className="my-1 border-t border-border" />
+              {selected.size === 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = contextMenu.entry
+                    setContextMenu(null)
+                    setRenameTarget(target)
+                    setRenameValue(target.name)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-fg hover:bg-surface-2"
+                >
+                  <Pencil className="size-3.5 text-fg-muted" />
+                  Rename
+                  <span className="ml-auto font-mono text-[0.65rem] text-fg-subtle">F2</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setContextMenu(null)
+                  setDestShare(activeShare)
+                  setDestPath(path)
+                  setTransferMode('copy')
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-fg hover:bg-surface-2"
+              >
+                <Copy className="size-3.5 text-fg-muted" />
+                Copy{selected.size > 1 ? ` (${selected.size})` : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setContextMenu(null)
+                  setDestShare(activeShare)
+                  setDestPath(path)
+                  setTransferMode('move')
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-fg hover:bg-surface-2"
+              >
+                <MoveRight className="size-3.5 text-fg-muted" />
+                Move{selected.size > 1 ? ` (${selected.size})` : ''}
+              </button>
+              <div className="my-1 border-t border-border" />
+              <button
+                type="button"
+                onClick={() => {
+                  setContextMenu(null)
+                  handleDeleteSelected()
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-medium text-danger hover:bg-danger/10"
+              >
+                <Trash2 className="size-3.5" />
+                Delete{selected.size > 1 ? ` (${selected.size})` : ''}
+                <span className="ml-auto font-mono text-[0.65rem] opacity-70">Del</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* File preview modal */}
       <FilePreviewDialog
