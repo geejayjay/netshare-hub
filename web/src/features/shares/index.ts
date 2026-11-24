@@ -1,6 +1,7 @@
 export {
   sharesQuery,
   sharePresetsQuery,
+  nfsStatusQuery,
   useCreateShare,
   useUpdateShare,
   useDeleteShare,

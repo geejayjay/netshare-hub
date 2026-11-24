@@ -14,13 +14,16 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppActivityRouteImport } from './routes/_app/activity'
+import { Route as AppBlockRouteImport } from './routes/_app/block'
 import { Route as AppFilesRouteImport } from './routes/_app/files'
 import { Route as AppLogsRouteImport } from './routes/_app/logs'
 import { Route as AppMySharesRouteImport } from './routes/_app/my-shares'
+import { Route as AppReplicationRouteImport } from './routes/_app/replication'
 import { Route as AppSecurityRouteImport } from './routes/_app/security'
 import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSharesRouteImport } from './routes/_app/shares'
+import { Route as AppTroubleshooterRouteImport } from './routes/_app/troubleshooter'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
 
 const AppRoute = AppRouteImport.update({
@@ -47,6 +50,11 @@ const AppActivityRoute = AppActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBlockRoute = AppBlockRouteImport.update({
+  id: '/block',
+  path: '/block',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFilesRoute = AppFilesRouteImport.update({
   id: '/files',
   path: '/files',
@@ -60,6 +68,11 @@ const AppLogsRoute = AppLogsRouteImport.update({
 const AppMySharesRoute = AppMySharesRouteImport.update({
   id: '/my-shares',
   path: '/my-shares',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReplicationRoute = AppReplicationRouteImport.update({
+  id: '/replication',
+  path: '/replication',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSecurityRoute = AppSecurityRouteImport.update({
@@ -82,6 +95,11 @@ const AppSharesRoute = AppSharesRouteImport.update({
   path: '/shares',
   getParentRoute: () => AppRoute,
 } as any)
+const AppTroubleshooterRoute = AppTroubleshooterRouteImport.update({
+  id: '/troubleshooter',
+  path: '/troubleshooter',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppUsersRoute = AppUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -93,26 +111,32 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/activity': typeof AppActivityRoute
+  '/block': typeof AppBlockRoute
   '/files': typeof AppFilesRoute
   '/logs': typeof AppLogsRoute
   '/my-shares': typeof AppMySharesRoute
+  '/replication': typeof AppReplicationRoute
   '/security': typeof AppSecurityRoute
   '/sessions': typeof AppSessionsRoute
   '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
+  '/troubleshooter': typeof AppTroubleshooterRoute
   '/users': typeof AppUsersRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/activity': typeof AppActivityRoute
+  '/block': typeof AppBlockRoute
   '/files': typeof AppFilesRoute
   '/logs': typeof AppLogsRoute
   '/my-shares': typeof AppMySharesRoute
+  '/replication': typeof AppReplicationRoute
   '/security': typeof AppSecurityRoute
   '/sessions': typeof AppSessionsRoute
   '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
+  '/troubleshooter': typeof AppTroubleshooterRoute
   '/users': typeof AppUsersRoute
   '/': typeof AppIndexRoute
 }
@@ -122,13 +146,16 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/_app/activity': typeof AppActivityRoute
+  '/_app/block': typeof AppBlockRoute
   '/_app/files': typeof AppFilesRoute
   '/_app/logs': typeof AppLogsRoute
   '/_app/my-shares': typeof AppMySharesRoute
+  '/_app/replication': typeof AppReplicationRoute
   '/_app/security': typeof AppSecurityRoute
   '/_app/sessions': typeof AppSessionsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/shares': typeof AppSharesRoute
+  '/_app/troubleshooter': typeof AppTroubleshooterRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/': typeof AppIndexRoute
 }
@@ -139,26 +166,32 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/activity'
+    | '/block'
     | '/files'
     | '/logs'
     | '/my-shares'
+    | '/replication'
     | '/security'
     | '/sessions'
     | '/settings'
     | '/shares'
+    | '/troubleshooter'
     | '/users'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/setup'
     | '/activity'
+    | '/block'
     | '/files'
     | '/logs'
     | '/my-shares'
+    | '/replication'
     | '/security'
     | '/sessions'
     | '/settings'
     | '/shares'
+    | '/troubleshooter'
     | '/users'
     | '/'
   id:
@@ -167,13 +200,16 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/_app/activity'
+    | '/_app/block'
     | '/_app/files'
     | '/_app/logs'
     | '/_app/my-shares'
+    | '/_app/replication'
     | '/_app/security'
     | '/_app/sessions'
     | '/_app/settings'
     | '/_app/shares'
+    | '/_app/troubleshooter'
     | '/_app/users'
     | '/_app/'
   fileRoutesById: FileRoutesById
@@ -221,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppActivityRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/block': {
+      id: '/_app/block'
+      path: '/block'
+      fullPath: '/block'
+      preLoaderRoute: typeof AppBlockRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/files': {
       id: '/_app/files'
       path: '/files'
@@ -240,6 +283,13 @@ declare module '@tanstack/react-router' {
       path: '/my-shares'
       fullPath: '/my-shares'
       preLoaderRoute: typeof AppMySharesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/replication': {
+      id: '/_app/replication'
+      path: '/replication'
+      fullPath: '/replication'
+      preLoaderRoute: typeof AppReplicationRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/security': {
@@ -270,6 +320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSharesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/troubleshooter': {
+      id: '/_app/troubleshooter'
+      path: '/troubleshooter'
+      fullPath: '/troubleshooter'
+      preLoaderRoute: typeof AppTroubleshooterRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/users': {
       id: '/_app/users'
       path: '/users'
@@ -282,26 +339,32 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
+  AppBlockRoute: typeof AppBlockRoute
   AppFilesRoute: typeof AppFilesRoute
   AppLogsRoute: typeof AppLogsRoute
   AppMySharesRoute: typeof AppMySharesRoute
+  AppReplicationRoute: typeof AppReplicationRoute
   AppSecurityRoute: typeof AppSecurityRoute
   AppSessionsRoute: typeof AppSessionsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppSharesRoute: typeof AppSharesRoute
+  AppTroubleshooterRoute: typeof AppTroubleshooterRoute
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppActivityRoute: AppActivityRoute,
+  AppBlockRoute: AppBlockRoute,
   AppFilesRoute: AppFilesRoute,
   AppLogsRoute: AppLogsRoute,
   AppMySharesRoute: AppMySharesRoute,
+  AppReplicationRoute: AppReplicationRoute,
   AppSecurityRoute: AppSecurityRoute,
   AppSessionsRoute: AppSessionsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppSharesRoute: AppSharesRoute,
+  AppTroubleshooterRoute: AppTroubleshooterRoute,
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
 }

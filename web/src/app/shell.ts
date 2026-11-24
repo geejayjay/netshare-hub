@@ -1,13 +1,16 @@
 import {
   Activity,
+  Database,
   FolderClosed,
   FolderOpen,
+  FolderSync,
   HardDrive,
   LayoutDashboard,
   Monitor,
   ScrollText,
   Settings,
   Shield,
+  Stethoscope,
   Users,
 } from 'lucide-react'
 import type { LayoutVariant, NavItem } from '@/layouts'
@@ -28,6 +31,22 @@ export const navigation: NavItem[] = [
   { to: '/my-shares', label: 'My Shares', icon: HardDrive, group: 'Overview' },
   { to: '/files', label: 'File Manager', icon: FolderClosed, group: 'Storage', module: 'fileManager' },
   { to: '/shares', label: 'Shares', icon: FolderOpen, group: 'Storage', permission: 'shares:read' },
+  {
+    to: '/replication',
+    label: 'Replication',
+    icon: FolderSync,
+    group: 'Storage',
+    permission: 'replication:manage',
+    module: 'replication',
+  },
+  {
+    to: '/block',
+    label: 'Block Storage',
+    icon: Database,
+    group: 'Storage',
+    permission: 'block:manage',
+    module: 'blockStorage',
+  },
   { to: '/sessions', label: 'Sessions', icon: Monitor, group: 'Security & Insight', permission: 'system:read', module: 'sessions' },
   { to: '/activity', label: 'Activity Feed', icon: Activity, group: 'Security & Insight', permission: 'audit:read', module: 'activityLog' },
   {
@@ -38,6 +57,7 @@ export const navigation: NavItem[] = [
     permission: 'settings:read',
     module: ['ransomwareGuard', 'bruteForce'],
   },
+  { to: '/troubleshooter', label: 'Troubleshooter', icon: Stethoscope, group: 'Security & Insight', permission: 'system:read' },
   { to: '/logs', label: 'Server Logs', icon: ScrollText, group: 'Security & Insight', permission: 'system:read' },
   { to: '/users', label: 'Users', icon: Users, group: 'Administration', permission: 'users:read' },
   { to: '/settings', label: 'Settings', icon: Settings, group: 'Administration', permission: 'settings:read' },
