@@ -100,3 +100,42 @@ export function thumbnailUrl(share: string, path: string, size = 320): string {
   const params = new URLSearchParams({ share, path, size: String(size) })
   return `${API_BASE}/files/thumbnail?${params.toString()}`
 }
+
+export function recycleEntriesQuery(share: string, path: string) {
+  return queryOptions({
+    queryKey: ['files', 'recycle', share, path],
+    queryFn: () =>
+      unwrap(
+        api.GET('/files/{share}/recycle', {
+          params: {
+            path: { share },
+            query: { path: path || undefined, limit: 200 },
+          },
+        }),
+      ),
+    enabled: Boolean(share),
+    retry: false,
+  })
+}
+
+export function useRestoreFromRecycle() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ share, path }: { share: string; path: string }) =>
+      unwrap(api.POST('/files/{share}/recycle/restore', { params: { path: { share } }, body: { path } })),
+    onSuccess: (_entry, vars) => {
+      void qc.invalidateQueries({ queryKey: ['files', 'recycle', vars.share] })
+      void qc.invalidateQueries({ queryKey: ['files', 'entries', vars.share] })
+    },
+  })
+}
+
+export function useEmptyRecycle() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (share: string) => unwrap(api.POST('/files/{share}/recycle/empty', { params: { path: { share } } })),
+    onSuccess: (_res, share) => {
+      void qc.invalidateQueries({ queryKey: ['files', 'recycle', share] })
+    },
+  })
+}

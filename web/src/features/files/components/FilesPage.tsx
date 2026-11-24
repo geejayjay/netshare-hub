@@ -22,6 +22,7 @@ import {
   List,
   MoveRight,
   Pencil,
+  Recycle,
   RefreshCw,
   Trash2,
   Upload,
@@ -50,6 +51,7 @@ import { collectDroppedBatch, collectPickerBatch } from '../drop-entries'
 import { enqueueUploadBatch } from '../upload-store'
 import { EntryThumbnail } from './EntryThumbnail'
 import { FilePreviewDialog, getPreviewKind } from './FilePreviewDialog'
+import { RecycleBinDrawer } from './RecycleBinDrawer'
 
 interface FilesPageProps {
   share: string
@@ -121,6 +123,7 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
   const [transferConflict, setTransferConflict] = useState<'rename' | 'replace' | 'skip'>('rename')
   const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileEntry } | null>(null)
+  const [recycleOpen, setRecycleOpen] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -215,7 +218,9 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
   const handleDeleteSelected = useCallback(() => {
     if (selectedItems.length === 0) return
     const label = selectedItems.length === 1 ? `"${Array.from(selected)[0]}"` : `${selectedItems.length} items`
-    if (!window.confirm(`Permanently delete ${label}? This cannot be undone.`)) return
+    if (!window.confirm(`Delete ${label}? (Shares with a recycle bin move deleted items there; otherwise deletion is permanent.)`)) {
+      return
+    }
     deleteFiles.mutate(selectedItems, {
       onSuccess: (res) => {
         setSelected(new Set())
@@ -505,6 +510,16 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
+                onClick={() => setRecycleOpen(true)}
+                title="Open share recycle bin"
+              >
+                <Recycle className="size-3.5" />
+                <span className="hidden sm:inline">Recycle bin</span>
+              </Button>
               <div className="w-44">
                 <SearchInput value={filter} onChange={setFilter} placeholder="Filter folder…" />
               </div>
@@ -1083,6 +1098,14 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
         path={previewEntry ? joinPath(path, previewEntry.name) : ''}
         entry={previewEntry}
         onClose={() => setPreviewEntry(null)}
+      />
+
+      {/* Per-share recycle bin drawer */}
+      <RecycleBinDrawer
+        open={recycleOpen}
+        share={activeShare}
+        canWrite={canWrite}
+        onClose={() => setRecycleOpen(false)}
       />
     </div>
   )
