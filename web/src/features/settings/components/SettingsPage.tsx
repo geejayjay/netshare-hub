@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Clock, Cpu, Radio, RefreshCw, Server, Sparkles } from 'lucide-react'
+import { Archive, Clock, Cpu, Radio, Server, Sparkles } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { notify } from '@/features/notifications'
 import { errorMessage, fieldErrors } from '@/shared/api'
-import { EmptyState, ErrorState, FormField, PageHeader } from '@/shared/components'
-import { cn } from '@/shared/lib/cn'
+import { ErrorState, FormField, PageHeader } from '@/shared/components'
 import { formatRelativeTime } from '@/shared/lib/format'
+import { useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import {
   Alert,
@@ -25,16 +25,17 @@ import {
 import {
   discoveryQuery,
   sambaSettingsQuery,
-  systemTasksQuery,
   useUpdateDiscovery,
   useUpdateSambaSettings,
   type DiscoveryService,
   type SambaSettings,
 } from '../api'
+import { BackupPanel } from './BackupPanel'
+import { ScheduledTasksPanel } from './ScheduledTasksPanel'
 
-type SettingsTab = 'samba' | 'discovery' | 'tasks'
+type SettingsTab = 'samba' | 'discovery' | 'tasks' | 'backup'
 
-function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEdit: boolean }) {
+function SambaSettingsForm({ initial, canEdit, activityEnabled }: { initial: SambaSettings; canEdit: boolean; activityEnabled: boolean }) {
   const saveSamba = useUpdateSambaSettings()
   const [serverName, setServerName] = useState(initial.serverName ?? '')
   const [workgroup, setWorkgroup] = useState(initial.workgroup ?? '')
@@ -199,14 +200,16 @@ function SambaSettingsForm({ initial, canEdit }: { initial: SambaSettings; canEd
           <Switch checked={macSupport} disabled={!canEdit} onChange={setMacSupport} aria-label="Enable macOS extensions" />
         </div>
 
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <Cpu className="size-4 shrink-0 text-primary" />
-            <span className="text-sm font-medium text-fg">SMB activity logging</span>
-            <InfoTip content="Uses Samba's full_audit module to record reads, writes, renames, and deletes for the Activity Feed and Ransomware Guard." />
+        {activityEnabled && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <Cpu className="size-4 shrink-0 text-primary" />
+              <span className="text-sm font-medium text-fg">SMB activity logging</span>
+              <InfoTip content="Uses Samba's full_audit module to record reads, writes, renames, and deletes for the Activity Feed and Ransomware Guard." />
+            </div>
+            <Switch checked={activityLog} disabled={!canEdit} onChange={setActivityLog} aria-label="Enable SMB activity log" />
           </div>
-          <Switch checked={activityLog} disabled={!canEdit} onChange={setActivityLog} aria-label="Enable SMB activity log" />
-        </div>
+        )}
       </div>
 
       {canEdit && (
@@ -280,19 +283,19 @@ function DiscoveryCard({
 
 export function SettingsPage() {
   const { can } = useSession()
+  const modules = useModules()
   const canEdit = can('settings:write')
   const [tab, setTab] = useState<SettingsTab>('samba')
 
   const samba = useQuery(sambaSettingsQuery)
-  const discovery = useQuery(discoveryQuery)
-  const tasks = useQuery({ ...systemTasksQuery, enabled: can('system:read') })
+  const discovery = useQuery({ ...discoveryQuery, enabled: modules.discovery })
   const saveDiscovery = useUpdateDiscovery()
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Settings"
-        info="Server-wide Samba protocol options, LAN discovery daemons (mDNS and WS-Discovery), and background maintenance tasks."
+        info="Server-wide Samba protocol options, LAN discovery daemons, configurable background task schedules, and encrypted config backups."
       />
 
       <Tabs
@@ -300,8 +303,11 @@ export function SettingsPage() {
         onChange={setTab}
         items={[
           { id: 'samba', label: 'Samba Server', icon: <Server className="size-3.5" /> },
-          { id: 'discovery', label: 'Network Discovery', icon: <Radio className="size-3.5" /> },
+          ...(modules.discovery ? [{ id: 'discovery' as const, label: 'Discovery', icon: <Radio className="size-3.5" /> }] : []),
           ...(can('system:read') ? [{ id: 'tasks' as const, label: 'Scheduled Tasks', icon: <Clock className="size-3.5" /> }] : []),
+          ...(modules.backup && can('backup:manage')
+            ? [{ id: 'backup' as const, label: 'Backup & Restore', icon: <Archive className="size-3.5" /> }]
+            : []),
         ]}
       />
 
@@ -321,13 +327,18 @@ export function SettingsPage() {
             ) : samba.error ? (
               <ErrorState error={samba.error} onRetry={() => void samba.refetch()} />
             ) : samba.data ? (
-              <SambaSettingsForm key={samba.data.updatedAt || 'samba'} initial={samba.data} canEdit={canEdit} />
+              <SambaSettingsForm
+                key={samba.data.updatedAt || 'samba'}
+                initial={samba.data}
+                canEdit={canEdit}
+                activityEnabled={modules.activityLog}
+              />
             ) : null}
           </CardContent>
         </Card>
       )}
 
-      {tab === 'discovery' && (
+      {tab === 'discovery' && modules.discovery && (
         <div className="flex flex-col gap-3">
           {discovery.isLoading ? (
             <div className="flex justify-center py-12">
@@ -382,67 +393,9 @@ export function SettingsPage() {
         </div>
       )}
 
-      {tab === 'tasks' && (
-        <Card>
-          <div className="flex items-center justify-between border-b border-border px-5 py-3">
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-sm font-semibold">Scheduled Tasks</h2>
-              <InfoTip content="Periodic maintenance jobs run automatically by NetShare Hub." />
-            </div>
-            <Button variant="secondary" size="sm" onClick={() => void tasks.refetch()}>
-              <RefreshCw className={cn('size-3.5', tasks.isFetching && 'animate-spin')} />
-              Refresh
-            </Button>
-          </div>
-          {tasks.isLoading ? (
-            <div className="flex justify-center py-10">
-              <Spinner />
-            </div>
-          ) : tasks.error ? (
-            <div className="p-5">
-              <ErrorState error={tasks.error} onRetry={() => void tasks.refetch()} />
-            </div>
-          ) : (tasks.data?.items ?? []).length === 0 ? (
-            <div className="p-8">
-              <EmptyState title="No scheduled tasks" />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead className="border-b border-border bg-surface-2/50 text-left text-[0.6875rem] font-semibold tracking-wider text-fg-subtle uppercase">
-                  <tr>
-                    <th className="px-4 py-2.5">Task</th>
-                    <th className="px-4 py-2.5">Schedule</th>
-                    <th className="px-4 py-2.5">Status</th>
-                    <th className="px-4 py-2.5">Runs</th>
-                    <th className="px-4 py-2.5">Last run</th>
-                    <th className="px-4 py-2.5">Next run</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {(tasks.data?.items ?? []).map((t) => (
-                    <tr key={t.name} className="hover:bg-surface-2/40">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-fg">{t.name}</div>
-                        {t.lastError && <div className="text-xs text-danger">{t.lastError}</div>}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-fg-muted">{t.schedule}</td>
-                      <td className="px-4 py-3">
-                        <Badge tone={t.running ? 'info' : t.lastError ? 'danger' : 'success'} dot>
-                          {t.running ? 'Running' : t.lastError ? 'Error' : 'Idle'}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-fg-muted tabular-nums">{t.runs}</td>
-                      <td className="px-4 py-3 text-xs text-fg-muted">{formatRelativeTime(t.lastEnd || t.lastStart || '')}</td>
-                      <td className="px-4 py-3 text-xs text-fg-muted">{formatRelativeTime(t.nextRun || '')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      )}
+      {tab === 'tasks' && can('system:read') && <ScheduledTasksPanel canEdit={canEdit} />}
+
+      {tab === 'backup' && modules.backup && can('backup:manage') && <BackupPanel />}
     </div>
   )
 }

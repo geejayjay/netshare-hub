@@ -7,13 +7,22 @@ export type NetworkRule = Schema<'NetworkRule'>
 export type SharePreset = Schema<'Preset'>
 export type EffectiveAccess = Schema<'EffectiveAccess'>
 export type PreviewAccessRequest = Schema<'PreviewAccessRequest'>
+export type ShareNFS = Schema<'NFS'>
+export type NFSClient = Schema<'NFSClient'>
+export type NFSStatus = Schema<'NFSStatus'>
 
 const keys = {
   all: ['shares'] as const,
   list: (params: ListParams) => ['shares', 'list', params] as const,
   users: ['shares', 'users'] as const,
   presets: ['shares', 'presets'] as const,
+  nfsStatus: ['shares', 'nfs-status'] as const,
 }
+
+export const nfsStatusQuery = queryOptions({
+  queryKey: keys.nfsStatus,
+  queryFn: () => unwrap(api.GET('/shares/nfs/status')),
+})
 
 export const sharesQuery = (params: ListParams) =>
   queryOptions({

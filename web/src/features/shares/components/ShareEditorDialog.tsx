@@ -1,24 +1,28 @@
 import { useQuery } from '@tanstack/react-query'
-import { Check, Eye, Globe, HardDrive, Lock, Plus, Shield, Sparkles, Trash2, Users } from 'lucide-react'
+import { Check, Eye, Globe, HardDrive, Lock, Network, Plus, Shield, Sparkles, Trash2, Users } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { notify } from '@/features/notifications'
 import { errorMessage, fieldErrors } from '@/shared/api'
 import { FormField } from '@/shared/components'
 import { cn } from '@/shared/lib/cn'
+import { useModules } from '@/shared/modules/modules'
 import { Alert, Badge, Button, Dialog, InfoTip, Input, Label, Select, Spinner, Switch, Tabs, type Tone } from '@/shared/ui'
 import {
+  nfsStatusQuery,
   sharePresetsQuery,
   shareUsersQuery,
   useCreateShare,
   usePreviewAccess,
   useUpdateShare,
+  type NFSClient,
   type NetworkRule,
   type Share,
   type ShareAccessInput,
+  type ShareNFS,
   type SharePreset,
 } from '../api'
 
-type EditorTab = 'general' | 'access' | 'network' | 'preview'
+type EditorTab = 'general' | 'access' | 'network' | 'nfs' | 'preview'
 type AccessLevel = ShareAccessInput['level']
 
 interface ShareEditorDialogProps {
@@ -50,8 +54,10 @@ function initialAccessMap(share?: Share | null): Record<number, AccessLevel> {
 
 function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: () => void }) {
   const isEdit = Boolean(share)
+  const modules = useModules()
   const presets = useQuery(sharePresetsQuery)
   const users = useQuery(shareUsersQuery)
+  const nfsStatus = useQuery({ ...nfsStatusQuery, enabled: modules.nfs })
   const createShare = useCreateShare()
   const updateShare = useUpdateShare()
   const preview = usePreviewAccess()
@@ -71,6 +77,12 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
   const [networkRules, setNetworkRules] = useState<NetworkRule[]>(() => share?.networkRules ?? [])
   const [newRuleAction, setNewRuleAction] = useState<NetworkRule['action']>('allow')
   const [newRuleAddress, setNewRuleAddress] = useState('')
+  const [nfsEnabled, setNfsEnabled] = useState(Boolean(share?.nfs?.enabled))
+  const [nfsMode, setNfsMode] = useState<NonNullable<ShareNFS['mode']>>(share?.nfs?.mode ?? 'user')
+  const [nfsAsUserId, setNfsAsUserId] = useState<string>(share?.nfs?.asUserId ? String(share.nfs.asUserId) : '')
+  const [nfsClients, setNfsClients] = useState<NFSClient[]>(() => share?.nfs?.clients ?? [])
+  const [newNfsClient, setNewNfsClient] = useState('')
+  const [newNfsReadOnly, setNewNfsReadOnly] = useState(false)
   const [submitError, setSubmitError] = useState<unknown>(null)
 
   const accessList: ShareAccessInput[] = Object.entries(access).map(([userId, level]) => ({
@@ -131,6 +143,18 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
     setNetworkRules((prev) => prev.filter((_, i) => i !== index))
   }
 
+  function addNfsClient() {
+    const addr = newNfsClient.trim()
+    if (!addr) return
+    setNfsClients((prev) => [...prev, { address: addr, readOnly: newNfsReadOnly }])
+    setNewNfsClient('')
+    setNewNfsReadOnly(false)
+  }
+
+  function removeNfsClient(index: number) {
+    setNfsClients((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const errors = fieldErrors(submitError)
   const pending = createShare.isPending || updateShare.isPending
 
@@ -138,6 +162,14 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
     e.preventDefault()
     setSubmitError(null)
     const maxGiB = Math.max(0, Number.parseInt(timeMachineMaxGiB || '0', 10) || 0)
+    const nfsPayload: ShareNFS | undefined = modules.nfs
+      ? {
+          enabled: nfsEnabled,
+          mode: nfsMode,
+          asUserId: nfsMode === 'user' && nfsAsUserId ? Number(nfsAsUserId) : undefined,
+          clients: nfsClients,
+        }
+      : undefined
 
     if (isEdit && share) {
       updateShare.mutate(
@@ -153,6 +185,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
             timeMachineMaxGiB: timeMachine ? maxGiB : 0,
             access: accessList,
             networkRules,
+            nfs: nfsPayload,
           },
         },
         {
@@ -180,6 +213,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
         timeMachineMaxGiB: timeMachine ? maxGiB : 0,
         access: accessList,
         networkRules,
+        nfs: nfsPayload,
       },
       {
         onSuccess: (created) => {
@@ -205,6 +239,9 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
           { id: 'general', label: 'General', icon: <Sparkles className="size-3.5" /> },
           { id: 'access', label: 'Access', icon: <Users className="size-3.5" />, badge: accessList.length },
           { id: 'network', label: 'Network', icon: <Globe className="size-3.5" />, badge: networkRules.length },
+          ...(modules.nfs
+            ? [{ id: 'nfs' as const, label: 'NFS', icon: <Network className="size-3.5" />, badge: nfsEnabled ? nfsClients.length : undefined }]
+            : []),
           { id: 'preview', label: 'Preview', icon: <Eye className="size-3.5" /> },
         ]}
       />
@@ -489,6 +526,135 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'nfs' && modules.nfs && (
+        <div className="flex flex-col gap-4">
+          {nfsStatus.data && (!nfsStatus.data.supported || !nfsStatus.data.installed || !nfsStatus.data.running) && (
+            <Alert
+              tone="warning"
+              title={
+                nfsStatus.data.hint ||
+                (!nfsStatus.data.supported
+                  ? 'NFS server cannot run in this environment.'
+                  : !nfsStatus.data.installed
+                    ? 'nfs-kernel-server is not installed.'
+                    : 'NFS server is currently stopped.')
+              }
+            />
+          )}
+
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-bg px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Network className="size-4 text-primary" />
+              <span className="text-sm font-medium text-fg">Export over NFS</span>
+              <InfoTip content="Exports this share over NFSv4 to explicit client IPs/CIDRs only. NFS exports are never open to every address." />
+            </div>
+            <Switch checked={nfsEnabled} onChange={setNfsEnabled} aria-label="Export over NFS" />
+          </div>
+
+          {nfsEnabled && (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField
+                  label="Identity mapping"
+                  htmlFor="nfs-mode"
+                  info="Act as one user maps every NFS client request to a single NetShare Hub account (safest). Trust client UIDs honors client Linux UIDs directly (root still maps to nobody)."
+                >
+                  <Select
+                    id="nfs-mode"
+                    value={nfsMode}
+                    onChange={(e) => setNfsMode(e.target.value as NonNullable<ShareNFS['mode']>)}
+                  >
+                    <option value="user">Act as one user (recommended)</option>
+                    <option value="client-ids">Trust client UIDs</option>
+                  </Select>
+                </FormField>
+
+                {nfsMode === 'user' && (
+                  <FormField
+                    label="Act as user"
+                    htmlFor="nfs-as-user"
+                    info="Must be a user with read or write access to this share."
+                    error={errors['nfs.asUserId']}
+                  >
+                    <Select id="nfs-as-user" value={nfsAsUserId} onChange={(e) => setNfsAsUserId(e.target.value)}>
+                      <option value="">Select user…</option>
+                      {userItems
+                        .filter((u) => access[u.id] === 'read' || access[u.id] === 'write')
+                        .map((u) => (
+                          <option key={u.id} value={String(u.id)}>
+                            {u.username} ({access[u.id]})
+                          </option>
+                        ))}
+                    </Select>
+                  </FormField>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-1.5">
+                  <Label>Allowed NFS clients</Label>
+                  <InfoTip content="At least one IP address or CIDR range is required (e.g. 192.168.1.50 or 192.168.1.0/24). Wildcard /0 ranges are rejected." />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    className="min-w-44 flex-1"
+                    value={newNfsClient}
+                    onChange={(e) => setNewNfsClient(e.target.value)}
+                    placeholder="192.168.1.50 or 192.168.1.0/24"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addNfsClient()
+                      }
+                    }}
+                  />
+                  <label className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg px-2.5 py-2 text-xs text-fg-muted">
+                    <input
+                      type="checkbox"
+                      checked={newNfsReadOnly}
+                      onChange={(e) => setNewNfsReadOnly(e.target.checked)}
+                      className="accent-primary"
+                    />
+                    Read-only
+                  </label>
+                  <Button variant="secondary" onClick={addNfsClient}>
+                    <Plus className="size-4" />
+                    Add
+                  </Button>
+                </div>
+
+                {nfsClients.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-5 text-center text-xs text-fg-muted">
+                    Add at least one client IP or CIDR subnet to enable NFS export.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+                    {nfsClients.map((c, idx) => (
+                      <div key={`${c.address}-${idx}`} className="flex items-center justify-between px-4 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <code className="text-xs text-fg">{c.address}</code>
+                          <Badge tone={c.readOnly ? 'warning' : 'info'}>{c.readOnly ? 'read-only' : 'rw'}</Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-fg-subtle hover:text-danger"
+                          aria-label="Remove NFS client"
+                          onClick={() => removeNfsClient(idx)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

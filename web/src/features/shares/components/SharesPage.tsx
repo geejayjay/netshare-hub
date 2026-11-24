@@ -6,6 +6,7 @@ import { notify } from '@/features/notifications'
 import type { ListParams } from '@/shared/api'
 import { DataTable, EmptyState, PageHeader, PermissionGate, SearchInput, type ColumnDef } from '@/shared/components'
 import { formatDateTime } from '@/shared/lib/format'
+import { useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import { Badge, Button, Card, StatCard } from '@/shared/ui'
 import { sharesQuery, useDeleteShare, useFixSharePermissions, type Share } from '../api'
@@ -21,6 +22,7 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
   const deleteShare = useDeleteShare()
   const fixPerms = useFixSharePermissions()
   const session = useSession()
+  const modules = useModules()
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<Share | null>(null)
 
@@ -41,6 +43,7 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium text-fg">{s.name}</span>
                 {s.timeMachine && <Badge tone="info">Time Machine</Badge>}
+                {modules.nfs && s.nfs?.enabled && <Badge tone="info">NFS</Badge>}
                 {s.readOnly && <Badge tone="warning">Read-only</Badge>}
                 {s.guestAccess && <Badge tone="success">Guest</Badge>}
               </div>
@@ -104,15 +107,17 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
           const s = row.original
           return (
             <div className="flex items-center justify-end gap-1">
-              <Link
-                to="/files"
-                search={{ share: s.name, path: '' }}
-                className="inline-flex size-8 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
-                title={`Browse ${s.name}`}
-                aria-label={`Browse ${s.name}`}
-              >
-                <FolderOpen className="size-4" />
-              </Link>
+              {modules.fileManager && (
+                <Link
+                  to="/files"
+                  search={{ share: s.name, path: '' }}
+                  className="inline-flex size-8 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                  title={`Browse ${s.name}`}
+                  aria-label={`Browse ${s.name}`}
+                >
+                  <FolderOpen className="size-4" />
+                </Link>
+              )}
               {session.can('shares:write') && (
                 <>
                   <Button
@@ -166,7 +171,7 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
         },
       },
     ],
-    [session, deleteShare, fixPerms],
+    [session, modules, deleteShare, fixPerms],
   )
 
   return (
