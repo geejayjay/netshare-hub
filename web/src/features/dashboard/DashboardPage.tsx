@@ -22,6 +22,7 @@ import { sharesQuery } from '@/features/shares'
 import { api, unwrap } from '@/shared/api'
 import { ErrorState, PageHeader } from '@/shared/components'
 import { formatRelativeTime } from '@/shared/lib/format'
+import { useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Spinner, StatCard } from '@/shared/ui'
 
@@ -32,15 +33,16 @@ const healthQuery = {
 
 export function DashboardPage() {
   const { user, can } = useSession()
+  const modules = useModules()
   const health = useQuery(healthQuery)
   const myShares = useQuery(mySharesQuery)
   const allShares = useQuery({ ...sharesQuery({ pageSize: 100 }), enabled: can('shares:read') })
-  const sessions = useQuery({ ...sessionsQuery, enabled: can('system:read') })
+  const sessions = useQuery({ ...sessionsQuery, enabled: can('system:read') && modules.sessions })
   const alerts = useQuery({ ...alertsQuery(true), enabled: can('alerts:manage') })
-  const activity = useQuery({ ...activityQuery({ limit: 8 }), enabled: can('audit:read') })
+  const activity = useQuery({ ...activityQuery({ limit: 8 }), enabled: can('audit:read') && modules.activityLog })
   const samba = useQuery({ ...sambaSettingsQuery, enabled: can('settings:read') })
-  const discovery = useQuery({ ...discoveryQuery, enabled: can('settings:read') })
-  const guard = useQuery({ ...guardSettingsQuery, enabled: can('settings:read') })
+  const discovery = useQuery({ ...discoveryQuery, enabled: can('settings:read') && modules.discovery })
+  const guard = useQuery({ ...guardSettingsQuery, enabled: can('settings:read') && modules.ransomwareGuard })
 
   const activeAlerts = (alerts.data?.items ?? []).filter((a) => !a.acknowledgedAt)
   const activeSessions = sessions.data?.items ?? []
@@ -59,14 +61,16 @@ export function DashboardPage() {
                 Online · v{health.data.version}
               </Badge>
             )}
-            <Link
-              to="/files"
-              search={{ share: undefined, path: undefined }}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3.5 text-sm font-medium text-primary-fg shadow-xs transition-colors hover:bg-primary-hover"
-            >
-              <FolderOpen className="size-4" />
-              File Manager
-            </Link>
+            {modules.fileManager && (
+              <Link
+                to="/files"
+                search={{ share: undefined, path: undefined }}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-3.5 text-sm font-medium text-primary-fg shadow-xs transition-colors hover:bg-primary-hover"
+              >
+                <FolderOpen className="size-4" />
+                File Manager
+              </Link>
+            )}
           </div>
         }
       />
@@ -93,7 +97,7 @@ export function DashboardPage() {
           tone="info"
         />
 
-        {can('system:read') && (
+        {can('system:read') && modules.sessions && (
           <StatCard
             label="Active SMB Sessions"
             value={sessions.isLoading ? '—' : activeSessions.length}
@@ -117,7 +121,7 @@ export function DashboardPage() {
           />
         )}
 
-        {can('settings:read') && (
+        {can('settings:read') && modules.ransomwareGuard && (
           <StatCard
             label="Ransomware Guard"
             value={<span className="capitalize">{guard.data?.mode ?? '—'}</span>}
@@ -137,8 +141,8 @@ export function DashboardPage() {
         {/* Left 2 columns: Recent Activity (or My Shares for plain users) */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between gap-2 pb-4">
-            <CardTitle>{can('audit:read') ? 'Recent Activity' : 'Your Shares'}</CardTitle>
-            {can('audit:read') && (
+            <CardTitle>{can('audit:read') && modules.activityLog ? 'Recent Activity' : 'Your Shares'}</CardTitle>
+            {can('audit:read') && modules.activityLog && (
               <Link
                 to="/activity"
                 className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
@@ -148,7 +152,7 @@ export function DashboardPage() {
             )}
           </CardHeader>
           <CardContent className="border-t border-border p-0">
-            {can('audit:read') ? (
+            {can('audit:read') && modules.activityLog ? (
               activity.isLoading ? (
                 <div className="flex justify-center py-10">
                   <Spinner />
@@ -233,18 +237,22 @@ export function DashboardPage() {
                     {samba.data?.macSupport ? 'Enabled' : 'Off'}
                   </Badge>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-fg-muted">mDNS / Bonjour</span>
-                  <Badge tone={discovery.data?.mdns.running ? 'success' : 'neutral'} dot>
-                    {discovery.data?.mdns.running ? 'Running' : 'Stopped'}
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-fg-muted">WS-Discovery</span>
-                  <Badge tone={discovery.data?.wsd.running ? 'success' : 'neutral'} dot>
-                    {discovery.data?.wsd.running ? 'Running' : 'Stopped'}
-                  </Badge>
-                </div>
+                {modules.discovery && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-fg-muted">mDNS / Bonjour</span>
+                      <Badge tone={discovery.data?.mdns.running ? 'success' : 'neutral'} dot>
+                        {discovery.data?.mdns.running ? 'Running' : 'Stopped'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-fg-muted">WS-Discovery</span>
+                      <Badge tone={discovery.data?.wsd.running ? 'success' : 'neutral'} dot>
+                        {discovery.data?.wsd.running ? 'Running' : 'Stopped'}
+                      </Badge>
+                    </div>
+                  </>
+                )}
                 <Link
                   to="/settings"
                   className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"

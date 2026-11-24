@@ -6,6 +6,7 @@ import { errorMessage } from '@/shared/api'
 import { EmptyState, ErrorState, FormField, PageHeader } from '@/shared/components'
 import { cn } from '@/shared/lib/cn'
 import { formatDateTime, formatRelativeTime } from '@/shared/lib/format'
+import { useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import {
   Alert,
@@ -281,14 +282,15 @@ function BanPolicyForm({ initial, canEdit }: { initial: BanSettings; canEdit: bo
 
 export function SecurityPage() {
   const { can } = useSession()
+  const modules = useModules()
   const canEdit = can('settings:write')
-  const [tab, setTab] = useState<SecurityTab>('ransomware')
+  const [tab, setTab] = useState<SecurityTab>(modules.ransomwareGuard ? 'ransomware' : 'bruteforce')
   const [banFilter, setBanFilter] = useState<'active' | 'all'>('active')
 
-  const guardSettings = useQuery(guardSettingsQuery)
-  const incidents = useQuery(guardIncidentsQuery)
-  const banSettings = useQuery(banSettingsQuery)
-  const bans = useQuery(bansQuery(banFilter === 'active' ? true : undefined))
+  const guardSettings = useQuery({ ...guardSettingsQuery, enabled: modules.ransomwareGuard })
+  const incidents = useQuery({ ...guardIncidentsQuery, enabled: modules.ransomwareGuard })
+  const banSettings = useQuery({ ...banSettingsQuery, enabled: modules.bruteForce })
+  const bans = useQuery({ ...bansQuery(banFilter === 'active' ? true : undefined), enabled: modules.bruteForce })
 
   const restoreIncident = useRestoreIncident()
   const liftBan = useLiftBan()
@@ -329,8 +331,26 @@ export function SecurityPage() {
         value={tab}
         onChange={setTab}
         items={[
-          { id: 'ransomware', label: 'Ransomware Guard', icon: <ShieldAlert className="size-3.5" />, badge: blockedIncidents || undefined },
-          { id: 'bruteforce', label: 'Brute-Force Protection', icon: <BanIcon className="size-3.5" />, badge: activeBanItems.length || undefined },
+          ...(modules.ransomwareGuard
+            ? [
+                {
+                  id: 'ransomware' as const,
+                  label: 'Ransomware Guard',
+                  icon: <ShieldAlert className="size-3.5" />,
+                  badge: blockedIncidents || undefined,
+                },
+              ]
+            : []),
+          ...(modules.bruteForce
+            ? [
+                {
+                  id: 'bruteforce' as const,
+                  label: 'Brute-Force Protection',
+                  icon: <BanIcon className="size-3.5" />,
+                  badge: activeBanItems.length || undefined,
+                },
+              ]
+            : []),
         ]}
       />
 

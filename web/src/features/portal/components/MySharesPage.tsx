@@ -4,6 +4,7 @@ import { Check, Copy, FolderOpen, HardDrive, Terminal } from 'lucide-react'
 import { useState } from 'react'
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '@/shared/components'
 import { cn } from '@/shared/lib/cn'
+import { useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import { Badge, Button, Card, InfoTip } from '@/shared/ui'
 import { mySharesQuery, type MyShare } from '../api'
@@ -31,6 +32,7 @@ function connectionDetails(os: OsTab, host: string, shareName: string, username:
 }
 
 function ShareCard({ share, host, username }: { share: MyShare; host: string; username: string }) {
+  const modules = useModules()
   const [os, setOs] = useState<OsTab>('windows')
   const [copied, setCopied] = useState(false)
   const info = connectionDetails(os, host, share.name, username)
@@ -81,14 +83,16 @@ function ShareCard({ share, host, username }: { share: MyShare; host: string; us
                 </button>
               ))}
             </div>
-            <Link
-              to="/files"
-              search={{ share: share.name, path: '' }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg shadow-xs transition-colors hover:bg-surface-2"
-            >
-              <FolderOpen className="size-3.5 text-primary" />
-              Browse
-            </Link>
+            {modules.fileManager && (
+              <Link
+                to="/files"
+                search={{ share: share.name, path: '' }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 py-1 text-xs font-medium text-fg shadow-xs transition-colors hover:bg-surface-2"
+              >
+                <FolderOpen className="size-3.5 text-primary" />
+                Browse
+              </Link>
+            )}
           </div>
 
           <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-bg px-3 py-2">

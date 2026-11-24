@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { ChevronRight, PanelLeft } from 'lucide-react'
 import { Fragment, useState, type ReactNode } from 'react'
+import { isModuleEnabled, useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import { Button, LogoMark } from '@/shared/ui'
 import { useLayoutStore } from './layout-store'
@@ -29,8 +30,11 @@ export function AppLayout({ variant, nav, navFooter, headerActions, banner, chil
   const { navCollapsed, toggleNavCollapsed } = useLayoutStore()
   const [navOpen, setNavOpen] = useState(false)
   const { can } = useSession()
+  const modules = useModules()
 
-  const visible = nav.filter((item) => !item.permission || can(item.permission))
+  const visible = nav.filter(
+    (item) => (!item.permission || can(item.permission)) && isModuleEnabled(modules, item.module),
+  )
   const current = useCurrentItem(visible)
 
   const toggleNav = () => {

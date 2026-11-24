@@ -606,6 +606,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/shares/nfs/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this machine can serve NFS, and what is exported */
+        get: operations["getNFSStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shares/presets": {
         parameters: {
             query?: never;
@@ -676,6 +693,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List recent structured server logs (live stream arrives on SSE "log" events) */
+        get: operations["listSystemLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which optional modules are on */
+        get: operations["getModules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/restore": {
         parameters: {
             query?: never;
@@ -734,10 +785,61 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List scheduled tasks: when they last ran, how it went, when they run next */
+        /** List scheduled tasks: status, enabled state, and frequency */
         get: operations["listScheduledTasks"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/tasks/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Toggle a scheduled task on/off or change its frequency, day, and time */
+        put: operations["updateScheduledTask"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/tasks/{name}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset a scheduled task back to its default schedule */
+        post: operations["resetScheduledTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/tasks/{name}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger a scheduled task immediately */
+        post: operations["runScheduledTask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -913,6 +1015,8 @@ export interface components {
             name: string;
             /** @description Which computers may connect (see Share.networkRules). */
             networkRules?: components["schemas"]["NetworkRule"][] | null;
+            /** @description Export over NFS (see Share.nfs). */
+            nfs?: components["schemas"]["NFS"];
             /**
              * @description Full path of the folder on the server.
              * @example /srv/media
@@ -1118,6 +1222,11 @@ export interface components {
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
+        ListLogEntry: {
+            items: components["schemas"]["LogEntry"][];
+            /** @description Present only when the list is paginated. */
+            page?: components["schemas"]["Meta"];
+        };
         ListMyShare: {
             items: components["schemas"]["MyShare"][];
             /** @description Present only when the list is paginated. */
@@ -1157,6 +1266,19 @@ export interface components {
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
         };
+        LogEntry: {
+            /** Format: date-time */
+            at: string;
+            attrs?: {
+                [key: string]: string;
+            };
+            level: string;
+            message: string;
+            requestId?: string;
+            /** Format: int64 */
+            seq: number;
+            user?: string;
+        };
         LoginRequest: {
             password: string;
             username: string;
@@ -1179,6 +1301,18 @@ export interface components {
             /** @description The new folder, inside the share. Its parent must exist. */
             path: string;
         };
+        Modules: {
+            activityLog: boolean;
+            backup: boolean;
+            blockStorage: boolean;
+            bruteForce: boolean;
+            discovery: boolean;
+            fileManager: boolean;
+            nfs: boolean;
+            ransomwareGuard: boolean;
+            replication: boolean;
+            sessions: boolean;
+        };
         MyShare: {
             comment: string;
             /** Format: int64 */
@@ -1189,6 +1323,41 @@ export interface components {
              */
             level: "read" | "upload" | "write";
             name: string;
+        };
+        NFS: {
+            /**
+             * Format: int64
+             * @description Mode "user": the user the clients act as. Must have read or write on the share.
+             */
+            asUserId?: number;
+            readonly asUsername?: string;
+            /** @description The computers that may mount the share. Required: an NFS export is never open to every address. */
+            clients?: components["schemas"]["NFSClient"][];
+            /** @description Export the share over NFS to the listed clients. */
+            enabled: boolean;
+            /**
+             * @description "user": the clients act as one user (asUserId) and get that user's access. "client-ids": the clients' own user ids are trusted (only for trusted Linux machines with the same accounts); root is always mapped to nobody.
+             * @enum {string}
+             */
+            mode?: "user" | "client-ids";
+        };
+        NFSClient: {
+            /** @description An IP address (192.168.1.50) or a range in CIDR form (192.168.1.0/24). IPv4 or IPv6. */
+            address: string;
+            /** @description This client can only read, whatever the share allows. */
+            readOnly?: boolean;
+        };
+        NFSStatus: {
+            /** @description The shares exported over NFS right now. */
+            exports: string[];
+            /** @description What to do when NFS cannot be used yet. */
+            hint?: string;
+            /** @description The NFS server (nfs-kernel-server) is installed. */
+            installed: boolean;
+            /** @description The kernel NFS server is running. */
+            running: boolean;
+            /** @description False where an NFS server cannot run at all (an unprivileged container). */
+            supported: boolean;
         };
         NetworkRule: {
             /** @enum {string} */
@@ -1379,6 +1548,8 @@ export interface components {
             name: string;
             /** @description Which computers may connect. With any "allow" rule, only those addresses may; "block" rules never may. Empty: any address. */
             networkRules: components["schemas"]["NetworkRule"][];
+            /** @description Export over NFS, to the listed computers only. */
+            nfs: components["schemas"]["NFS"];
             /** @description The folder on the server, with symbolic links resolved. */
             path: string;
             /** @description The preset the share was set up with, or "custom". A label only: the rules are the other fields. */
@@ -1415,19 +1586,33 @@ export interface components {
             userId: number;
         };
         Status: {
+            customized: boolean;
+            /** @description Local wall-clock time HH:MM for daily or weekly mode. */
+            dailyTime?: string;
+            defaultSchedule: string;
+            enabled: boolean;
+            /** Format: int64 */
+            everyMinutes?: number;
             /** Format: date-time */
             lastEnd?: string;
             lastError?: string;
             /** Format: date-time */
             lastStart?: string;
+            /** @enum {string} */
+            mode: "interval" | "daily" | "weekly";
             name: string;
             /** Format: date-time */
             nextRun?: string;
             running: boolean;
             /** Format: int64 */
             runs: number;
-            /** @description "every 1h0m0s" or "daily at 03:00". */
+            /** @description Human-readable schedule, e.g. "every 1h0m0s", "daily at 03:00", or "weekly on Sun at 02:30". */
             schedule: string;
+            /**
+             * Format: int64
+             * @description Day of week (0=Sun..6=Sat) for weekly mode.
+             */
+            weekday?: number;
         };
         Summary: {
             /** Format: int64 */
@@ -1470,6 +1655,27 @@ export interface components {
             destination: components["schemas"]["Item"];
             items: components["schemas"]["Item"][] | null;
         };
+        UpdateRequest: {
+            /** @description Local time HH:MM (00:00–23:59) when mode is "daily" or "weekly". */
+            dailyTime?: string;
+            /** @description Turn this background task on or off. Disabled tasks never run automatically. */
+            enabled: boolean;
+            /**
+             * Format: int64
+             * @description Interval in minutes (1–10080) when mode is "interval".
+             */
+            everyMinutes?: number;
+            /**
+             * @description "interval" (every N minutes), "daily" (at HH:MM), or "weekly" (weekday + HH:MM).
+             * @enum {string}
+             */
+            mode: "interval" | "daily" | "weekly";
+            /**
+             * Format: int64
+             * @description Day of week (0=Sunday..6=Saturday) when mode is "weekly".
+             */
+            weekday?: number;
+        };
         UpdateShareRequest: {
             /** @description Replaces the whole access list. */
             access?: components["schemas"]["ShareAccessInput"][];
@@ -1478,6 +1684,8 @@ export interface components {
             hideUnreadable?: boolean;
             /** @description Replaces the whole list of network rules. */
             networkRules?: components["schemas"]["NetworkRule"][];
+            /** @description Replaces the NFS settings. */
+            nfs?: components["schemas"]["NFS"];
             preset?: string;
             readOnly?: boolean;
             /** @description Turning it on turns Mac support on. */
@@ -2921,6 +3129,35 @@ export interface operations {
             };
         };
     };
+    getNFSStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NFSStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     listSharePresets: {
         parameters: {
             query?: never;
@@ -3112,6 +3349,69 @@ export interface operations {
             };
         };
     };
+    listSystemLogs: {
+        parameters: {
+            query?: {
+                level?: "" | "debug" | "info" | "warn" | "error";
+                requestId?: string;
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListLogEntry"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Modules"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     restoreConfigBackup: {
         parameters: {
             query?: never;
@@ -3220,6 +3520,101 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ListStatus"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    updateScheduledTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    resetScheduledTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    runScheduledTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
