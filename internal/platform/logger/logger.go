@@ -82,6 +82,7 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	if user, _ := ctx.Value(keyUser).(string); user != "" {
 		r.AddAttrs(slog.String("user", user))
 	}
+	DefaultRing.push(r)
 	return h.Handler.Handle(ctx, r)
 }
 
