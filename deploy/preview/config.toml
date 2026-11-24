@@ -1,0 +1,12 @@
+# Local UI preview configuration (runs in Docker with in-memory fake Samba backend).
+listen = "0.0.0.0:8080"
+data_dir = "/data"
+log_level = "info"
+log_format = "text"
+secure_cookies = false
+sys = "fake"
+
+[modules]
+nfs = true
+replication = true
+block_storage = true

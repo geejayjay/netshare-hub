@@ -1,0 +1,14 @@
+services:
+  preview:
+    container_name: netshare-hub-preview
+    build:
+      context: .
+      dockerfile: deploy/preview/Dockerfile
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - preview-data:/data
+    restart: unless-stopped
+
+volumes:
+  preview-data:
