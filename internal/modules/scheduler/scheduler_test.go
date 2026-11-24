@@ -125,6 +125,63 @@ func TestMistakesAreCaughtAtStartup(t *testing.T) {
 	}
 }
 
+func TestWeeklyScheduleAndCustomization(t *testing.T) {
+	loc := time.FixedZone("x", 0)
+	// 2026-11-24 is a Tuesday (Weekday == 2).
+	now := time.Date(2026, 11, 24, 10, 0, 0, 0, loc)
+	r := rule{Enabled: true, Mode: ModeWeekly, Weekday: int(time.Sunday), DailyMinutes: 2*60 + 30}
+	want := time.Date(2026, 11, 29, 2, 30, 0, 0, loc)
+	if got := r.next(now); !got.Equal(want) {
+		t.Fatalf("weekly next = %v, want %v", got, want)
+	}
+	if r.describe() != "weekly on Sun at 02:30" {
+		t.Fatalf("describe = %q", r.describe())
+	}
+
+	s := New()
+	s.FirstDelay = 0
+	var runs atomic.Int32
+	s.Add(Task{Name: "cleanup", Every: 10 * time.Millisecond, Run: func(context.Context) error {
+		runs.Add(1)
+		return nil
+	}})
+
+	// Disable before start: must never run automatically, but RunNow still triggers on demand.
+	st, err := s.Update(context.Background(), "cleanup", UpdateRequest{
+		Enabled:      false,
+		Mode:         ModeInterval,
+		EveryMinutes: 15,
+	})
+	if err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if st.Enabled || st.NextRun != nil || !st.Customized || st.Schedule != "every 15m0s" {
+		t.Fatalf("unexpected disabled status: %+v", st)
+	}
+
+	s.Start()
+	defer s.Stop()
+	time.Sleep(40 * time.Millisecond)
+	if runs.Load() != 0 {
+		t.Fatalf("disabled task ran %d times automatically", runs.Load())
+	}
+
+	if !s.RunNow("cleanup") {
+		t.Fatal("RunNow returned false")
+	}
+	waitUntil(t, "manual run while paused", func() bool { return runs.Load() == 1 })
+
+	// Reset restores default enabled=true and original schedule.
+	reset, err := s.Reset(context.Background(), "cleanup")
+	if err != nil {
+		t.Fatalf("reset failed: %v", err)
+	}
+	if !reset.Enabled || reset.Customized || reset.Schedule != reset.DefaultSchedule {
+		t.Fatalf("unexpected reset status: %+v", reset)
+	}
+	waitUntil(t, "resumed task runs automatically", func() bool { return runs.Load() >= 3 })
+}
+
 func byName(s *Scheduler, name string) Status {
 	for _, st := range s.Status() {
 		if st.Name == name {

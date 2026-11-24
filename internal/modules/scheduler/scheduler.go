@@ -15,9 +15,24 @@ import (
 	"math/rand/v2"
 	"runtime/debug"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"netshare-hub/internal/platform/db"
+	"netshare-hub/internal/platform/errs"
+	"netshare-hub/internal/platform/validate"
 )
+
+// Schedule modes supported for admin customization.
+const (
+	ModeInterval = "interval"
+	ModeDaily    = "daily"
+	ModeWeekly   = "weekly"
+)
+
+var weekdayNames = [...]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 
 // Task is one scheduled piece of work.
 type Task struct {
@@ -30,42 +45,96 @@ type Task struct {
 	Run func(ctx context.Context) error
 }
 
-func (t Task) schedule() string {
-	if t.Every > 0 {
-		return "every " + t.Every.String()
-	}
-	return fmt.Sprintf("daily at %02d:%02d", int(t.Daily.Hours()), int(t.Daily.Minutes())%60)
+// rule is the active timing configuration for one task.
+type rule struct {
+	Enabled      bool
+	Mode         string        // interval | daily | weekly
+	Every        time.Duration // used when Mode == interval
+	DailyMinutes int           // 0..1439, used when Mode == daily or weekly
+	Weekday      int           // 0=Sun..6=Sat, used when Mode == weekly
 }
 
-// next is when the task runs after now.
-func (t Task) next(now time.Time) time.Time {
+func ruleFromTask(t Task) rule {
 	if t.Every > 0 {
-		return now.Add(t.Every)
+		return rule{Enabled: true, Mode: ModeInterval, Every: t.Every}
 	}
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	at := midnight.Add(t.Daily)
-	if !at.After(now) {
-		at = midnight.AddDate(0, 0, 1).Add(t.Daily)
-	}
-	return at
+	return rule{Enabled: true, Mode: ModeDaily, DailyMinutes: int(t.Daily / time.Minute)}
 }
+
+func (r rule) describe() string {
+	switch r.Mode {
+	case ModeDaily:
+		return fmt.Sprintf("daily at %02d:%02d", r.DailyMinutes/60, r.DailyMinutes%60)
+	case ModeWeekly:
+		day := weekdayNames[r.Weekday%7]
+		return fmt.Sprintf("weekly on %s at %02d:%02d", day, r.DailyMinutes/60, r.DailyMinutes%60)
+	default:
+		return "every " + r.Every.String()
+	}
+}
+
+func (r rule) dailyTimeString() string {
+	return fmt.Sprintf("%02d:%02d", r.DailyMinutes/60, r.DailyMinutes%60)
+}
+
+func (r rule) next(now time.Time) time.Time {
+	switch r.Mode {
+	case ModeDaily:
+		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		at := midnight.Add(time.Duration(r.DailyMinutes) * time.Minute)
+		if !at.After(now) {
+			at = midnight.AddDate(0, 0, 1).Add(time.Duration(r.DailyMinutes) * time.Minute)
+		}
+		return at
+	case ModeWeekly:
+		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		daysUntil := (r.Weekday - int(now.Weekday()) + 7) % 7
+		at := midnight.AddDate(0, 0, daysUntil).Add(time.Duration(r.DailyMinutes) * time.Minute)
+		if !at.After(now) {
+			at = at.AddDate(0, 0, 7)
+		}
+		return at
+	default:
+		return now.Add(r.Every)
+	}
+}
+
+func (t Task) schedule() string        { return ruleFromTask(t).describe() }
+func (t Task) next(now time.Time) time.Time { return ruleFromTask(t).next(now) }
 
 // Status is what the admin sees about a task.
 type Status struct {
-	Name      string     `json:"name"`
-	Schedule  string     `json:"schedule" doc:"\"every 1h0m0s\" or \"daily at 03:00\"."`
-	Running   bool       `json:"running"`
-	Runs      int        `json:"runs"`
-	LastStart *time.Time `json:"lastStart,omitempty"`
-	LastEnd   *time.Time `json:"lastEnd,omitempty"`
-	LastError string     `json:"lastError,omitempty"`
-	NextRun   *time.Time `json:"nextRun,omitempty"`
+	Name            string     `json:"name"`
+	Enabled         bool       `json:"enabled"`
+	Schedule        string     `json:"schedule" doc:"Human-readable schedule, e.g. \"every 1h0m0s\", \"daily at 03:00\", or \"weekly on Sun at 02:30\"."`
+	DefaultSchedule string     `json:"defaultSchedule"`
+	Customized      bool       `json:"customized"`
+	Mode            string     `json:"mode" enum:"interval,daily,weekly"`
+	EveryMinutes    int        `json:"everyMinutes,omitempty"`
+	DailyTime       string     `json:"dailyTime,omitempty" doc:"Local wall-clock time HH:MM for daily or weekly mode."`
+	Weekday         int        `json:"weekday,omitempty" doc:"Day of week (0=Sun..6=Sat) for weekly mode."`
+	Running         bool       `json:"running"`
+	Runs            int        `json:"runs"`
+	LastStart       *time.Time `json:"lastStart,omitempty"`
+	LastEnd         *time.Time `json:"lastEnd,omitempty"`
+	LastError       string     `json:"lastError,omitempty"`
+	NextRun         *time.Time `json:"nextRun,omitempty"`
+}
+
+// UpdateRequest updates whether a task is enabled and how often it runs.
+type UpdateRequest struct {
+	Enabled      bool   `json:"enabled" doc:"Turn this background task on or off. Disabled tasks never run automatically."`
+	Mode         string `json:"mode" enum:"interval,daily,weekly" doc:"\"interval\" (every N minutes), \"daily\" (at HH:MM), or \"weekly\" (weekday + HH:MM)."`
+	EveryMinutes int    `json:"everyMinutes,omitempty" minimum:"0" maximum:"10080" doc:"Interval in minutes (1–10080) when mode is \"interval\"."`
+	DailyTime    string `json:"dailyTime,omitempty" doc:"Local time HH:MM (00:00–23:59) when mode is \"daily\" or \"weekly\"."`
+	Weekday      int    `json:"weekday,omitempty" minimum:"0" maximum:"6" doc:"Day of week (0=Sunday..6=Saturday) when mode is \"weekly\"."`
 }
 
 // Scheduler runs the registered tasks.
 type Scheduler struct {
 	mu      sync.Mutex
 	tasks   []*entry
+	store   *Store
 	started bool
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
@@ -75,9 +144,41 @@ type Scheduler struct {
 }
 
 type entry struct {
-	task   Task
-	status Status
-	now    chan struct{} // RunNow
+	task       Task
+	defRule    rule
+	curRule    rule
+	customized bool
+	status     Status
+	now        chan struct{} // RunNow
+	changed    chan struct{} // schedule or enabled flag changed
+}
+
+func (e *entry) syncStatusLocked() {
+	e.status.Enabled = e.curRule.Enabled
+	e.status.Schedule = e.curRule.describe()
+	e.status.DefaultSchedule = e.defRule.describe()
+	e.status.Customized = e.customized
+	e.status.Mode = e.curRule.Mode
+	if e.curRule.Mode == ModeInterval {
+		mins := int(e.curRule.Every / time.Minute)
+		if mins < 1 {
+			mins = 1
+		}
+		e.status.EveryMinutes = mins
+		e.status.DailyTime = ""
+		e.status.Weekday = 0
+	} else {
+		e.status.EveryMinutes = 0
+		e.status.DailyTime = e.curRule.dailyTimeString()
+		if e.curRule.Mode == ModeWeekly {
+			e.status.Weekday = e.curRule.Weekday
+		} else {
+			e.status.Weekday = 0
+		}
+	}
+	if !e.curRule.Enabled {
+		e.status.NextRun = nil
+	}
 }
 
 func New() *Scheduler { return &Scheduler{FirstDelay: time.Minute} }
@@ -100,7 +201,198 @@ func (s *Scheduler) Add(t Task) {
 			panic("scheduler: duplicate task " + t.Name)
 		}
 	}
-	s.tasks = append(s.tasks, &entry{task: t, status: Status{Name: t.Name, Schedule: t.schedule()}, now: make(chan struct{}, 1)})
+	def := ruleFromTask(t)
+	e := &entry{
+		task:    t,
+		defRule: def,
+		curRule: def,
+		status:  Status{Name: t.Name},
+		now:     make(chan struct{}, 1),
+		changed: make(chan struct{}, 1),
+	}
+	e.syncStatusLocked()
+	s.tasks = append(s.tasks, e)
+}
+
+// Load attaches the database and restores any saved schedule overrides.
+// Call after Add and before Start.
+func (s *Scheduler) Load(ctx context.Context, database *db.DB) error {
+	if database == nil {
+		return nil
+	}
+	st := newStore(database)
+	saved, err := st.loadAll(ctx)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.store = st
+	for _, e := range s.tasks {
+		r, ok := saved[e.task.Name]
+		if !ok {
+			continue
+		}
+		if parsed, ok := ruleFromSaved(r); ok {
+			e.curRule = parsed
+			e.customized = true
+			e.syncStatusLocked()
+		}
+	}
+	return nil
+}
+
+func ruleFromSaved(r savedRule) (rule, bool) {
+	switch r.Mode {
+	case ModeInterval:
+		if r.EveryMinutes < 1 || r.EveryMinutes > 10080 {
+			return rule{}, false
+		}
+		return rule{Enabled: r.Enabled, Mode: ModeInterval, Every: time.Duration(r.EveryMinutes) * time.Minute}, true
+	case ModeDaily:
+		if r.DailyMinutes < 0 || r.DailyMinutes >= 24*60 {
+			return rule{}, false
+		}
+		return rule{Enabled: r.Enabled, Mode: ModeDaily, DailyMinutes: r.DailyMinutes}, true
+	case ModeWeekly:
+		if r.DailyMinutes < 0 || r.DailyMinutes >= 24*60 || r.Weekday < 0 || r.Weekday > 6 {
+			return rule{}, false
+		}
+		return rule{Enabled: r.Enabled, Mode: ModeWeekly, DailyMinutes: r.DailyMinutes, Weekday: r.Weekday}, true
+	default:
+		return rule{}, false
+	}
+}
+
+func parseHHMM(raw string) (int, bool) {
+	parts := strings.Split(strings.TrimSpace(raw), ":")
+	if len(parts) != 2 || len(parts[0]) < 1 || len(parts[0]) > 2 || len(parts[1]) != 2 {
+		return 0, false
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, false
+	}
+	return h*60 + m, true
+}
+
+// Update changes a task's enabled flag and schedule, persists it, and wakes
+// its loop immediately so the new timer takes effect without a restart.
+func (s *Scheduler) Update(ctx context.Context, name string, req UpdateRequest) (Status, error) {
+	var v validate.Errors
+	var nextRule rule
+	nextRule.Enabled = req.Enabled
+	nextRule.Mode = req.Mode
+
+	switch req.Mode {
+	case ModeInterval:
+		v.Check(req.EveryMinutes >= 1 && req.EveryMinutes <= 10080, "everyMinutes", "out_of_range", "Choose between 1 minute and 7 days (10080 minutes).")
+		nextRule.Every = time.Duration(req.EveryMinutes) * time.Minute
+	case ModeDaily:
+		mins, ok := parseHHMM(req.DailyTime)
+		v.Check(ok, "dailyTime", "invalid_format", "Use 24-hour HH:MM format (e.g. 03:30).")
+		nextRule.DailyMinutes = mins
+	case ModeWeekly:
+		mins, ok := parseHHMM(req.DailyTime)
+		v.Check(ok, "dailyTime", "invalid_format", "Use 24-hour HH:MM format (e.g. 03:30).")
+		v.Check(req.Weekday >= 0 && req.Weekday <= 6, "weekday", "out_of_range", "Choose a day between 0 (Sunday) and 6 (Saturday).")
+		nextRule.DailyMinutes = mins
+		nextRule.Weekday = req.Weekday
+	default:
+		v.Add("mode", "invalid_choice", `Use "interval", "daily", or "weekly".`)
+	}
+	if err := v.Err(); err != nil {
+		return Status{}, err
+	}
+
+	s.mu.Lock()
+	var target *entry
+	for _, e := range s.tasks {
+		if e.task.Name == name {
+			target = e
+			break
+		}
+	}
+	if target == nil {
+		s.mu.Unlock()
+		return Status{}, errs.NotFound("TASK_NOT_FOUND", "Unknown scheduled task.")
+	}
+	store := s.store
+	s.mu.Unlock()
+
+	if store != nil {
+		err := store.save(ctx, savedRule{
+			Name:         name,
+			Enabled:      nextRule.Enabled,
+			Mode:         nextRule.Mode,
+			EveryMinutes: int(nextRule.Every / time.Minute),
+			DailyMinutes: nextRule.DailyMinutes,
+			Weekday:      nextRule.Weekday,
+		})
+		if err != nil {
+			return Status{}, err
+		}
+	}
+
+	s.mu.Lock()
+	target.curRule = nextRule
+	target.customized = true
+	target.syncStatusLocked()
+	if nextRule.Enabled {
+		at := nextRule.next(time.Now())
+		target.status.NextRun = &at
+	}
+	out := target.status
+	select {
+	case target.changed <- struct{}{}:
+	default:
+	}
+	s.mu.Unlock()
+
+	slog.InfoContext(ctx, "scheduled task updated", "task", name, "enabled", nextRule.Enabled, "schedule", nextRule.describe())
+	return out, nil
+}
+
+// Reset restores a task to its built-in default schedule and enabled state.
+func (s *Scheduler) Reset(ctx context.Context, name string) (Status, error) {
+	s.mu.Lock()
+	var target *entry
+	for _, e := range s.tasks {
+		if e.task.Name == name {
+			target = e
+			break
+		}
+	}
+	if target == nil {
+		s.mu.Unlock()
+		return Status{}, errs.NotFound("TASK_NOT_FOUND", "Unknown scheduled task.")
+	}
+	store := s.store
+	s.mu.Unlock()
+
+	if store != nil {
+		if err := store.delete(ctx, name); err != nil {
+			return Status{}, err
+		}
+	}
+
+	s.mu.Lock()
+	target.curRule = target.defRule
+	target.customized = false
+	target.syncStatusLocked()
+	at := target.curRule.next(time.Now())
+	target.status.NextRun = &at
+	out := target.status
+	select {
+	case target.changed <- struct{}{}:
+	default:
+	}
+	s.mu.Unlock()
+
+	slog.InfoContext(ctx, "scheduled task reset", "task", name, "schedule", target.defRule.describe())
+	return out, nil
 }
 
 // Start runs every task on its schedule until Stop.
@@ -130,8 +422,8 @@ func (s *Scheduler) Stop() {
 	s.wg.Wait()
 }
 
-// RunNow runs a task as soon as it is free (at once, if it is idle). It is
-// for an admin's "run now" button, and for tests.
+// RunNow runs a task as soon as it is free (at once, if it is idle). It works
+// even when the task is paused, for an admin's "run now" button and tests.
 func (s *Scheduler) RunNow(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -159,24 +451,52 @@ func (s *Scheduler) Status() []Status {
 		if a.Name < b.Name {
 			return -1
 		}
-		return 1
+		if a.Name > b.Name {
+			return 1
+		}
+		return 0
 	})
 	return out
 }
 
 func (s *Scheduler) loop(ctx context.Context, e *entry) {
 	defer s.wg.Done()
-	var next time.Time
-	if e.task.Every > 0 {
-		wait := time.Duration(0)
-		if first := min(s.FirstDelay, e.task.Every); first > 0 {
-			wait = rand.N(first)
-		}
-		next = time.Now().Add(wait)
-	} else {
-		next = e.task.next(time.Now())
-	}
+	first := true
 	for {
+		s.mu.Lock()
+		r := e.curRule
+		s.mu.Unlock()
+
+		if !r.Enabled {
+			s.mu.Lock()
+			e.status.NextRun = nil
+			s.mu.Unlock()
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-e.changed:
+				first = false
+				continue
+			case <-e.now:
+				first = false
+				s.run(ctx, e)
+				continue
+			}
+		}
+
+		var next time.Time
+		if first && r.Mode == ModeInterval {
+			wait := time.Duration(0)
+			if maxWait := min(s.FirstDelay, r.Every); maxWait > 0 {
+				wait = rand.N(maxWait)
+			}
+			next = time.Now().Add(wait)
+		} else {
+			next = r.next(time.Now())
+		}
+		first = false
+
 		s.mu.Lock()
 		at := next
 		e.status.NextRun = &at
@@ -187,12 +507,15 @@ func (s *Scheduler) loop(ctx context.Context, e *entry) {
 		case <-ctx.Done():
 			timer.Stop()
 			return
+		case <-e.changed:
+			timer.Stop()
+			continue
 		case <-timer.C:
+			s.run(ctx, e)
 		case <-e.now:
 			timer.Stop()
+			s.run(ctx, e)
 		}
-		s.run(ctx, e)
-		next = e.task.next(time.Now())
 	}
 }
 
