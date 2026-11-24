@@ -3595,6 +3595,250 @@
         ],
         "type": "object"
       },
+      "StorageCategoryStat": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "category": {
+            "type": "string"
+          },
+          "files": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "category",
+          "bytes",
+          "files"
+        ],
+        "type": "object"
+      },
+      "StorageDuplicateFile": {
+        "additionalProperties": false,
+        "properties": {
+          "modTime": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "shareName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "shareName",
+          "path",
+          "modTime"
+        ],
+        "type": "object"
+      },
+      "StorageDuplicateGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/StorageDuplicateFile"
+            },
+            "type": "array"
+          },
+          "reclaimableBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sha256",
+          "size",
+          "reclaimableBytes",
+          "files"
+        ],
+        "type": "object"
+      },
+      "StorageFileItem": {
+        "additionalProperties": false,
+        "properties": {
+          "modTime": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "shareName": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shareName",
+          "path",
+          "name",
+          "size",
+          "modTime"
+        ],
+        "type": "object"
+      },
+      "StorageFolderStat": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "files": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "bytes",
+          "files"
+        ],
+        "type": "object"
+      },
+      "StorageReport": {
+        "additionalProperties": false,
+        "properties": {
+          "duplicates": {
+            "items": {
+              "$ref": "#/components/schemas/StorageDuplicateGroup"
+            },
+            "type": "array"
+          },
+          "durationMs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "largestFiles": {
+            "items": {
+              "$ref": "#/components/schemas/StorageFileItem"
+            },
+            "type": "array"
+          },
+          "oldestFiles": {
+            "items": {
+              "$ref": "#/components/schemas/StorageFileItem"
+            },
+            "type": "array"
+          },
+          "reclaimableBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scannedAt": {
+            "type": "string"
+          },
+          "scanning": {
+            "type": "boolean"
+          },
+          "shares": {
+            "items": {
+              "$ref": "#/components/schemas/StorageShareStat"
+            },
+            "type": "array"
+          },
+          "totalBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalDirs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalFiles": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "durationMs",
+          "scanning",
+          "totalBytes",
+          "totalFiles",
+          "totalDirs",
+          "reclaimableBytes",
+          "shares",
+          "largestFiles",
+          "oldestFiles",
+          "duplicates"
+        ],
+        "type": "object"
+      },
+      "StorageShareStat": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/StorageCategoryStat"
+            },
+            "type": "array"
+          },
+          "dirCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fileCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "shareId": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "shareName": {
+            "type": "string"
+          },
+          "topFolders": {
+            "items": {
+              "$ref": "#/components/schemas/StorageFolderStat"
+            },
+            "type": "array"
+          },
+          "totalBytes": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shareId",
+          "shareName",
+          "path",
+          "totalBytes",
+          "fileCount",
+          "dirCount",
+          "topFolders",
+          "categories"
+        ],
+        "type": "object"
+      },
       "Summary": {
         "additionalProperties": false,
         "properties": {
@@ -8123,6 +8367,80 @@
           "Shares"
         ],
         "x-permission": "shares:write"
+      }
+    },
+    "/storage/report": {
+      "get": {
+        "operationId": "getStorageReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get the latest storage analyzer report",
+        "tags": [
+          "Storage"
+        ],
+        "x-permission": "system:read"
+      }
+    },
+    "/storage/scan": {
+      "post": {
+        "operationId": "runStorageScan",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Scan all shares for disk usage and duplicates",
+        "tags": [
+          "Storage"
+        ],
+        "x-permission": "settings:write"
       }
     },
     "/system/backup": {

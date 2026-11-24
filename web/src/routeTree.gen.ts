@@ -25,6 +25,7 @@ import { Route as AppSessionsRouteImport } from './routes/_app/sessions'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppSharesRouteImport } from './routes/_app/shares'
 import { Route as AppSpeedtestRouteImport } from './routes/_app/speedtest'
+import { Route as AppStorageRouteImport } from './routes/_app/storage'
 import { Route as AppTroubleshooterRouteImport } from './routes/_app/troubleshooter'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
 
@@ -107,6 +108,11 @@ const AppSpeedtestRoute = AppSpeedtestRouteImport.update({
   path: '/speedtest',
   getParentRoute: () => AppRoute,
 } as any)
+const AppStorageRoute = AppStorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTroubleshooterRoute = AppTroubleshooterRouteImport.update({
   id: '/troubleshooter',
   path: '/troubleshooter',
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
   '/speedtest': typeof AppSpeedtestRoute
+  '/storage': typeof AppStorageRoute
   '/troubleshooter': typeof AppTroubleshooterRoute
   '/users': typeof AppUsersRoute
 }
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/shares': typeof AppSharesRoute
   '/speedtest': typeof AppSpeedtestRoute
+  '/storage': typeof AppStorageRoute
   '/troubleshooter': typeof AppTroubleshooterRoute
   '/users': typeof AppUsersRoute
   '/': typeof AppIndexRoute
@@ -173,6 +181,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/shares': typeof AppSharesRoute
   '/_app/speedtest': typeof AppSpeedtestRoute
+  '/_app/storage': typeof AppStorageRoute
   '/_app/troubleshooter': typeof AppTroubleshooterRoute
   '/_app/users': typeof AppUsersRoute
   '/_app/': typeof AppIndexRoute
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/shares'
     | '/speedtest'
+    | '/storage'
     | '/troubleshooter'
     | '/users'
   fileRoutesByTo: FileRoutesByTo
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/shares'
     | '/speedtest'
+    | '/storage'
     | '/troubleshooter'
     | '/users'
     | '/'
@@ -233,6 +244,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/shares'
     | '/_app/speedtest'
+    | '/_app/storage'
     | '/_app/troubleshooter'
     | '/_app/users'
     | '/_app/'
@@ -358,6 +370,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSpeedtestRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/storage': {
+      id: '/_app/storage'
+      path: '/storage'
+      fullPath: '/storage'
+      preLoaderRoute: typeof AppStorageRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/troubleshooter': {
       id: '/_app/troubleshooter'
       path: '/troubleshooter'
@@ -388,6 +407,7 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppSharesRoute: typeof AppSharesRoute
   AppSpeedtestRoute: typeof AppSpeedtestRoute
+  AppStorageRoute: typeof AppStorageRoute
   AppTroubleshooterRoute: typeof AppTroubleshooterRoute
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -406,6 +426,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppSharesRoute: AppSharesRoute,
   AppSpeedtestRoute: AppSpeedtestRoute,
+  AppStorageRoute: AppStorageRoute,
   AppTroubleshooterRoute: AppTroubleshooterRoute,
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,

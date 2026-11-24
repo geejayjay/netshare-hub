@@ -9,6 +9,7 @@ import {
   HardDrive,
   LayoutDashboard,
   Monitor,
+  PieChart,
   ScrollText,
   Settings,
   Shield,
@@ -33,6 +34,7 @@ export const navigation: NavItem[] = [
   { to: '/my-shares', label: 'My Shares', icon: HardDrive, group: 'Overview' },
   { to: '/files', label: 'File Manager', icon: FolderClosed, group: 'Storage', module: 'fileManager' },
   { to: '/shares', label: 'Shares', icon: FolderOpen, group: 'Storage', permission: 'shares:read' },
+  { to: '/storage', label: 'Storage Analyzer', icon: PieChart, group: 'Storage', permission: 'system:read' },
   {
     to: '/replication',
     label: 'Replication',

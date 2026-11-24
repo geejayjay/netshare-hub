@@ -1077,6 +1077,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/storage/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the latest storage analyzer report */
+        get: operations["getStorageReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/storage/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan all shares for disk usage and duplicates */
+        post: operations["runStorageScan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/backup": {
         parameters: {
             query?: never;
@@ -2502,6 +2536,74 @@ export interface components {
              * @description Day of week (0=Sun..6=Sat) for weekly mode.
              */
             weekday?: number;
+        };
+        StorageCategoryStat: {
+            /** Format: int64 */
+            bytes: number;
+            category: string;
+            /** Format: int64 */
+            files: number;
+        };
+        StorageDuplicateFile: {
+            modTime: string;
+            path: string;
+            shareName: string;
+        };
+        StorageDuplicateGroup: {
+            files: components["schemas"]["StorageDuplicateFile"][];
+            /** Format: int64 */
+            reclaimableBytes: number;
+            sha256: string;
+            /** Format: int64 */
+            size: number;
+        };
+        StorageFileItem: {
+            modTime: string;
+            name: string;
+            path: string;
+            shareName: string;
+            /** Format: int64 */
+            size: number;
+        };
+        StorageFolderStat: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: int64 */
+            files: number;
+            name: string;
+            path: string;
+        };
+        StorageReport: {
+            duplicates: components["schemas"]["StorageDuplicateGroup"][];
+            /** Format: int64 */
+            durationMs: number;
+            largestFiles: components["schemas"]["StorageFileItem"][];
+            oldestFiles: components["schemas"]["StorageFileItem"][];
+            /** Format: int64 */
+            reclaimableBytes: number;
+            scannedAt?: string;
+            scanning: boolean;
+            shares: components["schemas"]["StorageShareStat"][];
+            /** Format: int64 */
+            totalBytes: number;
+            /** Format: int64 */
+            totalDirs: number;
+            /** Format: int64 */
+            totalFiles: number;
+        };
+        StorageShareStat: {
+            categories: components["schemas"]["StorageCategoryStat"][];
+            /** Format: int64 */
+            dirCount: number;
+            /** Format: int64 */
+            fileCount: number;
+            path: string;
+            /** Format: int64 */
+            shareId: number;
+            shareName: string;
+            topFolders: components["schemas"]["StorageFolderStat"][];
+            /** Format: int64 */
+            totalBytes: number;
         };
         Summary: {
             /** Format: int64 */
@@ -5217,6 +5319,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getStorageReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    runStorageScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageReport"];
                 };
             };
             /** @description Error */
