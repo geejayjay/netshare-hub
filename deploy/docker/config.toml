@@ -1,0 +1,24 @@
+# NetShare Hub default Docker container configuration.
+# Mount your own /etc/netshare-hub/config.toml or override via NSH_* env vars.
+
+listen = "0.0.0.0:8080"
+data_dir = "/data"
+log_level = "info"
+log_format = "json"
+secure_cookies = false   # Set to true when serving behind an HTTPS reverse proxy
+sys = "real"
+
+max_upload_bytes = 0
+activity_retention_days = 90
+
+[modules]
+file_manager = true
+activity_log = true
+ransomware_guard = true
+brute_force = true
+discovery = false        # Requires systemd on host/LXC
+sessions = true
+backup = true
+nfs = false
+replication = false
+block_storage = false

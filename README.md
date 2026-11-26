@@ -76,7 +76,32 @@ It is designed from the ground up for **security and simplicity**: the web serve
 
 ## Quick Install (v0.5.0)
 
-> **HTTP only, by design:** NetShare Hub serves plain HTTP. Run it on a trusted LAN, or place it behind an HTTPS reverse proxy (Caddy, nginx, Traefik). Over plain HTTP, keep `secure_cookies = false` in `/etc/netshare-hub/config.toml`.
+> **HTTP only, by design:** NetShare Hub serves plain HTTP. Run it on a trusted LAN, or place it behind an HTTPS reverse proxy (Caddy, nginx, Traefik). Over plain HTTP, keep `secure_cookies = false` in `/etc/netshare-hub/config.toml` (or `NSH_SECURE_COOKIES=false` in Docker).
+
+### Option 1: Docker / Docker Compose (amd64 & arm64)
+
+```bash
+docker run -d \
+  --name netshare-hub \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -p 445:445 \
+  -e NSH_SECURE_COOKIES=false \
+  -v netshare-data:/data \
+  -v netshare-config:/etc/netshare-hub \
+  -v /path/to/shares:/srv/shares \
+  ghcr.io/geejayjay/netshare-hub:0.5.0
+```
+
+Or using the included [compose.yml](compose.yml):
+
+```bash
+docker compose up -d
+```
+
+Then open **`http://<server-ip>:8080`** to complete first-run admin setup.
+
+### Option 2: Proxmox LXC / Debian / Ubuntu (Recommended for privilege-separated agent)
 
 1. Install required system packages on Debian 12/13 or Ubuntu 24.04 (including Proxmox LXC):
    ```bash

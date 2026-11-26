@@ -1,0 +1,19 @@
+services:
+  netshare-hub:
+    image: ghcr.io/geejayjay/netshare-hub:0.5.0
+    container_name: netshare-hub
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # Web UI & API
+      - "445:445"     # SMB3
+    environment:
+      # Set to true when serving behind an HTTPS reverse proxy (Caddy/nginx/Traefik)
+      - NSH_SECURE_COOKIES=false
+    volumes:
+      - netshare-data:/data
+      - netshare-config:/etc/netshare-hub
+      - ./shares:/srv/shares
+
+volumes:
+  netshare-data:
+  netshare-config:
