@@ -291,7 +291,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 			}
 			return out, nil
 		},
-	})
+	}, osLayer.Samba)
 	if mods.SMBEvents() {
 		ev := smbEvents.Subscribe("search", 4096)
 		loops = append(loops, func(ctx context.Context) { searchService.WatchSMBEvents(ctx, ev) })
@@ -307,7 +307,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 			out = append(out, storage.ShareRef{ID: s.ID, Name: s.Name, Path: s.Path})
 		}
 		return out, nil
-	})
+	}, osLayer.Samba)
 	tasks.Add(scheduler.Task{Name: "storage.scan", Daily: 4*time.Hour + 30*time.Minute, Run: storageService.RunTask})
 	tasks.Add(scheduler.Task{Name: "jobs.cleanup", Every: time.Hour, Run: jobService.Cleanup})
 	tasks.Add(scheduler.Task{Name: "shares.recycle-purge", Daily: 2*time.Hour + 45*time.Minute, Run: shareService.PurgeRecycleBins})
@@ -362,7 +362,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 				paths = append(paths, s.Path)
 			}
 			return paths
-		})
+		}, osLayer.Files)
 		audit.Register(api, auditService)
 		speedtest.Register(api, r, cfg.DataDir)
 		auth.Register(api, authService, cfg.SecureCookies)
@@ -533,6 +533,8 @@ func apiConfig() huma.Config {
 	c.CreateHooks = nil
 	c.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		httpx.SecurityScheme: {Type: "apiKey", In: "cookie", Name: auth.CookieName},
+		httpx.TokenScheme: {Type: "http", Scheme: "bearer",
+			Description: "An API token (nsh_...), made under API tokens in the account menu."},
 	}
 	return c
 }

@@ -18,11 +18,42 @@ const HeaderCSRF = "X-CSRF-Token"
 // SecurityScheme is the name of the session-cookie scheme in the OpenAPI spec.
 const SecurityScheme = "session"
 
+// TokenScheme is the name of the API-token scheme (Authorization: Bearer).
+const TokenScheme = "token"
+
 // Access says who may call a route. Every route must pick one, so a route
 // can never be left open by accident.
 type Access struct {
 	public     bool
 	permission rbac.Permission
+	// browserOnly refuses API tokens (see BrowserOnly).
+	browserOnly bool
+}
+
+// BrowserOnly makes a route refuse API tokens: only a logged-in browser may
+// call it. For what a leaked token must never do: manage tokens, log out a
+// session, or take or restore a config backup (it holds every password
+// hash).
+func (a Access) BrowserOnly() Access {
+	a.browserOnly = true
+	return a
+}
+
+// check is the one access decision, shared by Register and Protect.
+func (a Access) check(p *Principal, mutating bool, csrf string) *errs.E {
+	switch {
+	case p == nil:
+		return errs.Unauthenticated(errs.CodeUnauthenticated, "Please log in to continue.")
+	case p.ViaToken() && a.browserOnly:
+		return errs.Forbidden(errs.CodeForbidden, "API tokens cannot do this: log in with a browser.")
+	case p.ViaToken() && mutating && p.ReadOnly:
+		return errs.Forbidden(errs.CodeForbidden, "This API token is read-only.")
+	case !p.ViaToken() && mutating && !validCSRF(p, csrf):
+		return errs.Forbidden(errs.CodeCSRFInvalid, "Your session could not be verified. Please reload the page and try again.")
+	case a.permission != "" && !p.Can(a.permission):
+		return errs.Forbidden(errs.CodeForbidden, "You do not have permission to do this.")
+	}
+	return nil
 }
 
 // Public routes need no login (health, login, first-run setup).
@@ -72,6 +103,9 @@ func Register[I, O any](api huma.API, r Route, handler func(context.Context, *I)
 	}
 	if !r.Access.public {
 		op.Security = []map[string][]string{{SecurityScheme: {}}}
+		if !r.Access.browserOnly {
+			op.Security = append(op.Security, map[string][]string{TokenScheme: {}})
+		}
 	}
 	if r.Access.permission != "" {
 		op.Extensions = map[string]any{"x-permission": string(r.Access.permission)}
@@ -107,17 +141,7 @@ func (a Access) guard(method string) func(huma.Context, func(huma.Context)) {
 			return
 		}
 		ctx := hctx.Context()
-		p := PrincipalFrom(ctx)
-
-		var denied *errs.E
-		switch {
-		case p == nil:
-			denied = errs.Unauthenticated(errs.CodeUnauthenticated, "Please log in to continue.")
-		case mutating && !validCSRF(p, hctx.Header(HeaderCSRF)):
-			denied = errs.Forbidden(errs.CodeCSRFInvalid, "Your session could not be verified. Please reload the page and try again.")
-		case a.permission != "" && !p.Can(a.permission):
-			denied = errs.Forbidden(errs.CodeForbidden, "You do not have permission to do this.")
-		}
+		denied := a.check(PrincipalFrom(ctx), mutating, hctx.Header(HeaderCSRF))
 		if denied != nil {
 			writeHuma(hctx, FromError(ctx, denied))
 			return
@@ -136,16 +160,7 @@ func Protect(a Access, next http.Handler) http.Handler {
 			return
 		}
 		mutating := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
-		p := PrincipalFrom(r.Context())
-		var denied *errs.E
-		switch {
-		case p == nil:
-			denied = errs.Unauthenticated(errs.CodeUnauthenticated, "Please log in to continue.")
-		case mutating && !validCSRF(p, r.Header.Get(HeaderCSRF)):
-			denied = errs.Forbidden(errs.CodeCSRFInvalid, "Your session could not be verified. Please reload the page and try again.")
-		case a.permission != "" && !p.Can(a.permission):
-			denied = errs.Forbidden(errs.CodeForbidden, "You do not have permission to do this.")
-		}
+		denied := a.check(PrincipalFrom(r.Context()), mutating, r.Header.Get(HeaderCSRF))
 		if denied != nil {
 			WriteProblem(w, FromError(r.Context(), denied))
 			return

@@ -7,7 +7,29 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"netshare-hub/internal/sys"
 )
+
+// dirFiles stands in for the agent: each share name maps to a folder, read
+// with the system layer's own walk and lookup.
+type dirFiles map[string]string
+
+func (d dirFiles) ScanShare(ctx context.Context, share string, fn func(sys.ShareEntry) error) error {
+	dir, ok := d[share]
+	if !ok {
+		return sys.ErrNotFound
+	}
+	return sys.WalkShareFS(ctx, os.DirFS(dir), fn)
+}
+
+func (d dirFiles) StatFiles(ctx context.Context, share string, paths []string, hash bool) ([]sys.ShareFile, error) {
+	dir, ok := d[share]
+	if !ok {
+		return nil, sys.ErrNotFound
+	}
+	return sys.StatShareFS(ctx, os.DirFS(dir), paths, hash)
+}
 
 func TestStorageScanAndDuplicates(t *testing.T) {
 	dir := t.TempDir()
@@ -30,13 +52,16 @@ func TestStorageScanAndDuplicates(t *testing.T) {
 	_ = os.WriteFile(oldFile, oldPayload, 0o644)
 	past := time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC)
 	_ = os.Chtimes(oldFile, past, past)
+	// The recycle bin counts for nothing (not even as a duplicate).
+	_ = os.MkdirAll(filepath.Join(shareB, ".recycle"), 0o755)
+	_ = os.WriteFile(filepath.Join(shareB, ".recycle", "copy3.pdf"), dupPayload, 0o644)
 
 	svc := NewService(dataDir, func(context.Context) ([]ShareRef, error) {
 		return []ShareRef{
 			{ID: 1, Name: "media", Path: shareA},
 			{ID: 2, Name: "backup", Path: shareB},
 		}, nil
-	})
+	}, dirFiles{"media": shareA, "backup": shareB})
 
 	rep, err := svc.Scan(context.Background())
 	if err != nil {
@@ -56,7 +81,7 @@ func TestStorageScanAndDuplicates(t *testing.T) {
 	}
 
 	// Reload from disk verifies persistence.
-	reloaded := NewService(dataDir, nil).Report()
+	reloaded := NewService(dataDir, nil, nil).Report()
 	if reloaded.TotalFiles != 4 || reloaded.ReclaimableBytes != 4096 {
 		t.Fatalf("reloaded report mismatch: %+v", reloaded)
 	}

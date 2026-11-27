@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.5.0-5b5bd6" alt="Version v0.5.0" />
+  <img src="https://img.shields.io/badge/version-v0.5.1-5b5bd6" alt="Version v0.5.1" />
   <img src="https://img.shields.io/badge/go-1.25+-00add8" alt="Go 1.25+" />
   <img src="https://img.shields.io/badge/react-19-61dafb" alt="React 19" />
   <img src="https://img.shields.io/badge/binary-single%20static-22c55e" alt="Single Static Binary" />
@@ -74,7 +74,7 @@ It is designed from the ground up for **security and simplicity**: the web serve
 
 ---
 
-## Quick Install (v0.5.0)
+## Quick Install (v0.5.1)
 
 > **HTTP only, by design:** NetShare Hub serves plain HTTP. Run it on a trusted LAN, or place it behind an HTTPS reverse proxy (Caddy, nginx, Traefik). Over plain HTTP, keep `secure_cookies = false` in `/etc/netshare-hub/config.toml` (or `NSH_SECURE_COOKIES=false` in Docker).
 
@@ -90,7 +90,7 @@ docker run -d \
   -v netshare-data:/data \
   -v netshare-config:/etc/netshare-hub \
   -v /path/to/shares:/srv/shares \
-  ghcr.io/geejayjay/netshare-hub:0.5.0
+  ghcr.io/geejayjay/netshare-hub:0.5.1
 ```
 
 Or using the included [compose.yml](compose.yml):
@@ -112,10 +112,10 @@ Then open **`http://<server-ip>:8080`** to complete first-run admin setup.
    # Optional: video thumbnails in the File Manager
    sudo apt install -y ffmpeg
    ```
-2. Download and unpack the `v0.5.0` release tarball for your architecture (`amd64` or `arm64`):
+2. Download and unpack the `v0.5.1` release tarball for your architecture (`amd64` or `arm64`):
    ```bash
-   tar -xzf netshare-hub-0.5.0-linux-amd64.tar.gz
-   cd netshare-hub-0.5.0-linux-amd64
+   tar -xzf netshare-hub-0.5.1-linux-amd64.tar.gz
+   cd netshare-hub-0.5.1-linux-amd64
    sudo ./install.sh
    ```
 3. Open **`http://<server-ip>:8080`** to complete first-run admin setup.

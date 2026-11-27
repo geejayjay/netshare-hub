@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -155,6 +156,9 @@ func Middleware(svc *Service) func(http.Handler) http.Handler {
 			if p != nil {
 				actorID = p.UserID
 				actor = p.Username
+				if p.TokenID > 0 {
+					actor = fmt.Sprintf("%s (token #%d)", p.Username, p.TokenID)
+				}
 			}
 
 			relPath := strings.TrimPrefix(r.URL.Path, "/api/v1")

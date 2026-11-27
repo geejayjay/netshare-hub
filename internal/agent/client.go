@@ -279,3 +279,12 @@ func (c *Client) CreateShareDir(ctx context.Context, path string) (string, error
 	err := c.call(ctx, opCreateShareDir, pathRequest{Path: path}, &res)
 	return res.Path, err
 }
+
+func (c *Client) InspectMounts(ctx context.Context, paths []string) (sys.MountReport, error) {
+	if paths == nil {
+		paths = []string{}
+	}
+	var res sys.MountReport
+	err := c.call(ctx, opInspectMounts, inspectMountsRequest{Paths: paths}, &res)
+	return res, err
+}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"netshare-hub/internal/platform/errs"
 	"netshare-hub/internal/platform/httpx"
 	"netshare-hub/internal/platform/page"
 	"netshare-hub/internal/platform/rbac"
@@ -156,6 +157,10 @@ func (h *handler) create(ctx context.Context, in *createInput) (*userOutput, err
 }
 
 func (h *handler) update(ctx context.Context, in *updateInput) (*userOutput, error) {
+	p := httpx.PrincipalFrom(ctx)
+	if in.Body.Password != nil && p.TokenID != 0 {
+		return nil, errs.Forbidden(errs.CodeForbidden, "Password changes require a browser login; API tokens cannot change passwords.")
+	}
 	update := UpdateInput{
 		DisplayName: in.Body.DisplayName,
 		Disabled:    in.Body.Disabled,
@@ -166,7 +171,7 @@ func (h *handler) update(ctx context.Context, in *updateInput) (*userOutput, err
 		role := rbac.Role(*in.Body.Role)
 		update.Role = &role
 	}
-	u, err := h.svc.Update(ctx, httpx.PrincipalFrom(ctx).UserID, in.ID, update)
+	u, err := h.svc.Update(ctx, p.UserID, in.ID, update)
 	if err != nil {
 		return nil, err
 	}

@@ -21,7 +21,17 @@ type Principal struct {
 	Role        rbac.Role
 	SessionID   string
 	CSRFToken   string
+	// TokenID is set when the request came with an API token instead of a
+	// session cookie. Such a request needs no CSRF token (there is no
+	// cookie a page could make the browser send), but it cannot reach
+	// routes marked BrowserOnly.
+	TokenID int64
+	// ReadOnly tokens may only read (GET and HEAD).
+	ReadOnly bool
 }
+
+// ViaToken reports whether the request was made with an API token.
+func (p *Principal) ViaToken() bool { return p != nil && p.TokenID != 0 }
 
 // Can reports whether the principal holds a permission.
 func (p *Principal) Can(perm rbac.Permission) bool {

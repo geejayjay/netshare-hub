@@ -158,6 +158,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List your API tokens */
+        get: operations["listApiTokens"];
+        put?: never;
+        /** Create an API token */
+        post: operations["createApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke an API token */
+        delete: operations["revokeApiToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/block/devices": {
         parameters: {
             query?: never;
@@ -1461,6 +1496,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        APIToken: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            lastUsedAt?: string;
+            name: string;
+            /** @description The first characters of the token, to tell tokens apart. */
+            prefix: string;
+            readOnly: boolean;
+        };
         ActivityEntry: {
             /** Format: date-time */
             at: string;
@@ -1749,6 +1798,16 @@ export interface components {
              */
             timeMachineMaxGiB?: number;
         };
+        CreateTokenInputBody: {
+            /**
+             * Format: int64
+             * @description 0 = never expires.
+             */
+            expiresInDays?: number;
+            name: string;
+            /** @description Read-only tokens may only read (GET). */
+            readOnly?: boolean;
+        };
         CreateUserRequest: {
             /** @example Jay */
             displayName?: string;
@@ -1759,6 +1818,22 @@ export interface components {
             smbAccess?: boolean;
             /** @example jay */
             username: string;
+        };
+        CreatedAPIToken: {
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: date-time */
+            lastUsedAt?: string;
+            name: string;
+            /** @description The first characters of the token, to tell tokens apart. */
+            prefix: string;
+            readOnly: boolean;
+            /** @description The token. It is shown only now: store it safely. Send it as 'Authorization: Bearer <token>'. */
+            token: string;
         };
         DiscoveryService: {
             /** @description Starts when the machine starts. */
@@ -2081,6 +2156,9 @@ export interface components {
             items: components["schemas"]["Status"][];
             /** @description Present only when the list is paginated. */
             page?: components["schemas"]["Meta"];
+        };
+        ListTokensOutputBody: {
+            items: components["schemas"]["APIToken"][];
         };
         ListUser: {
             items: components["schemas"]["User"][];
@@ -3239,6 +3317,97 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SessionInfo"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    listApiTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListTokensOutputBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createApiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedAPIToken"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    revokeApiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

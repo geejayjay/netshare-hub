@@ -21,6 +21,8 @@ type client struct {
 	http *http.Client
 	base string
 	csrf string
+	// bearer, when set, is sent as an API token.
+	bearer string
 }
 
 type problem struct {
@@ -73,6 +75,9 @@ func (c *client) do(method, path string, body, out any) (int, http.Header) {
 	}
 	if c.csrf != "" {
 		req.Header.Set("X-CSRF-Token", c.csrf)
+	}
+	if c.bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearer)
 	}
 	res, err := c.http.Do(req)
 	if err != nil {

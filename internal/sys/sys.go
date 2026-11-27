@@ -168,6 +168,19 @@ type Samba interface {
 	// the caller). Links are never followed. It can take long on a big bin.
 	// Errors: ErrInvalid, ErrNotFound (no such share, or no recycle bin).
 	PurgeRecycle(ctx context.Context, share string) (PurgeStats, error)
+	// ScanShare calls fn for every file and folder in a live share's folder
+	// (read from the applied config, never from the caller), for the search
+	// index and the storage report. It runs in the system layer because the
+	// web server cannot read the share folders: only their users can. Links
+	// are never followed; the recycle bin and unfinished uploads are skipped
+	// (see WalkShareFS). It stops when fn returns an error or ctx is done.
+	// Errors: ErrInvalid, ErrNotFound (no such live share), fs.ErrNotExist.
+	ScanShare(ctx context.Context, share string, fn func(ShareEntry) error) error
+	// StatFiles reports files and folders of a live share by path relative
+	// to its folder (see StatShareFS), with their SHA-256 when hash is set
+	// (duplicate detection). At most MaxStatFiles paths per call.
+	// Errors: ErrInvalid, ErrNotFound (no such live share), fs.ErrNotExist.
+	StatFiles(ctx context.Context, share string, paths []string, hash bool) ([]ShareFile, error)
 	// DisconnectClient drops every SMB connection from one computer (the
 	// ransomware guard uses it so a blocked user's open connections cannot
 	// keep writing). The client may reconnect; what it may do then is
@@ -192,6 +205,13 @@ type Files interface {
 	// users access through its ACL. It returns the real path.
 	// Errors: fs.ErrNotExist (parent), fs.ErrExist.
 	CreateShareDir(ctx context.Context, path string) (string, error)
+	// InspectMounts reports, for each folder, the mount it lives on (and
+	// whether that mount is read-only or the container's root disk) and
+	// whether its owner is unmapped in an unprivileged container. It must
+	// run with the system's real view of the mounts: a sandboxed process
+	// (systemd ProtectSystem=strict) sees every folder as read-only.
+	// Empty paths are skipped. Errors: ErrInvalid (more than MaxMountPaths).
+	InspectMounts(ctx context.Context, paths []string) (MountReport, error)
 }
 
 // Audit reads what happens over SMB (the activity log's source).

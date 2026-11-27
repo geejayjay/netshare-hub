@@ -126,3 +126,39 @@ func TestPublishToOnlyReachesAllowedUsers(t *testing.T) {
 		}
 	}
 }
+
+func TestCloseTerminatesActiveStreams(t *testing.T) {
+	hub := NewHub()
+	ctx := httpx.WithPrincipal(context.Background(), &httpx.Principal{
+		UserID:   1,
+		Username: "admin",
+		Role:     rbac.RoleAdmin,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		hub.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for hub.ClientCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if hub.ClientCount() != 1 {
+		t.Fatal("client did not subscribe")
+	}
+
+	hub.Close()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("ServeHTTP did not exit promptly after Hub.Close()")
+	}
+	if hub.ClientCount() != 0 {
+		t.Fatalf("expected 0 clients after Close, got %d", hub.ClientCount())
+	}
+}

@@ -543,6 +543,9 @@ func Register(api huma.API, s *Service) {
 	r := func(id, method, path, summary string, status int) httpx.Route {
 		return httpx.Route{ID: id, Method: method, Path: path, Summary: summary, Tag: tag, Access: httpx.Require(rbac.BlockManage), Status: status}
 	}
+	br := func(id, method, path, summary string, status int) httpx.Route {
+		return httpx.Route{ID: id, Method: method, Path: path, Summary: summary, Tag: tag, Access: httpx.Require(rbac.BlockManage).BrowserOnly(), Status: status}
+	}
 	httpx.Register(api, r("getBlockStatus", http.MethodGet, "/block/status", "Whether this machine can serve iSCSI / NVMe disks", 0),
 		func(ctx context.Context, _ *struct{}) (*statusOutput, error) {
 			st, err := s.Status(ctx)
@@ -564,7 +567,7 @@ func Register(api huma.API, s *Service) {
 			}
 			return &disksOutput{Body: page.All(list)}, nil
 		})
-	httpx.Register(api, r("createBlockDisk", http.MethodPost, "/block/disks", "Create a disk for one computer", http.StatusCreated),
+	httpx.Register(api, br("createBlockDisk", http.MethodPost, "/block/disks", "Create a disk for one computer", http.StatusCreated),
 		func(ctx context.Context, in *createInput) (*diskOutput, error) {
 			d, err := s.Create(ctx, in.Body)
 			return &diskOutput{Body: d}, err
@@ -574,12 +577,12 @@ func Register(api huma.API, s *Service) {
 			d, err := s.Get(ctx, in.ID)
 			return &diskOutput{Body: d}, err
 		})
-	httpx.Register(api, r("updateBlockDisk", http.MethodPatch, "/block/disks/{id}", "Change a disk (its client is reconnected)", 0),
+	httpx.Register(api, br("updateBlockDisk", http.MethodPatch, "/block/disks/{id}", "Change a disk (its client is reconnected)", 0),
 		func(ctx context.Context, in *patchInput) (*diskOutput, error) {
 			d, err := s.Update(ctx, in.ID, in.Body)
 			return &diskOutput{Body: d}, err
 		})
-	httpx.Register(api, r("deleteBlockDisk", http.MethodDelete, "/block/disks/{id}",
+	httpx.Register(api, br("deleteBlockDisk", http.MethodDelete, "/block/disks/{id}",
 		"Stop serving a disk (an image file is kept)", http.StatusNoContent),
 		func(ctx context.Context, in *idInput) (*struct{}, error) { return nil, s.Delete(ctx, in.ID) })
 }

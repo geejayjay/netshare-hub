@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -80,12 +81,20 @@ func serve(args []string) error {
 	}
 	defer application.Close()
 
+	reqCtx, cancelReqs := context.WithCancel(context.Background())
+	defer cancelReqs()
+
 	server := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           application.Handler,
+		BaseContext:       func(net.Listener) context.Context { return reqCtx },
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}
+	server.RegisterOnShutdown(func() {
+		application.Events.Close()
+		cancelReqs()
+	})
 
 	failed := make(chan error, 1)
 	go func() {
@@ -104,7 +113,11 @@ func serve(args []string) error {
 	slog.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return server.Shutdown(shutdownCtx)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("graceful shutdown timed out; forcing close", "err", err)
+		_ = server.Close()
+	}
+	return nil
 }
 
 // runAgent runs the privileged half of NetShare Hub. It performs the system
@@ -150,7 +163,7 @@ func openapi(args []string) error {
 
 	cfg := config.Default()
 	cfg.DataDir = dir
-	cfg.Sys = "fake" // only the routes are needed, never the real system
+	cfg.Sys = "fake"                  // only the routes are needed, never the real system
 	cfg.Modules = config.AllModules() // every module's routes and types
 	application, err := app.New(context.Background(), cfg, app.Options{})
 	if err != nil {

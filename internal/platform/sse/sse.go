@@ -21,6 +21,7 @@ const (
 // Hub manages active SSE subscribers and sends events to them.
 type Hub struct {
 	mu      sync.RWMutex
+	closed  bool
 	nextID  atomic.Uint64
 	seq     atomic.Uint64
 	clients map[uint64]*client
@@ -52,6 +53,11 @@ func (h *Hub) SubscribeAs(who *httpx.Principal) (<-chan []byte, func()) {
 	ch := make(chan []byte, defaultBufferSize)
 
 	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		close(ch)
+		return ch, func() {}
+	}
 	h.clients[id] = &client{ch: ch, who: who}
 	h.mu.Unlock()
 
@@ -105,6 +111,18 @@ func (h *Hub) ClientCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
+}
+
+// Close disconnects all active SSE subscribers so http.Server.Shutdown can
+// return promptly without waiting for long-lived browser event streams.
+func (h *Hub) Close() {
+	h.mu.Lock()
+	h.closed = true
+	for id, c := range h.clients {
+		delete(h.clients, id)
+		close(c.ch)
+	}
+	h.mu.Unlock()
 }
 
 // ServeHTTP streams events to an authenticated browser tab.

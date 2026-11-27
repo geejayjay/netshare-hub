@@ -8,6 +8,7 @@ import (
 
 	"netshare-hub/internal/db/migrations"
 	"netshare-hub/internal/platform/db"
+	"netshare-hub/internal/sys"
 )
 
 type fakeProvider struct {
@@ -18,6 +19,26 @@ type fakeProvider struct {
 func (f *fakeProvider) AllShares(context.Context) ([]ShareRef, error) { return f.shares, nil }
 func (f *fakeProvider) ReadableShareIDs(_ context.Context, userID int64) ([]int64, error) {
 	return f.readable[userID], nil
+}
+
+// dirFiles stands in for the agent: each share name maps to a folder, read
+// with the system layer's own walk and lookup.
+type dirFiles map[string]string
+
+func (d dirFiles) ScanShare(ctx context.Context, share string, fn func(sys.ShareEntry) error) error {
+	dir, ok := d[share]
+	if !ok {
+		return sys.ErrNotFound
+	}
+	return sys.WalkShareFS(ctx, os.DirFS(dir), fn)
+}
+
+func (d dirFiles) StatFiles(ctx context.Context, share string, paths []string, hash bool) ([]sys.ShareFile, error) {
+	dir, ok := d[share]
+	if !ok {
+		return nil, sys.ErrNotFound
+	}
+	return sys.StatShareFS(ctx, os.DirFS(dir), paths, hash)
 }
 
 func TestSearchIndexAndAccessIsolation(t *testing.T) {
@@ -43,6 +64,9 @@ func TestSearchIndexAndAccessIsolation(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(shareA, "finance", "budget-2026.pdf"), []byte("hello"), 0o644)
 	_ = os.WriteFile(filepath.Join(shareA, "README.md"), []byte("readme"), 0o644)
 	_ = os.WriteFile(filepath.Join(shareB, "budget-secret.pdf"), []byte("secret"), 0o644)
+	// The recycle bin is never indexed.
+	_ = os.MkdirAll(filepath.Join(shareA, ".recycle"), 0o755)
+	_ = os.WriteFile(filepath.Join(shareA, ".recycle", "budget-old.pdf"), []byte("old"), 0o644)
 
 	prov := &fakeProvider{
 		shares: []ShareRef{
@@ -56,7 +80,7 @@ func TestSearchIndexAndAccessIsolation(t *testing.T) {
 		},
 	}
 
-	svc := NewService(database, prov)
+	svc := NewService(database, prov, dirFiles{"docs": shareA, "secret": shareB})
 	if err := svc.Reindex(ctx); err != nil {
 		t.Fatalf("reindex failed: %v", err)
 	}

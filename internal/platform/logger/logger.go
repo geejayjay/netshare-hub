@@ -18,6 +18,7 @@ type ctxKey int
 const (
 	keyRequestID ctxKey = iota
 	keyUser
+	keyTokenID
 )
 
 // WithRequestID stores the request ID for later log lines.
@@ -34,6 +35,11 @@ func RequestID(ctx context.Context) string {
 // WithUser stores the acting username for later log lines.
 func WithUser(ctx context.Context, username string) context.Context {
 	return context.WithValue(ctx, keyUser, username)
+}
+
+// WithTokenID stores the API token ID for later log lines.
+func WithTokenID(ctx context.Context, tokenID int64) context.Context {
+	return context.WithValue(ctx, keyTokenID, tokenID)
 }
 
 // Options are the bootstrap logging settings.
@@ -81,6 +87,9 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	}
 	if user, _ := ctx.Value(keyUser).(string); user != "" {
 		r.AddAttrs(slog.String("user", user))
+	}
+	if tokenID, _ := ctx.Value(keyTokenID).(int64); tokenID > 0 {
+		r.AddAttrs(slog.Int64("token_id", tokenID))
 	}
 	DefaultRing.push(r)
 	return h.Handler.Handle(ctx, r)

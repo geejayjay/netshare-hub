@@ -104,6 +104,13 @@ func NewServerWith(system sys.System, authorize Authorizer, version string, feat
 		return system.Samba.PurgeRecycle(ctx, r.Share)
 	}, func(r fixPermissionsRequest) []any { return []any{"share", r.Share} })
 
+	s.mux.HandleFunc("POST "+pathPrefix+opScanShare, s.scanShare)
+
+	register(s, opStatFiles, func(ctx context.Context, r statFilesRequest) (any, error) {
+		files, err := system.Samba.StatFiles(ctx, r.Share, r.Paths, r.Hash)
+		return statFilesResponse{Files: files}, err
+	}, func(r statFilesRequest) []any { return []any{"share", r.Share, "files", len(r.Paths), "hash", r.Hash} })
+
 	register(s, opSessions, func(ctx context.Context, _ struct{}) (any, error) {
 		sessions, err := system.Samba.Sessions(ctx)
 		return sessionsResponse{Sessions: sessions}, err
@@ -198,6 +205,41 @@ func NewServerWith(system sys.System, authorize Authorizer, version string, feat
 		return pathResponse{Path: real}, err
 	}, func(r pathRequest) []any { return []any{"path", r.Path} })
 
+	register(s, opInspectMounts, func(ctx context.Context, r inspectMountsRequest) (any, error) {
+		if len(r.Paths) > sys.MaxMountPaths {
+			return nil, sys.ErrInvalid
+		}
+		// Same rule as files.resolve-dir: only folders that could be shared
+		// are looked at, so this is not a way to probe the whole system.
+		// Other paths come back without any mount information.
+		allowed := make([]string, 0, len(r.Paths))
+		for _, p := range r.Paths {
+			if sys.ValidSharePath(p) && sys.SharablePath(p) {
+				allowed = append(allowed, p)
+			}
+		}
+		report, err := system.Files.InspectMounts(ctx, allowed)
+		if err != nil {
+			return nil, err
+		}
+		if len(allowed) != len(r.Paths) {
+			byPath := make(map[string]sys.MountCheck, len(report.Checks))
+			for _, c := range report.Checks {
+				byPath[c.Path] = c
+			}
+			checks := make([]sys.MountCheck, 0, len(r.Paths))
+			for _, p := range r.Paths {
+				if c, ok := byPath[p]; ok {
+					checks = append(checks, c)
+				} else if p != "" {
+					checks = append(checks, sys.MountCheck{Path: p, Warnings: []string{}})
+				}
+			}
+			report.Checks = checks
+		}
+		return report, nil
+	}, func(r inspectMountsRequest) []any { return []any{"paths", len(r.Paths)} })
+
 	// Starting a file worker is the one operation that launches a process as
 	// another user. The system layer only does it for accounts NetShare Hub
 	// created, and decides itself which shares the worker may reach.
@@ -215,7 +257,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // concurrent operations run without the lock. Only operations that change
 // nothing but file permissions (no accounts, no config) belong here: a
 // permission walk can take hours, and must not block everything else.
-var concurrent = map[string]bool{opFixPermissions: true, opPurgeRecycle: true}
+var concurrent = map[string]bool{opFixPermissions: true, opPurgeRecycle: true, opStatFiles: true}
 
 // register adds one operation. Every operation goes through the same steps:
 // check the caller, read exactly the expected JSON, run it (one at a time),

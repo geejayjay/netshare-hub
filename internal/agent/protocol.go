@@ -41,6 +41,14 @@ const (
 	// opPurgeRecycle empties a share's recycle bin of expired items. It
 	// names a share only; the retention comes from the applied config.
 	opPurgeRecycle = "samba.purge-recycle"
+	// opScanShare streams the files and folders of a live share (newline-
+	// separated JSON) for the search index and the storage report;
+	// opStatFiles looks up some of them (and can hash them, to find
+	// duplicates). Both only
+	// read, and name a share only: the agent takes its folder from the
+	// applied config, so they cannot list or read anything else.
+	opScanShare = "samba.scan-share"
+	opStatFiles = "samba.stat-files"
 	// opAuditEvents streams the events read from Samba's logs (newline-
 	// separated JSON) for as long as the caller stays connected. It only
 	// reads; it is how the unprivileged web server gets the activity log
@@ -67,9 +75,14 @@ const (
 	opApplyGroups    = "groups.apply"
 	opResolveDir     = "files.resolve-dir"
 	opCreateShareDir = "files.create-share-dir"
-	opWorker         = "files.worker"
-	pathPrefix       = "/v1/"
-	maxRequestBytes  = 8 << 20
+	// opInspectMounts reports the mounts share folders live on. It runs
+	// here because the web server's systemd sandbox makes every folder look
+	// read-only to it. It only reads, and only answers for folders that
+	// could be shared at all (like files.resolve-dir).
+	opInspectMounts = "files.inspect-mounts"
+	opWorker        = "files.worker"
+	pathPrefix      = "/v1/"
+	maxRequestBytes = 8 << 20
 )
 
 // Request and response bodies. Each operation has its own type and unknown
@@ -121,6 +134,25 @@ type fixPermissionsRequest struct {
 	Share string `json:"share"`
 }
 
+type statFilesRequest struct {
+	Share string   `json:"share"`
+	Paths []string `json:"paths"`
+	Hash  bool     `json:"hash,omitempty"`
+}
+
+type statFilesResponse struct {
+	Files []sys.ShareFile `json:"files"`
+}
+
+// scanLine is one line of the opScanShare stream: an entry, or the last
+// line, which says whether the scan finished or failed. A stream that ends
+// without a last line was cut off.
+type scanLine struct {
+	Entry *sys.ShareEntry `json:"entry,omitempty"`
+	Done  bool            `json:"done,omitempty"`
+	Error *errorResponse  `json:"error,omitempty"`
+}
+
 type sessionRequest struct {
 	ID string `json:"id"`
 }
@@ -157,6 +189,10 @@ type pathRequest struct {
 
 type pathResponse struct {
 	Path string `json:"path"`
+}
+
+type inspectMountsRequest struct {
+	Paths []string `json:"paths"`
 }
 
 type pingResponse struct {

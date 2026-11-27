@@ -546,6 +546,46 @@ func (f *Fake) FixPermissions(_ context.Context, share string) (sys.PermissionSt
 	return sys.PermissionStats{}, fmt.Errorf("%w: no live share named %q", sys.ErrNotFound, share)
 }
 
+// ScanShare walks the share's folder under FilesDir (the one its workers
+// serve), with the real system's rules.
+func (f *Fake) ScanShare(ctx context.Context, share string, fn func(sys.ShareEntry) error) error {
+	dir, err := f.liveShareDir(share, "ScanShare")
+	if err != nil {
+		return err
+	}
+	return sys.WalkShareFS(ctx, os.DirFS(dir), fn)
+}
+
+// StatFiles looks up files in the share's folder under FilesDir.
+func (f *Fake) StatFiles(ctx context.Context, share string, paths []string, hash bool) ([]sys.ShareFile, error) {
+	if len(paths) > sys.MaxStatFiles {
+		return nil, fmt.Errorf("%w: at most %d files", sys.ErrInvalid, sys.MaxStatFiles)
+	}
+	dir, err := f.liveShareDir(share, "StatFiles")
+	if err != nil {
+		return nil, err
+	}
+	return sys.StatShareFS(ctx, os.DirFS(dir), paths, hash)
+}
+
+// liveShareDir returns the folder of a live applied share.
+func (f *Fake) liveShareDir(share, op string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !sys.ValidShareName(share) {
+		return "", fmt.Errorf("%w: share name", sys.ErrInvalid)
+	}
+	if err := f.fail(op); err != nil {
+		return "", err
+	}
+	for _, sh := range f.shares {
+		if strings.EqualFold(sh.Name, share) && sh.Live() {
+			return f.shareDir(sh.Name)
+		}
+	}
+	return "", fmt.Errorf("%w: no live share named %q", sys.ErrNotFound, share)
+}
+
 // Fixed returns the shares FixPermissions ran for, in order.
 func (f *Fake) Fixed() []string {
 	f.mu.Lock()
@@ -759,6 +799,28 @@ func (f *Fake) ResolveDir(_ context.Context, dir string) (string, error) {
 		return "", fs.ErrNotExist
 	}
 	return dir, nil
+}
+
+// InspectMounts reports every folder as on a healthy, writable mount
+// ("/"), except folders under MissingPrefix that were not created.
+func (f *Fake) InspectMounts(_ context.Context, paths []string) (sys.MountReport, error) {
+	if len(paths) > sys.MaxMountPaths {
+		return sys.MountReport{}, sys.ErrInvalid
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	checks := make([]sys.MountCheck, 0, len(paths))
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		c := sys.MountCheck{Path: p, MountPoint: "/", FSType: "fake", Warnings: []string{}}
+		if clean := path.Clean(p); strings.HasPrefix(clean, MissingPrefix+"/") && !f.dirs[clean] {
+			c.Warnings = append(c.Warnings, sys.MountWarnMissing)
+		}
+		checks = append(checks, c)
+	}
+	return sys.MountReport{Environment: "host", Checks: checks}, nil
 }
 
 func (f *Fake) CreateShareDir(_ context.Context, dir string) (string, error) {

@@ -48,7 +48,7 @@ func Register(api huma.API, svc *Service) {
 	const tag = "System"
 	httpx.Register(api, httpx.Route{ID: "downloadConfigBackup", Method: http.MethodPost, Path: "/system/backup",
 		Summary: "Download an encrypted backup of users, shares and settings", Tag: tag,
-		Access: httpx.Require(rbac.BackupManage), Binary: "application/octet-stream"},
+		Access: httpx.Require(rbac.BackupManage).BrowserOnly(), Binary: "application/octet-stream"},
 		func(ctx context.Context, in *exportInput) (*exportOutput, error) {
 			smb := in.Body.SMBPasswords == nil || *in.Body.SMBPasswords
 			file, name, err := svc.Export(ctx, httpx.PrincipalFrom(ctx), in.Body.Passphrase, smb)
@@ -60,7 +60,7 @@ func Register(api huma.API, svc *Service) {
 		})
 	httpx.Register(api, httpx.Route{ID: "restoreConfigBackup", Method: http.MethodPost, Path: "/system/restore",
 		Summary: "Check a backup, or restore it (replaces every user, share and setting)", Tag: tag,
-		Access: httpx.Require(rbac.BackupManage), MaxBody: 24 << 20},
+		Access: httpx.Require(rbac.BackupManage).BrowserOnly(), MaxBody: 24 << 20},
 		func(ctx context.Context, in *restoreInput) (*restoreOutput, error) {
 			sum, err := svc.Restore(ctx, httpx.PrincipalFrom(ctx), RestoreInput{File: in.Body.Backup,
 				Passphrase: in.Body.Passphrase, DryRun: in.Body.DryRun, CreateMissingFolders: in.Body.CreateMissingFolders})

@@ -91,6 +91,34 @@ func fieldCodes(p problem) map[string]string {
 	return out
 }
 
+// The mount check is answered by the system layer (the root agent in
+// production), not by the web server's own, sandboxed mount table: under
+// systemd's ProtectSystem=strict that table shows every folder read-only.
+func TestMountCheckComesFromTheSystemLayer(t *testing.T) {
+	admin, _, _ := newSystemServer(t)
+	var report struct {
+		Environment string
+		Checks      []struct {
+			Path     string
+			FSType   string
+			ReadOnly bool
+			Warnings []string
+		}
+	}
+	if status, _ := admin.do("GET", "/system/mounts?path=/srv/media,/missing/new", nil, &report); status != 200 {
+		t.Fatalf("GET /system/mounts: status %d", status)
+	}
+	if len(report.Checks) != 2 {
+		t.Fatalf("checks = %+v", report.Checks)
+	}
+	if c := report.Checks[0]; c.Path != "/srv/media" || c.FSType != "fake" || c.ReadOnly || len(c.Warnings) != 0 {
+		t.Errorf("/srv/media check = %+v, want the fake system's answer", c)
+	}
+	if c := report.Checks[1]; len(c.Warnings) != 1 || c.Warnings[0] != sys.MountWarnMissing {
+		t.Errorf("/missing/new check = %+v", c)
+	}
+}
+
 func TestUserAccountSync(t *testing.T) {
 	admin, fake, base := newSystemServer(t)
 

@@ -64,3 +64,29 @@ export function useLogout() {
     },
   })
 }
+
+export type ApiToken = Schema<'APIToken'>
+export type CreatedApiToken = Schema<'CreatedAPIToken'>
+
+export const apiTokensQuery = queryOptions({
+  queryKey: ['api-tokens'],
+  queryFn: () => unwrap(api.GET('/auth/tokens')),
+  staleTime: 15_000,
+})
+
+export function useCreateApiToken() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { name: string; readOnly?: boolean; expiresInDays?: number }) =>
+      unwrap(api.POST('/auth/tokens', { body })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey }),
+  })
+}
+
+export function useRevokeApiToken() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => unwrap(api.DELETE('/auth/tokens/{id}', { params: { path: { id } } })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey }),
+  })
+}

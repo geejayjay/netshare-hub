@@ -5,10 +5,10 @@ package search
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"netshare-hub/internal/platform/db"
+	"netshare-hub/internal/sys"
 	"netshare-hub/internal/sys/sambalog"
 )
 
@@ -89,12 +90,23 @@ type Query struct {
 type Service struct {
 	db       *db.DB
 	shares   ShareProvider
+	files    Files
 	indexing atomic.Bool
 }
 
+// Files reads the share folders. It is the system layer (sys.Samba): the
+// web server itself cannot read them, only their users and the agent can.
+type Files interface {
+	ScanShare(ctx context.Context, share string, fn func(sys.ShareEntry) error) error
+	StatFiles(ctx context.Context, share string, paths []string, hash bool) ([]sys.ShareFile, error)
+}
+
+// errEnough stops a scan at maxIndexedPerShare entries.
+var errEnough = errors.New("search: enough entries")
+
 // NewService creates the search service.
-func NewService(database *db.DB, shares ShareProvider) *Service {
-	return &Service{db: database, shares: shares}
+func NewService(database *db.DB, shares ShareProvider, files Files) *Service {
+	return &Service{db: database, shares: shares, files: files}
 }
 
 // Status returns the current index metadata.
@@ -144,46 +156,13 @@ func (s *Service) Reindex(ctx context.Context) error {
 		if sh.Path == "" {
 			continue
 		}
-		info, err := os.Lstat(sh.Path)
-		if err != nil || !info.IsDir() {
-			continue
-		}
+		// The agent walks the share: the web server cannot read the folders.
 		count := 0
-		_ = filepath.WalkDir(sh.Path, func(full string, d fs.DirEntry, walkErr error) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if walkErr != nil {
-				return nil
-			}
-			if full == sh.Path {
-				return nil
-			}
-			if d.Type()&os.ModeSymlink != 0 {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			name := d.Name()
-			if name == ".recycle" || name == ".nsh-uploads" || name == ".Trash" {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			rel, err := filepath.Rel(sh.Path, full)
-			if err != nil {
-				return nil
-			}
-			rel = filepath.ToSlash(rel)
-			fi, err := d.Info()
-			if err != nil {
-				return nil
-			}
+		err := s.files.ScanShare(ctx, sh.Name, func(e sys.ShareEntry) error {
+			name := path.Base(e.Path)
 			ext := ""
 			isDir := 0
-			if d.IsDir() {
+			if e.IsDir {
 				isDir = 1
 			} else {
 				ext = strings.TrimPrefix(strings.ToLower(path.Ext(name)), ".")
@@ -191,19 +170,28 @@ func (s *Service) Reindex(ctx context.Context) error {
 			entries = append(entries, row{
 				shareID:   sh.ID,
 				shareName: sh.Name,
-				relPath:   rel,
+				relPath:   e.Path,
 				name:      name,
 				ext:       ext,
 				isDir:     isDir,
-				size:      fi.Size(),
-				modTime:   fi.ModTime().Unix(),
+				size:      e.Size,
+				modTime:   e.ModTime,
 			})
 			count++
 			if count >= maxIndexedPerShare {
-				return fs.SkipAll
+				return errEnough
 			}
 			return nil
 		})
+		switch {
+		case err == nil || errors.Is(err, errEnough):
+		case ctx.Err() != nil:
+			return ctx.Err()
+		case errors.Is(err, sys.ErrNotFound) || errors.Is(err, fs.ErrNotExist):
+			// Not live (no one may use it) or no folder yet: nothing to index.
+		default:
+			slog.WarnContext(ctx, "search: could not scan a share", "share", sh.Name, "err", err)
+		}
 	}
 
 	tx, err := s.db.Write.BeginTx(ctx, nil)
@@ -245,86 +233,191 @@ func (s *Service) Reindex(ctx context.Context) error {
 	return nil
 }
 
-// WatchSMBEvents incrementally updates the search index from live SMB audit events.
+const (
+	smbBatchWindow = 500 * time.Millisecond
+	smbBatchMax    = 200
+)
+
+// WatchSMBEvents incrementally updates the search index from live SMB audit
+// events, batching and deduplicating stat calls to avoid flooding the agent
+// during heavy file writes.
 func (s *Service) WatchSMBEvents(ctx context.Context, events <-chan sambalog.Event) {
+	pendingUpserts := make(map[string]map[string]struct{})
+	pendingDeletes := make(map[string]map[string]struct{})
+	pendingCount := 0
+
+	timer := time.NewTimer(smbBatchWindow)
+	timer.Stop()
+	defer timer.Stop()
+	timerRunning := false
+
+	flush := func() {
+		if pendingCount == 0 {
+			return
+		}
+		s.flushSMBBatch(ctx, pendingDeletes, pendingUpserts)
+		pendingUpserts = make(map[string]map[string]struct{})
+		pendingDeletes = make(map[string]map[string]struct{})
+		pendingCount = 0
+		timerRunning = false
+	}
+
+	queueDelete := func(share, rawPath string) {
+		if rawPath == "" {
+			return
+		}
+		if m := pendingUpserts[share]; m != nil {
+			delete(m, rawPath)
+		}
+		if pendingDeletes[share] == nil {
+			pendingDeletes[share] = make(map[string]struct{})
+		}
+		if _, exists := pendingDeletes[share][rawPath]; !exists {
+			pendingDeletes[share][rawPath] = struct{}{}
+			pendingCount++
+		}
+	}
+
+	queueUpsert := func(share, rawPath string) {
+		if rawPath == "" {
+			return
+		}
+		if m := pendingDeletes[share]; m != nil {
+			delete(m, rawPath)
+		}
+		if pendingUpserts[share] == nil {
+			pendingUpserts[share] = make(map[string]struct{})
+		}
+		if _, exists := pendingUpserts[share][rawPath]; !exists {
+			pendingUpserts[share][rawPath] = struct{}{}
+			pendingCount++
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-timer.C:
+			flush()
 		case ev, ok := <-events:
 			if !ok {
+				flush()
 				return
 			}
-			s.applySMBEvent(ctx, ev)
+			if !ev.OK || ev.Kind != sambalog.KindFile || ev.Share == "" || ev.Path == "" {
+				continue
+			}
+			switch ev.Op {
+			case "unlinkat":
+				queueDelete(ev.Share, ev.Path)
+			case "renameat":
+				queueDelete(ev.Share, ev.Path)
+				if ev.Path2 != "" {
+					queueUpsert(ev.Share, ev.Path2)
+				}
+			case "mkdirat", "pwrite":
+				queueUpsert(ev.Share, ev.Path)
+			case "openat":
+				if ev.Write {
+					queueUpsert(ev.Share, ev.Path)
+				}
+			}
+			if pendingCount >= smbBatchMax {
+				if timerRunning {
+					timer.Stop()
+				}
+				flush()
+			} else if pendingCount > 0 && !timerRunning {
+				timer.Reset(smbBatchWindow)
+				timerRunning = true
+			}
 		}
 	}
 }
 
-func (s *Service) applySMBEvent(ctx context.Context, ev sambalog.Event) {
-	if !ev.OK || ev.Kind != sambalog.KindFile || ev.Share == "" || ev.Path == "" {
-		return
-	}
+func (s *Service) flushSMBBatch(ctx context.Context, deletes, upserts map[string]map[string]struct{}) {
 	shares, err := s.shares.AllShares(ctx)
 	if err != nil {
 		return
 	}
-	var target *ShareRef
-	for i := range shares {
-		if shares[i].Name == ev.Share {
-			target = &shares[i]
-			break
-		}
+	byName := make(map[string]ShareRef, len(shares))
+	for _, sh := range shares {
+		byName[sh.Name] = sh
 	}
-	if target == nil {
-		return
-	}
-	toRel := func(raw string) string {
+
+	toRel := func(sh ShareRef, raw string) string {
 		clean := filepath.ToSlash(raw)
-		prefix := strings.TrimRight(filepath.ToSlash(target.Path), "/") + "/"
+		prefix := strings.TrimRight(filepath.ToSlash(sh.Path), "/") + "/"
 		clean = strings.TrimPrefix(clean, prefix)
 		return strings.TrimPrefix(clean, "/")
 	}
-	rel := toRel(ev.Path)
-	if rel == "" {
-		return
-	}
-	switch ev.Op {
-	case "unlinkat":
-		_, _ = s.db.Write.ExecContext(ctx, `DELETE FROM search_entries WHERE share_id = ? AND path = ?`, target.ID, rel)
-	case "renameat":
-		_, _ = s.db.Write.ExecContext(ctx, `DELETE FROM search_entries WHERE share_id = ? AND path = ?`, target.ID, rel)
-		if ev.Path2 != "" {
-			if rel2 := toRel(ev.Path2); rel2 != "" {
-				s.upsertOne(ctx, *target, rel2)
+
+	for shareName, paths := range deletes {
+		sh, ok := byName[shareName]
+		if !ok {
+			continue
+		}
+		for raw := range paths {
+			if rel := toRel(sh, raw); rel != "" {
+				_, _ = s.db.Write.ExecContext(ctx, `DELETE FROM search_entries WHERE share_id = ? AND path = ?`, sh.ID, rel)
 			}
 		}
-	case "mkdirat", "pwrite":
-		s.upsertOne(ctx, *target, rel)
-	case "openat":
-		if ev.Write {
-			s.upsertOne(ctx, *target, rel)
+	}
+
+	for shareName, paths := range upserts {
+		sh, ok := byName[shareName]
+		if !ok {
+			continue
+		}
+		rels := make([]string, 0, len(paths))
+		for raw := range paths {
+			if rel := toRel(sh, raw); rel != "" {
+				rels = append(rels, rel)
+			}
+		}
+		if len(rels) == 0 {
+			continue
+		}
+		const chunkSize = 500
+		for i := 0; i < len(rels); i += chunkSize {
+			end := min(i+chunkSize, len(rels))
+			s.upsertBatch(ctx, sh, rels[i:end])
 		}
 	}
 }
 
-func (s *Service) upsertOne(ctx context.Context, sh ShareRef, rel string) {
-	full := filepath.Join(sh.Path, filepath.FromSlash(rel))
-	fi, err := os.Lstat(full)
-	if err != nil || fi.Mode()&os.ModeSymlink != 0 {
+func (s *Service) upsertBatch(ctx context.Context, sh ShareRef, rels []string) {
+	found, err := s.files.StatFiles(ctx, sh.Name, rels, false)
+	if err != nil || len(found) == 0 {
 		return
 	}
-	name := path.Base(rel)
-	isDir := 0
-	ext := ""
-	if fi.IsDir() {
-		isDir = 1
-	} else {
-		ext = strings.TrimPrefix(strings.ToLower(path.Ext(name)), ".")
+	tx, err := s.db.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return
 	}
-	_, _ = s.db.Write.ExecContext(ctx, `
+	defer tx.Rollback()
+	stmt, err := tx.PrepareContext(ctx, `
 		INSERT OR REPLACE INTO search_entries (share_id, share_name, path, name, ext, is_dir, size, mod_time)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, sh.ID, sh.Name, rel, name, ext, isDir, fi.Size(), fi.ModTime().Unix())
+	`)
+	if err != nil {
+		return
+	}
+	defer stmt.Close()
+	for _, fi := range found {
+		rel := fi.Path
+		name := path.Base(rel)
+		isDir := 0
+		ext := ""
+		if fi.IsDir {
+			isDir = 1
+		} else {
+			ext = strings.TrimPrefix(strings.ToLower(path.Ext(name)), ".")
+		}
+		_, _ = stmt.ExecContext(ctx, sh.ID, sh.Name, rel, name, ext, isDir, fi.Size, fi.ModTime)
+	}
+	_ = tx.Commit()
 }
 
 // Search queries the FTS5 index, strictly restricting results to shares the user may read.

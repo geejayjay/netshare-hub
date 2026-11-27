@@ -1,15 +1,17 @@
 //go:build linux
 
-package system
+package sysexec
 
 import (
 	"os"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"netshare-hub/internal/sys"
 )
 
-func inspectMounts(paths []string) MountReport {
+func inspectMounts(paths []string) sys.MountReport {
 	env := detectContainerEnv()
 	unpriv := isUnprivilegedUserNS()
 
@@ -19,43 +21,47 @@ func inspectMounts(paths []string) MountReport {
 		_ = f.Close()
 	}
 
-	checks := make([]MountCheck, 0, len(paths))
+	checks := make([]sys.MountCheck, 0, len(paths))
 	for _, p := range paths {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		c := MountCheck{Path: p, Warnings: []string{}}
-		if m, ok := bestMountFor(p, mounts); ok {
-			c.MountPoint = m.MountPoint
-			c.FSType = m.FSType
-			c.ReadOnly = m.ReadOnly
-			if m.ReadOnly {
-				c.Warnings = append(c.Warnings, WarnReadOnly)
-			}
-			if m.MountPoint == "/" && env != "host" {
-				c.OnRootDisk = true
-				c.Warnings = append(c.Warnings, WarnRootDisk)
-			}
-		}
-
-		info, err := os.Stat(p)
-		if err != nil {
-			c.Warnings = append(c.Warnings, WarnMissing)
-		} else if st, ok := info.Sys().(*syscall.Stat_t); ok {
-			// In an unprivileged LXC, an unmapped host UID appears as overflow UID 65534 (nobody/nogroup).
-			if unpriv && (st.Uid == 65534 || st.Gid == 65534) {
-				c.UIDMismatch = true
-				c.Warnings = append(c.Warnings, WarnUIDMismatch)
-			}
-		}
-		checks = append(checks, c)
+		checks = append(checks, checkMount(p, mounts, env, unpriv))
 	}
 
-	return MountReport{
+	return sys.MountReport{
 		Environment:  env,
 		Unprivileged: unpriv,
 		Checks:       checks,
 	}
+}
+
+func checkMount(p string, mounts []mountInfoEntry, env string, unpriv bool) sys.MountCheck {
+	c := sys.MountCheck{Path: p, Warnings: []string{}}
+	if m, ok := bestMountFor(p, mounts); ok {
+		c.MountPoint = m.MountPoint
+		c.FSType = m.FSType
+		c.ReadOnly = m.ReadOnly
+		if m.ReadOnly {
+			c.Warnings = append(c.Warnings, sys.MountWarnReadOnly)
+		}
+		if m.MountPoint == "/" && env != "host" {
+			c.OnRootDisk = true
+			c.Warnings = append(c.Warnings, sys.MountWarnRootDisk)
+		}
+	}
+
+	info, err := os.Stat(p)
+	if err != nil {
+		c.Warnings = append(c.Warnings, sys.MountWarnMissing)
+	} else if st, ok := info.Sys().(*syscall.Stat_t); ok {
+		// In an unprivileged LXC, an unmapped host UID appears as overflow UID 65534 (nobody/nogroup).
+		if unpriv && (st.Uid == 65534 || st.Gid == 65534) {
+			c.UIDMismatch = true
+			c.Warnings = append(c.Warnings, sys.MountWarnUIDMismatch)
+		}
+	}
+	return c
 }
 
 func detectContainerEnv() string {

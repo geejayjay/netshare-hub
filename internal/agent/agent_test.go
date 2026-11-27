@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -333,5 +336,110 @@ func TestDiscoveryThroughAgent(t *testing.T) {
 	}
 	if err := d.SetDiscovery(ctx, "sshd", true); !errors.Is(err, sys.ErrInvalid) {
 		t.Errorf("unknown service: %v", err)
+	}
+}
+
+// The mount check runs in the agent (the web server's sandbox makes every
+// folder look read-only to it). The agent only looks at folders that could
+// be shared, keeps the caller's order and refuses oversized requests.
+func TestInspectMountsThroughAgent(t *testing.T) {
+	client, _, _ := start(t, true)
+	files := client.System().Files
+
+	report, err := files.InspectMounts(ctx, []string{"/srv/media", "/etc/shadow", "relative", "/missing/new", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Checks) != 4 {
+		t.Fatalf("checks = %+v, want 4 (empty path skipped)", report.Checks)
+	}
+	want := []string{"/srv/media", "/etc/shadow", "relative", "/missing/new"}
+	for i, c := range report.Checks {
+		if c.Path != want[i] {
+			t.Errorf("check %d path = %q, want %q", i, c.Path, want[i])
+		}
+		if c.Warnings == nil {
+			t.Errorf("check %d warnings is nil, want an empty list", i)
+		}
+	}
+	if c := report.Checks[0]; c.MountPoint != "/" || c.ReadOnly || len(c.Warnings) != 0 {
+		t.Errorf("sharable folder: %+v", c)
+	}
+	for _, c := range report.Checks[1:3] {
+		if c.MountPoint != "" || c.FSType != "" || len(c.Warnings) != 0 {
+			t.Errorf("non-sharable path %q was inspected: %+v", c.Path, c)
+		}
+	}
+	if c := report.Checks[3]; len(c.Warnings) != 1 || c.Warnings[0] != sys.MountWarnMissing {
+		t.Errorf("missing folder: %+v", c)
+	}
+
+	tooMany := make([]string, sys.MaxMountPaths+1)
+	for i := range tooMany {
+		tooMany[i] = "/srv/x"
+	}
+	if _, err := files.InspectMounts(ctx, tooMany); !errors.Is(err, sys.ErrInvalid) {
+		t.Errorf("oversized request: %v, want ErrInvalid", err)
+	}
+}
+
+func TestScanAndStatShareThroughAgent(t *testing.T) {
+	client, fake, _ := start(t, true)
+	fake.FilesDir = t.TempDir()
+	system := client.System()
+	if err := system.Accounts.CreateUser(ctx, "jay", "pw-123456"); err != nil {
+		t.Fatal(err)
+	}
+	if err := system.Samba.ApplyConfig(ctx, sys.SambaConfig{Shares: []sys.ShareSpec{
+		{Name: "media", Path: "/srv/media", Readers: []string{"jay"}},
+		{Name: "closed", Path: "/srv/closed"}, // nobody may use it: not live
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	dir := fake.ShareDir("media")
+	_ = os.MkdirAll(filepath.Join(dir, "films", sys.RecycleDir), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "films", "a.mkv"), []byte("same"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "b.mkv"), []byte("same"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "films", sys.RecycleDir, "gone.mkv"), []byte("x"), 0o644)
+
+	var got []string
+	if err := system.Samba.ScanShare(ctx, "media", func(e sys.ShareEntry) error {
+		got = append(got, e.Path)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"b.mkv", "films", "films/a.mkv"}; !slices.Equal(got, want) {
+		t.Errorf("scan = %v, want %v (recycle bin skipped)", got, want)
+	}
+
+	// The caller can stop a scan; its error comes back as is.
+	stop := errors.New("stop")
+	n := 0
+	if err := system.Samba.ScanShare(ctx, "media", func(sys.ShareEntry) error { n++; return stop }); !errors.Is(err, stop) || n != 1 {
+		t.Errorf("stopped scan: err=%v after %d entries", err, n)
+	}
+	for _, share := range []string{"closed", "nope"} {
+		err := system.Samba.ScanShare(ctx, share, func(sys.ShareEntry) error { return nil })
+		if !errors.Is(err, sys.ErrNotFound) {
+			t.Errorf("scan of %q = %v, want ErrNotFound", share, err)
+		}
+	}
+	if err := system.Samba.ScanShare(ctx, "../etc", func(sys.ShareEntry) error { return nil }); !errors.Is(err, sys.ErrInvalid) {
+		t.Errorf("scan of a bad name = %v, want ErrInvalid", err)
+	}
+
+	files, err := system.Samba.StatFiles(ctx, "media", []string{"b.mkv", "films/a.mkv", "films", "../x", "/etc/passwd", "films/.recycle/gone.mkv", "missing"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("stat = %+v, want b.mkv, films/a.mkv and films", files)
+	}
+	if files[0].SHA256 == "" || files[0].SHA256 != files[1].SHA256 || files[2].SHA256 != "" || !files[2].IsDir {
+		t.Errorf("hashes: %+v", files)
+	}
+	if _, err := system.Samba.StatFiles(ctx, "media", make([]string, sys.MaxStatFiles+1), false); !errors.Is(err, sys.ErrInvalid) {
+		t.Errorf("oversized stat = %v, want ErrInvalid", err)
 	}
 }

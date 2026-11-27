@@ -4,10 +4,8 @@ package storage
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"io"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -18,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"netshare-hub/internal/sys"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 	maxDuplicateGrps = 30
 	minDupBytes      = 1024
 	maxDupHashFiles  = 2000
-	maxDupFileBytes  = 512 << 20 // 512 MiB cap per file during duplicate hashing
+	maxDupFileBytes  = sys.MaxHashFileBytes // the agent hashes no bigger file
 )
 
 // ShareRef identifies one share to analyze.
@@ -106,6 +106,7 @@ type StorageReport struct {
 type Service struct {
 	reportPath string
 	listShares func(ctx context.Context) ([]ShareRef, error)
+	files      Files
 
 	scanning atomic.Bool
 	mu       sync.RWMutex
@@ -113,10 +114,18 @@ type Service struct {
 }
 
 // NewService constructs the storage analyzer and loads any saved report.
-func NewService(dataDir string, listShares func(ctx context.Context) ([]ShareRef, error)) *Service {
+// Files reads the share folders. It is the system layer (sys.Samba): the
+// web server itself cannot read them, only their users and the agent can.
+type Files interface {
+	ScanShare(ctx context.Context, share string, fn func(sys.ShareEntry) error) error
+	StatFiles(ctx context.Context, share string, paths []string, hash bool) ([]sys.ShareFile, error)
+}
+
+func NewService(dataDir string, listShares func(ctx context.Context) ([]ShareRef, error), files Files) *Service {
 	s := &Service{
 		reportPath: filepath.Join(dataDir, "storage-report.json"),
 		listShares: listShares,
+		files:      files,
 		latest:     emptyReport(),
 	}
 	if raw, err := os.ReadFile(s.reportPath); err == nil {
@@ -173,7 +182,6 @@ func (s *Service) Report() StorageReport {
 type fileRec struct {
 	shareName string
 	relPath   string
-	fullPath  string
 	name      string
 	size      int64
 	modTime   time.Time
@@ -208,8 +216,7 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 			TopFolders: make([]StorageFolderStat, 0),
 			Categories: make([]StorageCategoryStat, 0),
 		}
-		info, err := os.Lstat(sh.Path)
-		if err != nil || !info.IsDir() {
+		if sh.Path == "" {
 			report.Shares = append(report.Shares, stat)
 			continue
 		}
@@ -217,41 +224,14 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 		folderTotals := make(map[string]*StorageFolderStat)
 		catTotals := make(map[string]*StorageCategoryStat)
 
-		_ = filepath.WalkDir(sh.Path, func(full string, d fs.DirEntry, walkErr error) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if walkErr != nil || full == sh.Path {
-				return nil
-			}
-			if d.Type()&os.ModeSymlink != 0 {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			name := d.Name()
-			if name == ".recycle" || name == ".nsh-uploads" || name == ".Trash" {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if d.IsDir() {
+		// The agent walks the share: the web server cannot read the folders.
+		err := s.files.ScanShare(ctx, sh.Name, func(e sys.ShareEntry) error {
+			if e.IsDir {
 				stat.DirCount++
 				report.TotalDirs++
 				return nil
 			}
-			fi, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			rel, err := filepath.Rel(sh.Path, full)
-			if err != nil {
-				return nil
-			}
-			rel = filepath.ToSlash(rel)
-			sz := fi.Size()
+			rel, name, sz := e.Path, path.Base(e.Path), e.Size
 
 			stat.FileCount++
 			stat.TotalBytes += sz
@@ -286,10 +266,9 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 			rec := fileRec{
 				shareName: sh.Name,
 				relPath:   rel,
-				fullPath:  full,
 				name:      name,
 				size:      sz,
-				modTime:   fi.ModTime().UTC(),
+				modTime:   time.Unix(e.ModTime, 0).UTC(),
 			}
 			allFiles = append(allFiles, rec)
 			if sz >= minDupBytes && sz <= maxDupFileBytes {
@@ -297,6 +276,15 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 			}
 			return nil
 		})
+		switch {
+		case err == nil:
+		case ctx.Err() != nil:
+			return StorageReport{}, ctx.Err()
+		case errors.Is(err, sys.ErrNotFound) || errors.Is(err, fs.ErrNotExist):
+			// Not live (no one may use it) or no folder yet: nothing to count.
+		default:
+			slog.WarnContext(ctx, "storage: could not scan a share", "share", sh.Name, "err", err)
+		}
 
 		for _, f := range folderTotals {
 			stat.TopFolders = append(stat.TopFolders, *f)
@@ -351,18 +339,12 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 		if ctx.Err() != nil || hashed >= maxDupHashFiles || len(report.Duplicates) >= maxDuplicateGrps {
 			break
 		}
-		byHash := make(map[string][]fileRec)
-		for _, rec := range bySize[sz] {
-			if hashed >= maxDupHashFiles {
-				break
-			}
-			sum, err := hashFile(rec.fullPath)
-			hashed++
-			if err != nil {
-				continue
-			}
-			byHash[sum] = append(byHash[sum], rec)
+		list := bySize[sz]
+		if room := maxDupHashFiles - hashed; len(list) > room {
+			list = list[:room]
 		}
+		hashed += len(list)
+		byHash := s.hashAll(ctx, list)
 		for sum, grp := range byHash {
 			if len(grp) < 2 {
 				continue
@@ -415,17 +397,41 @@ func (s *Service) RunTask(ctx context.Context) error {
 	return err
 }
 
-func hashFile(p string) (string, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return "", err
+// hashAll hashes files (in the agent, which can read them) and groups them
+// by content. Files that could not be hashed are left out.
+func (s *Service) hashAll(ctx context.Context, recs []fileRec) map[string][]fileRec {
+	byShare := make(map[string][]fileRec)
+	for _, r := range recs {
+		byShare[r.shareName] = append(byShare[r.shareName], r)
 	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	out := make(map[string][]fileRec)
+	for share, list := range byShare {
+		for len(list) > 0 && ctx.Err() == nil {
+			batch := list[:min(len(list), sys.MaxStatFiles)]
+			list = list[len(batch):]
+			paths := make([]string, len(batch))
+			for i, r := range batch {
+				paths[i] = r.relPath
+			}
+			files, err := s.files.StatFiles(ctx, share, paths, true)
+			if err != nil {
+				slog.WarnContext(ctx, "storage: could not hash files", "share", share, "err", err)
+				break
+			}
+			sums := make(map[string]string, len(files))
+			for _, f := range files {
+				if f.SHA256 != "" {
+					sums[f.Path] = f.SHA256
+				}
+			}
+			for _, r := range batch {
+				if sum, ok := sums[r.relPath]; ok {
+					out[sum] = append(out[sum], r)
+				}
+			}
+		}
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return out
 }
 
 func classifyExt(ext string) string {

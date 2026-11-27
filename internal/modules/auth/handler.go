@@ -79,7 +79,7 @@ func Register(api huma.API, svc *Service, secureCookies bool) {
 
 	httpx.Register(api, httpx.Route{
 		ID: "logout", Method: http.MethodPost, Path: "/auth/logout",
-		Summary: "Log out", Tag: "Auth", Access: httpx.Authenticated(),
+		Summary: "Log out", Tag: "Auth", Access: httpx.Authenticated().BrowserOnly(),
 		Status: http.StatusNoContent,
 	}, h.logout)
 
@@ -98,6 +98,8 @@ func Register(api huma.API, svc *Service, secureCookies bool) {
 		Summary: "Create the first admin account", Tag: "Setup", Access: httpx.Public(),
 		Status: http.StatusCreated,
 	}, h.setup)
+
+	registerTokens(api, svc)
 }
 
 // --- handlers ---
@@ -158,8 +160,9 @@ func (h *handler) cookie(token string) http.Cookie {
 	return c
 }
 
-// Middleware looks up the session cookie and attaches the principal to the
-// request. It never rejects a request itself: each route's Access does that.
+// Middleware looks up the session cookie, or else an API token
+// (Authorization: Bearer), and attaches the principal to the request. It
+// never rejects a request itself: each route's Access does that.
 func Middleware(svc *Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +174,20 @@ func Middleware(svc *Service) func(http.Handler) http.Handler {
 				}
 				if p != nil {
 					ctx = logger.WithUser(httpx.WithPrincipal(ctx, p), p.Username)
+				}
+			}
+			if httpx.PrincipalFrom(ctx) == nil {
+				if token := bearerToken(r); token != "" {
+					p, err := svc.ResolveToken(ctx, token)
+					if err != nil {
+						slog.ErrorContext(ctx, "api token lookup failed", "err", err)
+					}
+					if p != nil {
+						ctx = logger.WithUser(httpx.WithPrincipal(ctx, p), p.Username)
+						if p.TokenID > 0 {
+							ctx = logger.WithTokenID(ctx, p.TokenID)
+						}
+					}
 				}
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))

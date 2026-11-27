@@ -124,8 +124,12 @@ type (
 func Register(api huma.API, s *Service) {
 	const tag = "Replication"
 	manage := httpx.Require(rbac.ReplicationManage)
+	browserManage := manage.BrowserOnly()
 	route := func(id, method, path, summary string, status int) httpx.Route {
 		return httpx.Route{ID: id, Method: method, Path: path, Summary: summary, Tag: tag, Access: manage, Status: status}
+	}
+	browserRoute := func(id, method, path, summary string, status int) httpx.Route {
+		return httpx.Route{ID: id, Method: method, Path: path, Summary: summary, Tag: tag, Access: browserManage, Status: status}
 	}
 
 	httpx.Register(api, route("getReplicationStatus", http.MethodGet, "/replication/status", "What this machine can do", 0),
@@ -196,13 +200,13 @@ func Register(api huma.API, s *Service) {
 			}
 			return &peersOutput{Body: page.All(list)}, nil
 		})
-	httpx.Register(api, route("addReplicationPeer", http.MethodPost, "/replication/peers",
+	httpx.Register(api, browserRoute("addReplicationPeer", http.MethodPost, "/replication/peers",
 		"Pair with another NetShare Hub (with a code made there)", http.StatusCreated),
 		func(ctx context.Context, in *peerInput) (*peerOutput, error) {
 			p, err := s.AddPeer(ctx, PeerInput{Name: in.Body.Name, URL: in.Body.URL, Code: in.Body.Code, SSHPort: in.Body.SSHPort})
 			return &peerOutput{Body: p}, err
 		})
-	httpx.Register(api, route("deleteReplicationPeer", http.MethodDelete, "/replication/peers/{id}",
+	httpx.Register(api, browserRoute("deleteReplicationPeer", http.MethodDelete, "/replication/peers/{id}",
 		"Forget a peer (and its jobs)", http.StatusNoContent),
 		func(ctx context.Context, in *idInput) (*struct{}, error) { return nil, s.DeletePeer(ctx, in.ID) })
 
@@ -214,13 +218,13 @@ func Register(api huma.API, s *Service) {
 			}
 			return &receiversOutput{Body: page.All(list)}, nil
 		})
-	httpx.Register(api, route("addReplicationReceiver", http.MethodPost, "/replication/receivers",
+	httpx.Register(api, browserRoute("addReplicationReceiver", http.MethodPost, "/replication/receivers",
 		"Add a receiving folder and get its pairing code", http.StatusCreated),
 		func(ctx context.Context, in *receiverInput) (*receiverCodeOutput, error) {
 			rc, code, err := s.AddReceiver(ctx, in.Body.Name, in.Body.Path)
 			return &receiverCodeOutput{Body: ReplicationReceiverCode{Receiver: rc, Code: code}}, err
 		})
-	httpx.Register(api, route("newReplicationPairingCode", http.MethodPost, "/replication/receivers/{id}/pairing-code",
+	httpx.Register(api, browserRoute("newReplicationPairingCode", http.MethodPost, "/replication/receivers/{id}/pairing-code",
 		"Make a new pairing code (pairing again replaces the sender)", 0),
 		func(ctx context.Context, in *idInput) (*codeOutput, error) {
 			out := &codeOutput{}
@@ -228,7 +232,7 @@ func Register(api huma.API, s *Service) {
 			out.Body.Code, err = s.NewPairingCode(ctx, in.ID)
 			return out, err
 		})
-	httpx.Register(api, route("deleteReplicationReceiver", http.MethodDelete, "/replication/receivers/{id}",
+	httpx.Register(api, browserRoute("deleteReplicationReceiver", http.MethodDelete, "/replication/receivers/{id}",
 		"Stop receiving (the copies are kept)", http.StatusNoContent),
 		func(ctx context.Context, in *idInput) (*struct{}, error) { return nil, s.DeleteReceiver(ctx, in.ID) })
 
