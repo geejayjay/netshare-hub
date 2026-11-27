@@ -48,7 +48,9 @@ export function SharesPage({ params, onParamsChange }: SharesPageProps) {
                 {s.readOnly && <Badge tone="warning">Read-only</Badge>}
                 {s.guestAccess && <Badge tone="success">Guest</Badge>}
               </div>
-              <code className="text-xs text-fg-subtle">{s.path}</code>
+              <code className="block max-w-xs truncate text-xs text-fg-subtle sm:max-w-sm" title={s.path}>
+                {s.path}
+              </code>
             </div>
           )
         },

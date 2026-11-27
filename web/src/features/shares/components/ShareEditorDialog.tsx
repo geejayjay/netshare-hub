@@ -92,6 +92,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
   const [recycleDays, setRecycleDays] = useState(String(share?.recycleDays && share.recycleDays > 0 ? share.recycleDays : 30))
   const [access, setAccess] = useState<Record<number, AccessLevel>>(() => initialAccessMap(share))
   const [groupAccess, setGroupAccess] = useState<Record<number, AccessLevel>>(() => initialGroupAccessMap(share))
+  const [accessFilter, setAccessFilter] = useState('')
   const [networkRules, setNetworkRules] = useState<NetworkRule[]>(() => share?.networkRules ?? [])
   const [newRuleAction, setNewRuleAction] = useState<NetworkRule['action']>('allow')
   const [newRuleAddress, setNewRuleAddress] = useState('')
@@ -507,20 +508,31 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
             </div>
           </div>
 
+          {(groupItems.length > 5 || userItems.length > 5) && (
+            <Input
+              value={accessFilter}
+              onChange={(e) => setAccessFilter(e.target.value)}
+              placeholder="Filter users or groups…"
+              aria-label="Filter users or groups"
+            />
+          )}
+
           {groupItems.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-border">
               <div className="flex items-center justify-between border-b border-border bg-surface-2/60 px-4 py-2 text-xs font-medium text-fg-muted">
                 <span className="inline-flex items-center gap-1.5">
                   <UsersRound className="size-3.5 text-primary" />
-                  Groups
+                  Groups ({groupItems.length})
                 </span>
                 <span className="inline-flex items-center gap-1">
                   Level
                   <InfoTip content="Each member of a group inherits this level unless they have a direct user entry below. Multiple groups grant the highest level." />
                 </span>
               </div>
-              <div className="divide-y divide-border">
-                {groupItems.map((g) => {
+              <div className="max-h-56 divide-y divide-border overflow-y-auto">
+                {groupItems
+                  .filter((g) => !accessFilter.trim() || g.name.toLowerCase().includes(accessFilter.trim().toLowerCase()))
+                  .map((g) => {
                   const current = groupAccess[g.id] ?? 'none'
                   return (
                     <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
@@ -561,7 +573,7 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
 
           <div className="overflow-hidden rounded-xl border border-border">
             <div className="flex items-center justify-between border-b border-border bg-surface-2/60 px-4 py-2 text-xs font-medium text-fg-muted">
-              <span>User</span>
+              <span>Users ({userItems.length})</span>
               <span className="inline-flex items-center gap-1">
                 Level
                 <InfoTip content="Read = view only · Drop box = upload without viewing others' files · Write = full read & write." />
@@ -575,8 +587,14 @@ function ShareEditorBody({ share, onClose }: { share?: Share | null; onClose: ()
             ) : userItems.length === 0 ? (
               <div className="p-6 text-center text-sm text-fg-muted">No users available.</div>
             ) : (
-              <div className="divide-y divide-border">
-                {userItems.map((u) => {
+              <div className="max-h-60 divide-y divide-border overflow-y-auto">
+                {userItems
+                  .filter((u) => {
+                    const q = accessFilter.trim().toLowerCase()
+                    if (!q) return true
+                    return u.username.toLowerCase().includes(q) || (u.displayName ?? '').toLowerCase().includes(q)
+                  })
+                  .map((u) => {
                   const current = access[u.id] ?? 'none'
                   return (
                     <div key={u.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">

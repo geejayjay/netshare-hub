@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Copy,
   ExternalLink,
@@ -10,13 +12,16 @@ import {
   FolderOpen,
   HardDrive,
   Layers,
+  LayoutGrid,
+  List,
   PieChart,
   RefreshCw,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { notify } from '@/features/notifications'
 import { sharesQuery } from '@/features/shares'
-import { EmptyState, ErrorState, FormField, PageHeader } from '@/shared/components'
+import { EmptyState, ErrorState, FormField, PageHeader, SearchInput } from '@/shared/components'
+import { cn } from '@/shared/lib/cn'
 import { formatBytes, formatRelativeTime } from '@/shared/lib/format'
 import { useSession } from '@/shared/session/session'
 import {
@@ -183,6 +188,10 @@ export function StoragePage() {
   const canScan = can('settings:write')
   const [tab, setTab] = useState<TabId>('overview')
   const [showOptions, setShowOptions] = useState(false)
+  const [showExcluded, setShowExcluded] = useState(false)
+  const [shareView, setShareView] = useState<'cards' | 'table'>('cards')
+  const [shareSearch, setShareSearch] = useState('')
+  const [exclusionSearch, setExclusionSearch] = useState('')
   const [draftExcludeShares, setDraftExcludeShares] = useState<string[] | null>(null)
   const [draftExcludePaths, setDraftExcludePaths] = useState<string | null>(null)
 
@@ -192,9 +201,48 @@ export function StoragePage() {
   const saveConfig = useUpdateStorageConfig()
 
   const report = query.data
-  const allShares = shares.data?.items ?? []
-  const excludeShares = draftExcludeShares ?? report?.excludeShares ?? []
+  const allShares = useMemo(() => shares.data?.items ?? [], [shares.data])
+  const excludeShares = useMemo(
+    () => draftExcludeShares ?? report?.excludeShares ?? [],
+    [draftExcludeShares, report?.excludeShares],
+  )
   const excludePathsText = draftExcludePaths ?? (report?.excludePaths ?? []).join(', ')
+
+  const savedExcludedSet = useMemo(
+    () => new Set((report?.excludeShares ?? []).map((s) => s.toLowerCase())),
+    [report?.excludeShares],
+  )
+  const { activeShares, excludedReportShares } = useMemo(() => {
+    const active: StorageShareStat[] = []
+    const excluded: StorageShareStat[] = []
+    for (const sh of report?.shares ?? []) {
+      const isExcluded =
+        (sh.skipped && sh.skipReason === 'Excluded from scan') ||
+        (sh.skipped && savedExcludedSet.has(sh.shareName.toLowerCase()))
+      if (isExcluded) excluded.push(sh)
+      else active.push(sh)
+    }
+    return { activeShares: active, excludedReportShares: excluded }
+  }, [report?.shares, savedExcludedSet])
+
+  const filteredActiveShares = useMemo(() => {
+    const q = shareSearch.trim().toLowerCase()
+    if (!q) return activeShares
+    return activeShares.filter(
+      (s) => s.shareName.toLowerCase().includes(q) || s.path.toLowerCase().includes(q),
+    )
+  }, [activeShares, shareSearch])
+
+  const filteredConfigShares = useMemo(() => {
+    const q = exclusionSearch.trim().toLowerCase()
+    if (!q) return allShares
+    return allShares.filter((s) => s.name.toLowerCase().includes(q))
+  }, [allShares, exclusionSearch])
+
+  const distributedShares = useMemo(
+    () => activeShares.filter((s) => !s.skipped && s.totalBytes > 0),
+    [activeShares],
+  )
 
   function buildConfig() {
     const excludePaths = excludePathsText
@@ -279,12 +327,41 @@ export function StoragePage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <div className="text-xs font-medium text-fg">Shares to scan (click to exclude)</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-medium text-fg">
+                  Shares to scan ({allShares.length - excludeShares.length} of {allShares.length} included)
+                </div>
+                {allShares.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    {allShares.length > 6 && (
+                      <div className="w-44">
+                        <SearchInput value={exclusionSearch} onChange={setExclusionSearch} placeholder="Filter shares…" />
+                      </div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setDraftExcludeShares([])}
+                    >
+                      Include all
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setDraftExcludeShares(allShares.map((s) => s.name))}
+                    >
+                      Exclude all
+                    </Button>
+                  </div>
+                )}
+              </div>
               {allShares.length === 0 ? (
                 <div className="text-xs text-fg-muted">No shares configured yet.</div>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {allShares.map((sh) => {
+                <div className="flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-lg border border-border bg-bg p-2.5">
+                  {filteredConfigShares.map((sh) => {
                     const isExcluded = excludeShares.some((s) => s.toLowerCase() === sh.name.toLowerCase())
                     return (
                       <button
@@ -380,7 +457,11 @@ export function StoragePage() {
             <StatCard
               label="Total Analyzed"
               value={formatBytes(report.totalBytes)}
-              detail={`${report.shares.length} share${report.shares.length === 1 ? '' : 's'}`}
+              detail={
+                excludedReportShares.length > 0
+                  ? `${activeShares.length} analyzed · ${excludedReportShares.length} excluded`
+                  : `${activeShares.length} share${activeShares.length === 1 ? '' : 's'}`
+              }
               icon={<HardDrive className="size-4" />}
             />
             <StatCard
@@ -405,17 +486,17 @@ export function StoragePage() {
           </div>
 
           {/* Stacked share proportion bar */}
-          {report.totalBytes > 0 && report.shares.length > 0 && (
+          {report.totalBytes > 0 && distributedShares.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-1.5 text-sm">
                   Share Distribution
-                  <InfoTip content="Proportional share of total analyzed storage across all SMB shares." />
+                  <InfoTip content="Proportional share of total analyzed storage across included SMB shares." />
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-2.5">
                 <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2">
-                  {report.shares.map((s, idx) => {
+                  {distributedShares.map((s, idx) => {
                     const w = (s.totalBytes / report.totalBytes) * 100
                     if (w < 0.5) return null
                     return (
@@ -429,7 +510,7 @@ export function StoragePage() {
                   })}
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                  {report.shares.map((s, idx) => (
+                  {distributedShares.map((s, idx) => (
                     <span key={s.shareId} className="inline-flex items-center gap-1.5 text-fg-muted">
                       <span className={`size-2.5 rounded-full ${BAR_COLORS[idx % BAR_COLORS.length]}`} />
                       <span className="font-medium text-fg">{s.shareName}</span>
@@ -445,7 +526,7 @@ export function StoragePage() {
             value={tab}
             onChange={setTab}
             items={[
-              { id: 'overview', label: 'Shares & Folders', icon: <PieChart className="size-3.5" /> },
+              { id: 'overview', label: `Shares & Folders (${activeShares.length})`, icon: <PieChart className="size-3.5" /> },
               { id: 'largest', label: `Largest (${report.largestFiles.length})`, icon: <File className="size-3.5" /> },
               { id: 'oldest', label: `Oldest (${report.oldestFiles.length})`, icon: <Clock className="size-3.5" /> },
               { id: 'duplicates', label: `Duplicates (${report.duplicates.length})`, icon: <Copy className="size-3.5" /> },
@@ -453,18 +534,186 @@ export function StoragePage() {
           />
 
           {tab === 'overview' && (
-            <div className="grid gap-4">
-              {report.shares.map((sh) => (
-                <ShareBreakdownCard
-                  key={sh.shareId}
-                  share={sh}
-                  totalAll={report.totalBytes}
-                  canScan={canScan}
-                  isScanning={isScanning}
-                  isScanningThis={Boolean(report.scanning && report.scanningShare === sh.shareName)}
-                  onScanShare={(name) => handleScan([name])}
-                />
-              ))}
+            <div className="flex flex-col gap-4">
+              {activeShares.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="w-60">
+                    <SearchInput value={shareSearch} onChange={setShareSearch} placeholder="Filter shares…" />
+                  </div>
+                  <div className="inline-flex rounded-lg border border-border bg-surface-2 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setShareView('cards')}
+                      className={cn(
+                        'rounded-md p-1.5 transition-colors',
+                        shareView === 'cards' ? 'bg-surface text-fg shadow-xs' : 'text-fg-muted hover:text-fg',
+                      )}
+                      aria-label="Card view"
+                    >
+                      <LayoutGrid className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareView('table')}
+                      className={cn(
+                        'rounded-md p-1.5 transition-colors',
+                        shareView === 'table' ? 'bg-surface text-fg shadow-xs' : 'text-fg-muted hover:text-fg',
+                      )}
+                      aria-label="Compact table view"
+                    >
+                      <List className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {filteredActiveShares.length === 0 ? (
+                <Card className="p-6 text-center text-xs text-fg-muted">
+                  {activeShares.length === 0
+                    ? 'All shares are currently excluded from scans.'
+                    : 'No shares match your filter.'}
+                </Card>
+              ) : shareView === 'cards' ? (
+                <div className="grid gap-4">
+                  {filteredActiveShares.map((sh) => (
+                    <ShareBreakdownCard
+                      key={sh.shareId}
+                      share={sh}
+                      totalAll={report.totalBytes}
+                      canScan={canScan}
+                      isScanning={isScanning}
+                      isScanningThis={Boolean(report.scanning && report.scanningShare === sh.shareName)}
+                      onScanShare={(name) => handleScan([name])}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <Card className="overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="border-b border-border bg-surface-2/50 text-fg-muted">
+                        <tr>
+                          <th className="px-4 py-2.5 font-medium">Share</th>
+                          <th className="px-4 py-2.5 font-medium text-right">Size</th>
+                          <th className="px-4 py-2.5 font-medium text-right">Files</th>
+                          <th className="hidden px-4 py-2.5 font-medium md:table-cell">Top folder</th>
+                          <th className="hidden px-4 py-2.5 font-medium sm:table-cell">Scanned</th>
+                          {canScan && <th className="px-4 py-2.5 text-right font-medium" />}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {filteredActiveShares.map((sh) => (
+                          <tr key={sh.shareId} className="hover:bg-surface-2/30">
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <FolderOpen className="size-3.5 shrink-0 text-primary" />
+                                <span className="font-medium text-fg">{sh.shareName}</span>
+                                {sh.skipped && <Badge tone="warning">Skipped</Badge>}
+                              </div>
+                              <div className="mt-0.5 max-w-xs truncate font-mono text-[0.68rem] text-fg-subtle">
+                                {sh.skipped ? sh.skipReason : sh.path}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono font-medium text-fg">
+                              {sh.skipped ? '—' : formatBytes(sh.totalBytes)}
+                            </td>
+                            <td className="px-4 py-2.5 text-right font-mono text-fg-muted">
+                              {sh.skipped ? '—' : sh.fileCount.toLocaleString()}
+                            </td>
+                            <td className="hidden px-4 py-2.5 text-fg-muted md:table-cell">
+                              {sh.topFolders[0]
+                                ? `${sh.topFolders[0].name} (${formatBytes(sh.topFolders[0].bytes)})`
+                                : '—'}
+                            </td>
+                            <td className="hidden px-4 py-2.5 text-fg-subtle sm:table-cell">
+                              {sh.scannedAt ? formatRelativeTime(sh.scannedAt) : '—'}
+                            </td>
+                            {canScan && (
+                              <td className="px-4 py-2.5 text-right">
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  disabled={isScanning}
+                                  loading={Boolean(report.scanning && report.scanningShare === sh.shareName)}
+                                  onClick={() => handleScan([sh.shareName])}
+                                >
+                                  <RefreshCw className="size-3" />
+                                  Scan
+                                </Button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
+
+              {excludedReportShares.length > 0 && (
+                <Card className="overflow-hidden border-dashed">
+                  <button
+                    type="button"
+                    onClick={() => setShowExcluded((v) => !v)}
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2/40 hover:text-fg"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      {showExcluded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                      Excluded from scans ({excludedReportShares.length})
+                    </span>
+                    <span className="text-[0.7rem] text-fg-subtle">
+                      {showExcluded ? 'Hide' : 'Show excluded shares'}
+                    </span>
+                  </button>
+                  {showExcluded && (
+                    <div className="divide-y divide-border border-t border-border">
+                      {excludedReportShares.map((sh) => (
+                        <div
+                          key={sh.shareId}
+                          className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-medium text-fg-muted">{sh.shareName}</span>
+                            <span className="ml-2 font-mono text-[0.68rem] text-fg-subtle">{sh.path}</span>
+                          </div>
+                          {canScan && (
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => {
+                                  const next = excludeShares.filter(
+                                    (s) => s.toLowerCase() !== sh.shareName.toLowerCase(),
+                                  )
+                                  setDraftExcludeShares(next)
+                                  saveConfig.mutate({
+                                    excludeShares: next,
+                                    excludePaths: buildConfig().excludePaths,
+                                  })
+                                }}
+                              >
+                                Include
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                disabled={isScanning}
+                                onClick={() => handleScan([sh.shareName])}
+                              >
+                                <RefreshCw className="size-3" />
+                                Scan once
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              )}
             </div>
           )}
 

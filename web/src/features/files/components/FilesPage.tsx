@@ -21,6 +21,8 @@ import {
   LayoutGrid,
   List,
   MoveRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Recycle,
   RefreshCw,
@@ -98,6 +100,8 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
   const [view, setView] = useState<'table' | 'grid'>('table')
   const [sort, setSort] = useState<SortKey>('name')
   const [filter, setFilter] = useState('')
+  const [shareFilter, setShareFilter] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [dragging, setDragging] = useState(false)
   const [scanningDrop, setScanningDrop] = useState(false)
@@ -484,32 +488,114 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
           />
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          {/* Share selector pills + Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {shareList.map((s) => {
-                const isCurrent = s.name === activeShare
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => navigateTo({ share: s.name, path: '' })}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
-                      isCurrent
-                        ? 'border-primary/40 bg-primary-soft text-primary shadow-xs'
-                        : 'border-border bg-bg text-fg-muted hover:border-border-strong hover:text-fg',
-                    )}
-                  >
-                    <HardDrive className="size-3.5" />
-                    <span>{s.name}</span>
-                  </button>
-                )
-              })}
-            </div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          {sidebarOpen && (
+            <Card className="hidden w-56 shrink-0 flex-col overflow-hidden lg:flex">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+                <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
+                  Shares ({shareList.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  className="rounded-md p-1 text-fg-subtle transition-colors hover:bg-surface-2 hover:text-fg"
+                  title="Collapse shares sidebar"
+                  aria-label="Collapse shares sidebar"
+                >
+                  <PanelLeftClose className="size-3.5" />
+                </button>
+              </div>
+              {shareList.length > 6 && (
+                <div className="border-b border-border p-2">
+                  <SearchInput value={shareFilter} onChange={setShareFilter} placeholder="Filter shares…" />
+                </div>
+              )}
+              <div className="flex max-h-[34rem] flex-col gap-0.5 overflow-y-auto p-1.5">
+                {shareList
+                  .filter((s) => !shareFilter.trim() || s.name.toLowerCase().includes(shareFilter.trim().toLowerCase()))
+                  .map((s) => {
+                    const isCurrent = s.name === activeShare
+                    const lvl = s.level === 'write' ? 'RW' : s.level === 'upload' ? 'UP' : 'RO'
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => navigateTo({ share: s.name, path: '' })}
+                        className={cn(
+                          'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition-colors',
+                          isCurrent
+                            ? 'bg-primary-soft text-primary'
+                            : 'text-fg-muted hover:bg-surface-2/70 hover:text-fg',
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <HardDrive className="size-3.5 shrink-0" />
+                          <span className="truncate">{s.name}</span>
+                        </span>
+                        <span
+                          className={cn(
+                            'shrink-0 rounded px-1.5 py-0.5 font-mono text-[0.62rem]',
+                            isCurrent ? 'bg-primary/15 text-primary' : 'bg-surface-2 text-fg-subtle',
+                          )}
+                        >
+                          {lvl}
+                        </span>
+                      </button>
+                    )
+                  })}
+              </div>
+            </Card>
+          )}
 
-            <div className="flex items-center gap-2">
+          <Card className="min-w-0 flex-1 overflow-hidden">
+            {/* Compact Share Switcher + Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-3">
+              <div className="flex items-center gap-2">
+                {!sidebarOpen && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="hidden h-8 px-2 lg:inline-flex"
+                    onClick={() => setSidebarOpen(true)}
+                    title="Show shares sidebar"
+                    aria-label="Show shares sidebar"
+                  >
+                    <PanelLeftOpen className="size-3.5" />
+                  </Button>
+                )}
+                <div className={cn('flex items-center gap-2', sidebarOpen && 'lg:hidden')}>
+                  <HardDrive className="size-4 shrink-0 text-primary" />
+                  <Select
+                    className="h-8 w-44 text-xs font-medium"
+                    value={activeShare}
+                    onChange={(e) => navigateTo({ share: e.target.value, path: '' })}
+                    aria-label="Select share"
+                  >
+                    {shareList.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name} ({s.level === 'write' ? 'RW' : s.level === 'upload' ? 'Upload' : 'RO'})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                {sidebarOpen && (
+                  <div className="hidden items-center gap-2 lg:flex">
+                    <HardDrive className="size-4 text-primary" />
+                    <span className="text-sm font-semibold text-fg">{activeShare}</span>
+                    {activeShareMeta && (
+                      <Badge tone={activeShareMeta.level === 'write' ? 'info' : 'neutral'}>
+                        {activeShareMeta.level === 'write'
+                          ? 'Read & write'
+                          : activeShareMeta.level === 'upload'
+                            ? 'Drop box'
+                            : 'Read only'}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="secondary"
                 size="sm"
@@ -863,7 +949,8 @@ export function FilesPage({ share, path, onNavigate }: FilesPageProps) {
               </div>
             </>
           )}
-        </Card>
+          </Card>
+        </div>
       )}
 
       {/* Drag & drop overlay */}
