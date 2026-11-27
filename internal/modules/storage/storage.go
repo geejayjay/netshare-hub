@@ -59,8 +59,16 @@ type StorageShareStat struct {
 	TotalBytes int64                 `json:"totalBytes"`
 	FileCount  int64                 `json:"fileCount"`
 	DirCount   int64                 `json:"dirCount"`
+	Skipped    bool                  `json:"skipped,omitempty"`
+	SkipReason string                `json:"skipReason,omitempty"`
 	TopFolders []StorageFolderStat   `json:"topFolders" nullable:"false"`
 	Categories []StorageCategoryStat `json:"categories" nullable:"false"`
+}
+
+// StorageScanConfig holds persisted share and folder exclusions for scans.
+type StorageScanConfig struct {
+	ExcludeShares []string `json:"excludeShares" nullable:"false"`
+	ExcludePaths  []string `json:"excludePaths" nullable:"false"`
 }
 
 // StorageFileItem represents a notable file (largest or oldest).
@@ -92,6 +100,11 @@ type StorageReport struct {
 	ScannedAt        string                  `json:"scannedAt,omitempty"`
 	DurationMs       int64                   `json:"durationMs"`
 	Scanning         bool                    `json:"scanning"`
+	ScanningShare    string                  `json:"scanningShare,omitempty"`
+	ScannedFiles     int64                   `json:"scannedFiles,omitempty"`
+	ScannedBytes     int64                   `json:"scannedBytes,omitempty"`
+	ExcludeShares    []string                `json:"excludeShares" nullable:"false"`
+	ExcludePaths     []string                `json:"excludePaths" nullable:"false"`
 	TotalBytes       int64                   `json:"totalBytes"`
 	TotalFiles       int64                   `json:"totalFiles"`
 	TotalDirs        int64                   `json:"totalDirs"`
@@ -105,12 +118,17 @@ type StorageReport struct {
 // Service runs storage scans and persists the latest report to disk.
 type Service struct {
 	reportPath string
+	configPath string
 	listShares func(ctx context.Context) ([]ShareRef, error)
 	files      Files
 
-	scanning atomic.Bool
-	mu       sync.RWMutex
-	latest   StorageReport
+	scanning      atomic.Bool
+	scannedFiles  atomic.Int64
+	scannedBytes  atomic.Int64
+	mu            sync.RWMutex
+	scanningShare string
+	config        StorageScanConfig
+	latest        StorageReport
 }
 
 // NewService constructs the storage analyzer and loads any saved report.
@@ -124,9 +142,17 @@ type Files interface {
 func NewService(dataDir string, listShares func(ctx context.Context) ([]ShareRef, error), files Files) *Service {
 	s := &Service{
 		reportPath: filepath.Join(dataDir, "storage-report.json"),
+		configPath: filepath.Join(dataDir, "storage-config.json"),
 		listShares: listShares,
 		files:      files,
+		config:     StorageScanConfig{ExcludeShares: []string{}, ExcludePaths: []string{}},
 		latest:     emptyReport(),
+	}
+	if raw, err := os.ReadFile(s.configPath); err == nil {
+		var savedCfg StorageScanConfig
+		if json.Unmarshal(raw, &savedCfg) == nil {
+			s.config = normalizeConfig(savedCfg)
+		}
 	}
 	if raw, err := os.ReadFile(s.reportPath); err == nil {
 		var saved StorageReport
@@ -138,16 +164,56 @@ func NewService(dataDir string, listShares func(ctx context.Context) ([]ShareRef
 	return s
 }
 
+func normalizeConfig(c StorageScanConfig) StorageScanConfig {
+	out := StorageScanConfig{
+		ExcludeShares: make([]string, 0, len(c.ExcludeShares)),
+		ExcludePaths:  make([]string, 0, len(c.ExcludePaths)),
+	}
+	seenS := make(map[string]struct{}, len(c.ExcludeShares))
+	for _, s := range c.ExcludeShares {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		k := strings.ToLower(s)
+		if _, ok := seenS[k]; !ok {
+			seenS[k] = struct{}{}
+			out.ExcludeShares = append(out.ExcludeShares, s)
+		}
+	}
+	seenP := make(map[string]struct{}, len(c.ExcludePaths))
+	for _, p := range c.ExcludePaths {
+		p = strings.Trim(strings.ReplaceAll(strings.TrimSpace(p), "\\", "/"), "/")
+		if p == "" {
+			continue
+		}
+		k := strings.ToLower(p)
+		if _, ok := seenP[k]; !ok {
+			seenP[k] = struct{}{}
+			out.ExcludePaths = append(out.ExcludePaths, p)
+		}
+	}
+	return out
+}
+
 func emptyReport() StorageReport {
 	return StorageReport{
-		Shares:       make([]StorageShareStat, 0),
-		LargestFiles: make([]StorageFileItem, 0),
-		OldestFiles:  make([]StorageFileItem, 0),
-		Duplicates:   make([]StorageDuplicateGroup, 0),
+		ExcludeShares: make([]string, 0),
+		ExcludePaths:  make([]string, 0),
+		Shares:        make([]StorageShareStat, 0),
+		LargestFiles:  make([]StorageFileItem, 0),
+		OldestFiles:   make([]StorageFileItem, 0),
+		Duplicates:    make([]StorageDuplicateGroup, 0),
 	}
 }
 
 func normalizeReport(r *StorageReport) {
+	if r.ExcludeShares == nil {
+		r.ExcludeShares = make([]string, 0)
+	}
+	if r.ExcludePaths == nil {
+		r.ExcludePaths = make([]string, 0)
+	}
 	if r.Shares == nil {
 		r.Shares = make([]StorageShareStat, 0)
 	}
@@ -170,13 +236,99 @@ func normalizeReport(r *StorageReport) {
 	}
 }
 
+// Config returns the persisted scan exclusion settings.
+func (s *Service) Config() StorageScanConfig {
+	s.mu.RLock()
+	cfg := s.config
+	s.mu.RUnlock()
+	return normalizeConfig(cfg)
+}
+
+// SetConfig saves new share/path exclusions atomically.
+func (s *Service) SetConfig(cfg StorageScanConfig) StorageScanConfig {
+	norm := normalizeConfig(cfg)
+	s.mu.Lock()
+	s.config = norm
+	s.mu.Unlock()
+	if raw, err := json.Marshal(norm); err == nil {
+		tmp := s.configPath + ".tmp"
+		if os.WriteFile(tmp, raw, 0o600) == nil {
+			_ = os.Rename(tmp, s.configPath)
+		}
+	}
+	return norm
+}
+
 // Report returns the latest cached report and live scanning state.
 func (s *Service) Report() StorageReport {
 	s.mu.RLock()
 	out := s.latest
+	cfg := s.config
+	curShare := s.scanningShare
 	s.mu.RUnlock()
 	out.Scanning = s.scanning.Load()
+	out.ExcludeShares = append([]string{}, cfg.ExcludeShares...)
+	out.ExcludePaths = append([]string{}, cfg.ExcludePaths...)
+	if out.Scanning {
+		out.ScanningShare = curShare
+		out.ScannedFiles = s.scannedFiles.Load()
+		out.ScannedBytes = s.scannedBytes.Load()
+	}
 	return out
+}
+
+// StartScan launches a background storage scan (detached from the HTTP request
+// so large shares never time out) and immediately returns the live report state.
+func (s *Service) StartScan(opts *StorageScanConfig) StorageReport {
+	if opts != nil {
+		s.SetConfig(*opts)
+	}
+	if !s.scanning.CompareAndSwap(false, true) {
+		return s.Report()
+	}
+	s.scannedFiles.Store(0)
+	s.scannedBytes.Store(0)
+	s.mu.Lock()
+	s.scanningShare = ""
+	s.mu.Unlock()
+	go func() {
+		if _, err := s.runScanLocked(context.Background()); err != nil {
+			slog.Warn("storage: background scan failed", "err", err)
+		}
+	}()
+	return s.Report()
+}
+
+func isPathExcluded(shareName, relPath string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+	relLower := strings.ToLower(strings.Trim(relPath, "/"))
+	fullLower := strings.ToLower(shareName) + "/" + relLower
+	segs := strings.Split(relLower, "/")
+	for _, pat := range patterns {
+		p := strings.ToLower(pat)
+		if p == "" {
+			continue
+		}
+		// Match full "ShareName/rel/path" prefix
+		if fullLower == p || strings.HasPrefix(fullLower, p+"/") {
+			return true
+		}
+		// Match relative path prefix inside any share
+		if relLower == p || strings.HasPrefix(relLower, p+"/") {
+			return true
+		}
+		// Match any single path segment (e.g. "node_modules", ".git", "qbittorrent")
+		if !strings.Contains(p, "/") {
+			for _, seg := range segs {
+				if seg == p {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 type fileRec struct {
@@ -187,21 +339,40 @@ type fileRec struct {
 	modTime   time.Time
 }
 
-// Scan walks every share without following symlinks, builds the usage report,
-// computes duplicate groups, and persists the snapshot atomically.
+// Scan walks every non-excluded share without following symlinks, builds the
+// usage report, computes duplicate groups, and persists the snapshot atomically.
 func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 	if !s.scanning.CompareAndSwap(false, true) {
 		return s.Report(), nil
 	}
-	defer s.scanning.Store(false)
+	s.scannedFiles.Store(0)
+	s.scannedBytes.Store(0)
+	return s.runScanLocked(ctx)
+}
+
+func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
+	defer func() {
+		s.mu.Lock()
+		s.scanningShare = ""
+		s.mu.Unlock()
+		s.scanning.Store(false)
+	}()
 
 	start := time.Now()
+	cfg := s.Config()
+	excludedShareSet := make(map[string]struct{}, len(cfg.ExcludeShares))
+	for _, name := range cfg.ExcludeShares {
+		excludedShareSet[strings.ToLower(name)] = struct{}{}
+	}
+
 	shares, err := s.listShares(ctx)
 	if err != nil {
 		return StorageReport{}, err
 	}
 
 	report := emptyReport()
+	report.ExcludeShares = append([]string{}, cfg.ExcludeShares...)
+	report.ExcludePaths = append([]string{}, cfg.ExcludePaths...)
 	allFiles := make([]fileRec, 0, 512)
 	bySize := make(map[int64][]fileRec)
 
@@ -216,16 +387,31 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 			TopFolders: make([]StorageFolderStat, 0),
 			Categories: make([]StorageCategoryStat, 0),
 		}
-		if sh.Path == "" {
+		if _, excluded := excludedShareSet[strings.ToLower(sh.Name)]; excluded {
+			stat.Skipped = true
+			stat.SkipReason = "Excluded from scan"
 			report.Shares = append(report.Shares, stat)
 			continue
 		}
+		if sh.Path == "" {
+			stat.Skipped = true
+			stat.SkipReason = "Share has no folder path"
+			report.Shares = append(report.Shares, stat)
+			continue
+		}
+
+		s.mu.Lock()
+		s.scanningShare = sh.Name
+		s.mu.Unlock()
 
 		folderTotals := make(map[string]*StorageFolderStat)
 		catTotals := make(map[string]*StorageCategoryStat)
 
 		// The agent walks the share: the web server cannot read the folders.
 		err := s.files.ScanShare(ctx, sh.Name, func(e sys.ShareEntry) error {
+			if isPathExcluded(sh.Name, e.Path, cfg.ExcludePaths) {
+				return nil
+			}
 			if e.IsDir {
 				stat.DirCount++
 				report.TotalDirs++
@@ -237,6 +423,8 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 			stat.TotalBytes += sz
 			report.TotalFiles++
 			report.TotalBytes += sz
+			s.scannedFiles.Add(1)
+			s.scannedBytes.Add(sz)
 
 			// Attribute size to top-level folder (or "(root)").
 			top := "(root)"
@@ -280,9 +468,15 @@ func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
 		case err == nil:
 		case ctx.Err() != nil:
 			return StorageReport{}, ctx.Err()
-		case errors.Is(err, sys.ErrNotFound) || errors.Is(err, fs.ErrNotExist):
-			// Not live (no one may use it) or no folder yet: nothing to count.
+		case errors.Is(err, sys.ErrNotFound):
+			stat.Skipped = true
+			stat.SkipReason = "Share is not live (assign at least one user or enable guest access)"
+		case errors.Is(err, fs.ErrNotExist):
+			stat.Skipped = true
+			stat.SkipReason = "Share folder does not exist on disk"
 		default:
+			stat.Skipped = true
+			stat.SkipReason = err.Error()
 			slog.WarnContext(ctx, "storage: could not scan a share", "share", sh.Name, "err", err)
 		}
 

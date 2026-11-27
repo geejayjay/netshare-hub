@@ -14,6 +14,18 @@ type reportOutput struct {
 	Body StorageReport
 }
 
+type configInput struct {
+	Body StorageScanConfig
+}
+
+type configOutput struct {
+	Body StorageScanConfig
+}
+
+type scanInput struct {
+	Body *StorageScanConfig
+}
+
 // Register adds storage analyzer routes.
 func Register(api huma.API, svc *Service) {
 	httpx.Register(api, httpx.Route{
@@ -25,14 +37,22 @@ func Register(api huma.API, svc *Service) {
 	})
 
 	httpx.Register(api, httpx.Route{
-		ID: "runStorageScan", Method: http.MethodPost, Path: "/storage/scan",
-		Summary: "Scan all shares for disk usage and duplicates", Tag: "Storage",
+		ID: "updateStorageConfig", Method: http.MethodPut, Path: "/storage/config",
+		Summary: "Save share and path exclusions for storage scans", Tag: "Storage",
 		Access: httpx.Require(rbac.SettingsWrite),
-	}, func(ctx context.Context, _ *struct{}) (*reportOutput, error) {
-		rep, err := svc.Scan(ctx)
-		if err != nil {
-			return nil, err
+	}, func(_ context.Context, in *configInput) (*configOutput, error) {
+		return &configOutput{Body: svc.SetConfig(in.Body)}, nil
+	})
+
+	httpx.Register(api, httpx.Route{
+		ID: "runStorageScan", Method: http.MethodPost, Path: "/storage/scan",
+		Summary: "Start a background scan of configured shares for disk usage and duplicates", Tag: "Storage",
+		Access: httpx.Require(rbac.SettingsWrite),
+	}, func(_ context.Context, in *scanInput) (*reportOutput, error) {
+		var opts *StorageScanConfig
+		if in != nil && in.Body != nil {
+			opts = in.Body
 		}
-		return &reportOutput{Body: rep}, nil
+		return &reportOutput{Body: svc.StartScan(opts)}, nil
 	})
 }

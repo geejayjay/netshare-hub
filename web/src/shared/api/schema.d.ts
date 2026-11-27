@@ -1217,6 +1217,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/storage/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save share and path exclusions for storage scans */
+        put: operations["updateStorageConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/storage/report": {
         parameters: {
             query?: never;
@@ -1243,7 +1260,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Scan all shares for disk usage and duplicates */
+        /** Start a background scan of configured shares for disk usage and duplicates */
         post: operations["runStorageScan"];
         delete?: never;
         options?: never;
@@ -2827,12 +2844,19 @@ export interface components {
             duplicates: components["schemas"]["StorageDuplicateGroup"][];
             /** Format: int64 */
             durationMs: number;
+            excludePaths: string[];
+            excludeShares: string[];
             largestFiles: components["schemas"]["StorageFileItem"][];
             oldestFiles: components["schemas"]["StorageFileItem"][];
             /** Format: int64 */
             reclaimableBytes: number;
             scannedAt?: string;
+            /** Format: int64 */
+            scannedBytes?: number;
+            /** Format: int64 */
+            scannedFiles?: number;
             scanning: boolean;
+            scanningShare?: string;
             shares: components["schemas"]["StorageShareStat"][];
             /** Format: int64 */
             totalBytes: number;
@@ -2840,6 +2864,10 @@ export interface components {
             totalDirs: number;
             /** Format: int64 */
             totalFiles: number;
+        };
+        StorageScanConfig: {
+            excludePaths: string[];
+            excludeShares: string[];
         };
         StorageShareStat: {
             categories: components["schemas"]["StorageCategoryStat"][];
@@ -2851,6 +2879,8 @@ export interface components {
             /** Format: int64 */
             shareId: number;
             shareName: string;
+            skipReason?: string;
+            skipped?: boolean;
             topFolders: components["schemas"]["StorageFolderStat"][];
             /** Format: int64 */
             totalBytes: number;
@@ -5972,6 +6002,39 @@ export interface operations {
             };
         };
     };
+    updateStorageConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StorageScanConfig"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageScanConfig"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     getStorageReport: {
         parameters: {
             query?: never;
@@ -6008,7 +6071,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StorageScanConfig"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

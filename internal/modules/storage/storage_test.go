@@ -85,4 +85,26 @@ func TestStorageScanAndDuplicates(t *testing.T) {
 	if reloaded.TotalFiles != 4 || reloaded.ReclaimableBytes != 4096 {
 		t.Fatalf("reloaded report mismatch: %+v", reloaded)
 	}
+
+	// Verify share & path exclusions persist and skip matching items.
+	svc.SetConfig(StorageScanConfig{
+		ExcludeShares: []string{"backup"},
+		ExcludePaths:  []string{"movies"},
+	})
+	rep2, err := svc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("excluded scan failed: %v", err)
+	}
+	if rep2.TotalFiles != 1 || rep2.TotalBytes != 4096 {
+		t.Fatalf("expected only copy1.pdf (4096B) after exclusions, got files=%d bytes=%d", rep2.TotalFiles, rep2.TotalBytes)
+	}
+	var skippedBackup bool
+	for _, sh := range rep2.Shares {
+		if sh.ShareName == "backup" && sh.Skipped && sh.SkipReason == "Excluded from scan" {
+			skippedBackup = true
+		}
+	}
+	if !skippedBackup {
+		t.Fatalf("expected backup share to be marked skipped, got %+v", rep2.Shares)
+	}
 }

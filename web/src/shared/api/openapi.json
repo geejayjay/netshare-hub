@@ -4091,6 +4091,18 @@
             "format": "int64",
             "type": "integer"
           },
+          "excludePaths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "excludeShares": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "largestFiles": {
             "items": {
               "$ref": "#/components/schemas/StorageFileItem"
@@ -4110,8 +4122,19 @@
           "scannedAt": {
             "type": "string"
           },
+          "scannedBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scannedFiles": {
+            "format": "int64",
+            "type": "integer"
+          },
           "scanning": {
             "type": "boolean"
+          },
+          "scanningShare": {
+            "type": "string"
           },
           "shares": {
             "items": {
@@ -4135,6 +4158,8 @@
         "required": [
           "durationMs",
           "scanning",
+          "excludeShares",
+          "excludePaths",
           "totalBytes",
           "totalFiles",
           "totalDirs",
@@ -4143,6 +4168,28 @@
           "largestFiles",
           "oldestFiles",
           "duplicates"
+        ],
+        "type": "object"
+      },
+      "StorageScanConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "excludePaths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "excludeShares": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "excludeShares",
+          "excludePaths"
         ],
         "type": "object"
       },
@@ -4172,6 +4219,12 @@
           },
           "shareName": {
             "type": "string"
+          },
+          "skipReason": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "boolean"
           },
           "topFolders": {
             "items": {
@@ -9559,6 +9612,56 @@
         "x-permission": "shares:write"
       }
     },
+    "/storage/config": {
+      "put": {
+        "operationId": "updateStorageConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageScanConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageScanConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "token": []
+          }
+        ],
+        "summary": "Save share and path exclusions for storage scans",
+        "tags": [
+          "Storage"
+        ],
+        "x-permission": "settings:write"
+      }
+    },
     "/storage/report": {
       "get": {
         "operationId": "getStorageReport",
@@ -9602,6 +9705,15 @@
     "/storage/scan": {
       "post": {
         "operationId": "runStorageScan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageScanConfig"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -9632,7 +9744,7 @@
             "token": []
           }
         ],
-        "summary": "Scan all shares for disk usage and duplicates",
+        "summary": "Start a background scan of configured shares for disk usage and duplicates",
         "tags": [
           "Storage"
         ],

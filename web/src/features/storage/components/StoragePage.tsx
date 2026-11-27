@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
+  AlertTriangle,
   Clock,
   Copy,
   ExternalLink,
   File,
+  Filter,
   FolderOpen,
   HardDrive,
   Layers,
@@ -13,7 +15,8 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { notify } from '@/features/notifications'
-import { EmptyState, ErrorState, PageHeader } from '@/shared/components'
+import { sharesQuery } from '@/features/shares'
+import { EmptyState, ErrorState, FormField, PageHeader } from '@/shared/components'
 import { formatBytes, formatRelativeTime } from '@/shared/lib/format'
 import { useSession } from '@/shared/session/session'
 import {
@@ -24,11 +27,17 @@ import {
   CardHeader,
   CardTitle,
   InfoTip,
+  Input,
   Spinner,
   StatCard,
   Tabs,
 } from '@/shared/ui'
-import { storageReportQuery, useRunStorageScan, type StorageShareStat } from '../api'
+import {
+  storageReportQuery,
+  useRunStorageScan,
+  useUpdateStorageConfig,
+  type StorageShareStat,
+} from '../api'
 
 type TabId = 'overview' | 'largest' | 'oldest' | 'duplicates'
 
@@ -55,65 +64,82 @@ function ShareBreakdownCard({ share, totalAll }: { share: StorageShareStat; tota
           <CardTitle className="flex items-center gap-2">
             <FolderOpen className="size-4 text-primary" />
             <span>{share.shareName}</span>
-            <Badge tone="neutral">{pct}%</Badge>
+            {share.skipped ? (
+              <Badge tone="warning">Skipped</Badge>
+            ) : (
+              <Badge tone="neutral">{pct}%</Badge>
+            )}
           </CardTitle>
           <div className="mt-0.5 truncate font-mono text-[0.7rem] text-fg-subtle">{share.path}</div>
         </div>
         <div className="text-right">
-          <div className="font-mono text-sm font-semibold text-fg">{formatBytes(share.totalBytes)}</div>
+          <div className="font-mono text-sm font-semibold text-fg">
+            {share.skipped ? '—' : formatBytes(share.totalBytes)}
+          </div>
           <div className="text-[0.7rem] text-fg-subtle">
-            {share.fileCount.toLocaleString()} files · {share.dirCount.toLocaleString()} folders
+            {share.skipped
+              ? 'Not scanned'
+              : `${share.fileCount.toLocaleString()} files · ${share.dirCount.toLocaleString()} folders`}
           </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 border-t border-border pt-4">
-        {/* Category pills */}
-        {share.categories.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {share.categories.map((c) => (
-              <span
-                key={c.category}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2/60 px-2 py-0.5 text-[0.7rem]"
-              >
-                <span className="font-medium text-fg">{c.category}</span>
-                <span className="font-mono text-fg-subtle">{formatBytes(c.bytes)}</span>
-              </span>
-            ))}
+        {share.skipped ? (
+          <div className="flex items-center gap-2 text-xs text-fg-muted">
+            <AlertTriangle className="size-3.5 shrink-0 text-warning" />
+            <span>{share.skipReason || 'Skipped during scan.'}</span>
           </div>
-        )}
-
-        {/* Proportional folder treemap / bars */}
-        {share.topFolders.length === 0 ? (
-          <div className="text-xs text-fg-muted">Empty share.</div>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {share.topFolders.map((f, idx) => {
-              const fPct = share.totalBytes > 0 ? Math.max(2, Math.round((f.bytes / share.totalBytes) * 100)) : 0
-              return (
-                <Link
-                  key={f.name}
-                  to="/files"
-                  search={{ share: share.shareName, path: f.path || undefined }}
-                  className="group flex flex-col gap-1.5 rounded-lg border border-border bg-surface-2/30 p-2.5 transition-colors hover:border-border-strong hover:bg-surface-2/70"
-                >
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate font-medium text-fg group-hover:text-primary">{f.name}</span>
-                    <span className="shrink-0 font-mono text-[0.7rem] text-fg-muted">{formatBytes(f.bytes)}</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                    <div
-                      className={`h-full rounded-full ${BAR_COLORS[idx % BAR_COLORS.length]}`}
-                      style={{ width: `${fPct}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-[0.68rem] text-fg-subtle">
-                    <span>{f.files.toLocaleString()} files</span>
-                    <span>{fPct}%</span>
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
+          <>
+            {/* Category pills */}
+            {share.categories.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {share.categories.map((c) => (
+                  <span
+                    key={c.category}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2/60 px-2 py-0.5 text-[0.7rem]"
+                  >
+                    <span className="font-medium text-fg">{c.category}</span>
+                    <span className="font-mono text-fg-subtle">{formatBytes(c.bytes)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Proportional folder treemap / bars */}
+            {share.topFolders.length === 0 ? (
+              <div className="text-xs text-fg-muted">Empty share.</div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {share.topFolders.map((f, idx) => {
+                  const fPct = share.totalBytes > 0 ? Math.max(2, Math.round((f.bytes / share.totalBytes) * 100)) : 0
+                  return (
+                    <Link
+                      key={f.name}
+                      to="/files"
+                      search={{ share: share.shareName, path: f.path || undefined }}
+                      className="group flex flex-col gap-1.5 rounded-lg border border-border bg-surface-2/30 p-2.5 transition-colors hover:border-border-strong hover:bg-surface-2/70"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-medium text-fg group-hover:text-primary">{f.name}</span>
+                        <span className="shrink-0 font-mono text-[0.7rem] text-fg-muted">{formatBytes(f.bytes)}</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                        <div
+                          className={`h-full rounded-full ${BAR_COLORS[idx % BAR_COLORS.length]}`}
+                          style={{ width: `${fPct}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[0.68rem] text-fg-subtle">
+                        <span>{f.files.toLocaleString()} files</span>
+                        <span>{fPct}%</span>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -124,22 +150,63 @@ export function StoragePage() {
   const { can } = useSession()
   const canScan = can('settings:write')
   const [tab, setTab] = useState<TabId>('overview')
+  const [showOptions, setShowOptions] = useState(false)
+  const [draftExcludeShares, setDraftExcludeShares] = useState<string[] | null>(null)
+  const [draftExcludePaths, setDraftExcludePaths] = useState<string | null>(null)
 
   const query = useQuery(storageReportQuery)
+  const shares = useQuery(sharesQuery({ pageSize: 100 }))
   const scan = useRunStorageScan()
+  const saveConfig = useUpdateStorageConfig()
 
-  function handleScan() {
-    scan.mutate(undefined, {
-      onSuccess: (rep) =>
-        notify.success(
-          'Storage scan complete',
-          `Scanned ${rep.totalFiles.toLocaleString()} files (${formatBytes(rep.totalBytes)}) in ${rep.durationMs} ms.`,
-        ),
+  const report = query.data
+  const allShares = shares.data?.items ?? []
+  const excludeShares = draftExcludeShares ?? report?.excludeShares ?? []
+  const excludePathsText = draftExcludePaths ?? (report?.excludePaths ?? []).join(', ')
+
+  function buildConfig() {
+    const excludePaths = excludePathsText
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    return { excludeShares, excludePaths }
+  }
+
+  function toggleShareExclusion(name: string) {
+    setDraftExcludeShares((prev) => {
+      const current = prev ?? report?.excludeShares ?? []
+      return current.some((s) => s.toLowerCase() === name.toLowerCase())
+        ? current.filter((s) => s.toLowerCase() !== name.toLowerCase())
+        : [...current, name]
+    })
+  }
+
+  function handleSaveConfig() {
+    saveConfig.mutate(buildConfig(), {
+      onSuccess: () => {
+        setDraftExcludeShares(null)
+        setDraftExcludePaths(null)
+        notify.success('Exclusions saved', 'Applied to manual and scheduled storage scans.')
+      },
       onError: (err) => notify.error(err),
     })
   }
 
-  const report = query.data
+  function handleScan() {
+    const cfg = buildConfig()
+    scan.mutate(cfg, {
+      onSuccess: () => {
+        setDraftExcludeShares(null)
+        setDraftExcludePaths(null)
+        notify.success('Storage scan started', 'Scanning selected shares in the background…')
+      },
+      onError: (err) => notify.error(err),
+    })
+  }
+
+  const isScanning = scan.isPending || Boolean(report?.scanning)
+  const optionsVisible = showOptions || (!query.isLoading && (!report || !report.scannedAt))
+  const excludedCount = excludeShares.length + excludePathsText.split(/[\n,]/).filter((s) => s.trim()).length
 
   return (
     <div className="flex flex-col gap-5">
@@ -148,13 +215,100 @@ export function StoragePage() {
         info="Inspect space usage per share and folder, spot the largest or oldest files, and identify exact SHA-256 duplicates. Scheduled scans can be configured under Settings → Scheduled Tasks."
         actions={
           canScan ? (
-            <Button onClick={handleScan} loading={scan.isPending || Boolean(report?.scanning)}>
-              <RefreshCw className="size-4" />
-              {report?.scannedAt ? 'Rescan shares' : 'Run scan'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={() => setShowOptions((v) => !v)}>
+                <Filter className="size-4" />
+                Exclusions{excludedCount > 0 ? ` (${excludedCount})` : ''}
+              </Button>
+              <Button onClick={handleScan} loading={isScanning}>
+                <RefreshCw className="size-4" />
+                {report?.scannedAt ? 'Rescan shares' : 'Run scan'}
+              </Button>
+            </div>
           ) : undefined
         }
       />
+
+      {canScan && optionsVisible && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Filter className="size-4 text-primary" />
+              Scan Scope &amp; Exclusions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-medium text-fg">Shares to scan (click to exclude)</div>
+              {allShares.length === 0 ? (
+                <div className="text-xs text-fg-muted">No shares configured yet.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {allShares.map((sh) => {
+                    const isExcluded = excludeShares.some((s) => s.toLowerCase() === sh.name.toLowerCase())
+                    return (
+                      <button
+                        key={sh.id}
+                        type="button"
+                        onClick={() => toggleShareExclusion(sh.name)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          isExcluded
+                            ? 'border-border bg-surface-2/40 text-fg-subtle line-through'
+                            : 'border-primary/40 bg-primary-soft text-primary'
+                        }`}
+                      >
+                        <FolderOpen className="size-3.5" />
+                        <span>{sh.name}</span>
+                        {isExcluded && <span className="text-[0.65rem] no-underline">(excluded)</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <FormField
+              label="Exclude folders or paths (comma-separated)"
+              htmlFor="storage-exclude-paths"
+              hint="Matches folder names anywhere (e.g. qbittorrent, node_modules, .git) or share-relative paths (e.g. Games/SteamLibrary)."
+            >
+              <Input
+                id="storage-exclude-paths"
+                value={excludePathsText}
+                onChange={(e) => setDraftExcludePaths(e.target.value)}
+                placeholder="e.g. qbittorrent, node_modules, cache"
+              />
+            </FormField>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={handleSaveConfig} loading={saveConfig.isPending}>
+                Save exclusions
+              </Button>
+              <Button size="sm" onClick={handleScan} loading={isScanning}>
+                <RefreshCw className="size-3.5" />
+                Run scan
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {report?.scanning && (
+        <Card className="border-primary/30 bg-primary-soft/30">
+          <CardContent className="flex items-center justify-between gap-3 py-3">
+            <div className="flex items-center gap-2.5 text-sm text-fg">
+              <Spinner className="size-4" />
+              <span>
+                Scanning <strong>{report.scanningShare || 'shares'}</strong>…{' '}
+                <span className="font-mono text-xs text-fg-muted">
+                  {(report.scannedFiles ?? 0).toLocaleString()} files · {formatBytes(report.scannedBytes ?? 0)}
+                </span>
+              </span>
+            </div>
+            <Badge tone="info">In progress</Badge>
+          </CardContent>
+        </Card>
+      )}
 
       {query.isLoading ? (
         <div className="flex justify-center py-14">
