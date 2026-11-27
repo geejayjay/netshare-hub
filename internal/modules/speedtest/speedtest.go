@@ -19,7 +19,14 @@ import (
 	"netshare-hub/internal/platform/errs"
 	"netshare-hub/internal/platform/httpx"
 	"netshare-hub/internal/platform/rbac"
+	"netshare-hub/internal/sys"
 )
+
+// DiskBenchmarker runs disk speed tests in the privileged agent when the target
+// folder is outside the web server's sandboxed data directory.
+type DiskBenchmarker interface {
+	BenchmarkDisk(ctx context.Context, path string, sizeMiB int) (sys.DiskBenchmark, error)
+}
 
 const (
 	maxNetMiB  = 256
@@ -51,14 +58,15 @@ type diskOutput struct {
 }
 
 // Register adds the Huma disk benchmark endpoint and raw Chi streaming download/upload endpoints.
-func Register(api huma.API, r chi.Router, defaultDir string) {
+func Register(api huma.API, r chi.Router, defaultDir string, benchmarker DiskBenchmarker) {
 	httpx.Register(api, httpx.Route{
 		ID: "runDiskSpeedTest", Method: http.MethodPost, Path: "/system/speedtest/disk",
 		Summary: "Benchmark sequential disk write and read speed in a target folder",
 		Tag:     "System", Access: httpx.Require(rbac.SystemRead),
 	}, func(ctx context.Context, in *diskInput) (*diskOutput, error) {
 		dir := strings.TrimSpace(in.Body.Path)
-		if dir == "" {
+		useDefault := dir == ""
+		if useDefault {
 			dir = defaultDir
 		}
 		sizeMiB := in.Body.SizeMiB
@@ -67,6 +75,20 @@ func Register(api huma.API, r chi.Router, defaultDir string) {
 		}
 		if sizeMiB > maxDiskMiB {
 			sizeMiB = maxDiskMiB
+		}
+		if !useDefault && benchmarker != nil {
+			b, err := benchmarker.BenchmarkDisk(ctx, dir, sizeMiB)
+			if err != nil {
+				return nil, errs.Invalid("PATH_NOT_WRITABLE", "Could not benchmark target folder: "+sys.Message(err))
+			}
+			return &diskOutput{Body: DiskTestResult{
+				Path:      b.Path,
+				SizeMiB:   b.SizeMiB,
+				WriteMBps: b.WriteMBps,
+				ReadMBps:  b.ReadMBps,
+				WriteMs:   b.WriteMs,
+				ReadMs:    b.ReadMs,
+			}}, nil
 		}
 		res, err := benchmarkDisk(ctx, dir, sizeMiB)
 		if err != nil {

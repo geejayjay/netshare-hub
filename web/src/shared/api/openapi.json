@@ -4193,6 +4193,42 @@
         ],
         "type": "object"
       },
+      "StorageScanRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "excludePaths": {
+            "description": "Optional updated list of excluded folder/path patterns (persisted when provided).",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "excludeShares": {
+            "description": "Optional updated list of excluded share names (persisted when provided).",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "shares": {
+            "description": "Optional list of share names to scan. When omitted, all non-excluded shares are scanned.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "StorageShareStat": {
         "additionalProperties": false,
         "properties": {
@@ -4211,6 +4247,9 @@
             "type": "integer"
           },
           "path": {
+            "type": "string"
+          },
+          "scannedAt": {
             "type": "string"
           },
           "shareId": {
@@ -9709,7 +9748,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/StorageScanConfig"
+                "$ref": "#/components/schemas/StorageScanRequest"
               }
             }
           }
@@ -9744,7 +9783,7 @@
             "token": []
           }
         ],
-        "summary": "Start a background scan of configured shares for disk usage and duplicates",
+        "summary": "Start a background scan of all or selected shares for disk usage and duplicates",
         "tags": [
           "Storage"
         ],

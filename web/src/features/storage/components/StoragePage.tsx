@@ -55,7 +55,21 @@ function parentDir(filePath: string): string {
   return idx > 0 ? filePath.slice(0, idx) : ''
 }
 
-function ShareBreakdownCard({ share, totalAll }: { share: StorageShareStat; totalAll: number }) {
+function ShareBreakdownCard({
+  share,
+  totalAll,
+  canScan,
+  isScanning,
+  isScanningThis,
+  onScanShare,
+}: {
+  share: StorageShareStat
+  totalAll: number
+  canScan: boolean
+  isScanning: boolean
+  isScanningThis: boolean
+  onScanShare: (shareName: string) => void
+}) {
   const pct = totalAll > 0 ? Math.round((share.totalBytes / totalAll) * 100) : 0
   return (
     <Card>
@@ -70,17 +84,35 @@ function ShareBreakdownCard({ share, totalAll }: { share: StorageShareStat; tota
               <Badge tone="neutral">{pct}%</Badge>
             )}
           </CardTitle>
-          <div className="mt-0.5 truncate font-mono text-[0.7rem] text-fg-subtle">{share.path}</div>
+          <div className="mt-0.5 truncate font-mono text-[0.7rem] text-fg-subtle">
+            {share.path}
+            {share.scannedAt && !share.skipped ? ` · scanned ${formatRelativeTime(share.scannedAt)}` : ''}
+          </div>
         </div>
-        <div className="text-right">
-          <div className="font-mono text-sm font-semibold text-fg">
-            {share.skipped ? '—' : formatBytes(share.totalBytes)}
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="text-right">
+            <div className="font-mono text-sm font-semibold text-fg">
+              {share.skipped ? '—' : formatBytes(share.totalBytes)}
+            </div>
+            <div className="text-[0.7rem] text-fg-subtle">
+              {share.skipped
+                ? 'Not scanned'
+                : `${share.fileCount.toLocaleString()} files · ${share.dirCount.toLocaleString()} folders`}
+            </div>
           </div>
-          <div className="text-[0.7rem] text-fg-subtle">
-            {share.skipped
-              ? 'Not scanned'
-              : `${share.fileCount.toLocaleString()} files · ${share.dirCount.toLocaleString()} folders`}
-          </div>
+          {canScan && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-8 px-2.5 text-xs"
+              disabled={isScanning}
+              loading={isScanningThis}
+              onClick={() => onScanShare(share.shareName)}
+            >
+              <RefreshCw className="size-3.5" />
+              Scan
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 border-t border-border pt-4">
@@ -192,16 +224,24 @@ export function StoragePage() {
     })
   }
 
-  function handleScan() {
+  function handleScan(targetShares?: string[]) {
     const cfg = buildConfig()
-    scan.mutate(cfg, {
-      onSuccess: () => {
-        setDraftExcludeShares(null)
-        setDraftExcludePaths(null)
-        notify.success('Storage scan started', 'Scanning selected shares in the background…')
+    scan.mutate(
+      targetShares && targetShares.length > 0 ? { ...cfg, shares: targetShares } : cfg,
+      {
+        onSuccess: () => {
+          setDraftExcludeShares(null)
+          setDraftExcludePaths(null)
+          notify.success(
+            'Storage scan started',
+            targetShares && targetShares.length === 1
+              ? `Scanning ${targetShares[0]} in the background…`
+              : 'Scanning selected shares in the background…',
+          )
+        },
+        onError: (err) => notify.error(err),
       },
-      onError: (err) => notify.error(err),
-    })
+    )
   }
 
   const isScanning = scan.isPending || Boolean(report?.scanning)
@@ -220,9 +260,9 @@ export function StoragePage() {
                 <Filter className="size-4" />
                 Exclusions{excludedCount > 0 ? ` (${excludedCount})` : ''}
               </Button>
-              <Button onClick={handleScan} loading={isScanning}>
+              <Button onClick={() => handleScan()} loading={isScanning}>
                 <RefreshCw className="size-4" />
-                {report?.scannedAt ? 'Rescan shares' : 'Run scan'}
+                {report?.scannedAt ? 'Rescan all' : 'Scan all'}
               </Button>
             </div>
           ) : undefined
@@ -284,9 +324,9 @@ export function StoragePage() {
               <Button variant="secondary" size="sm" onClick={handleSaveConfig} loading={saveConfig.isPending}>
                 Save exclusions
               </Button>
-              <Button size="sm" onClick={handleScan} loading={isScanning}>
+              <Button size="sm" onClick={() => handleScan()} loading={isScanning}>
                 <RefreshCw className="size-3.5" />
-                Run scan
+                Scan all
               </Button>
             </div>
           </CardContent>
@@ -324,9 +364,9 @@ export function StoragePage() {
               description="Run a scan to calculate per-share usage, folder breakdowns, largest/oldest files, and duplicate savings."
               action={
                 canScan ? (
-                  <Button onClick={handleScan} loading={scan.isPending}>
+                  <Button onClick={() => handleScan()} loading={isScanning}>
                     <RefreshCw className="size-4" />
-                    Run storage scan
+                    Scan all shares
                   </Button>
                 ) : undefined
               }
@@ -415,7 +455,15 @@ export function StoragePage() {
           {tab === 'overview' && (
             <div className="grid gap-4">
               {report.shares.map((sh) => (
-                <ShareBreakdownCard key={sh.shareId} share={sh} totalAll={report.totalBytes} />
+                <ShareBreakdownCard
+                  key={sh.shareId}
+                  share={sh}
+                  totalAll={report.totalBytes}
+                  canScan={canScan}
+                  isScanning={isScanning}
+                  isScanningThis={Boolean(report.scanning && report.scanningShare === sh.shareName)}
+                  onScanShare={(name) => handleScan([name])}
+                />
               ))}
             </div>
           )}

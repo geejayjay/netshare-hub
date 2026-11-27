@@ -288,3 +288,9 @@ func (c *Client) InspectMounts(ctx context.Context, paths []string) (sys.MountRe
 	err := c.call(ctx, opInspectMounts, inspectMountsRequest{Paths: paths}, &res)
 	return res, err
 }
+
+func (c *Client) BenchmarkDisk(ctx context.Context, path string, sizeMiB int) (sys.DiskBenchmark, error) {
+	var res sys.DiskBenchmark
+	err := c.callWith(c.long, ctx, opBenchmarkDisk, benchmarkDiskRequest{Path: path, SizeMiB: sizeMiB}, &res)
+	return res, err
+}

@@ -6,6 +6,7 @@ export type StorageShareStat = Schema<'StorageShareStat'>
 export type StorageFileItem = Schema<'StorageFileItem'>
 export type StorageDuplicateGroup = Schema<'StorageDuplicateGroup'>
 export type StorageScanConfig = Schema<'StorageScanConfig'>
+export type StorageScanRequest = Schema<'StorageScanRequest'>
 
 export const storageReportQuery = queryOptions({
   queryKey: ['storage', 'report'],
@@ -25,7 +26,7 @@ export function useUpdateStorageConfig() {
 export function useRunStorageScan() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body?: StorageScanConfig) => unwrap(api.POST('/storage/scan', body ? { body } : {})),
+    mutationFn: (body?: StorageScanRequest) => unwrap(api.POST('/storage/scan', body ? { body } : {})),
     onSuccess: (report) => {
       qc.setQueryData(['storage', 'report'], report)
     },

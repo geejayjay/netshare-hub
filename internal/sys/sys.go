@@ -212,6 +212,20 @@ type Files interface {
 	// (systemd ProtectSystem=strict) sees every folder as read-only.
 	// Empty paths are skipped. Errors: ErrInvalid (more than MaxMountPaths).
 	InspectMounts(ctx context.Context, paths []string) (MountReport, error)
+	// BenchmarkDisk runs a sequential write+fsync and read test of sizeMiB
+	// (1..128) in a share folder. It runs in the agent because the web server's
+	// systemd sandbox (ProtectSystem=strict) cannot write outside its data dir.
+	BenchmarkDisk(ctx context.Context, path string, sizeMiB int) (DiskBenchmark, error)
+}
+
+// DiskBenchmark holds sequential write and read throughput for one folder.
+type DiskBenchmark struct {
+	Path      string  `json:"path"`
+	SizeMiB   int     `json:"sizeMiB"`
+	WriteMBps float64 `json:"writeMBps"`
+	ReadMBps  float64 `json:"readMBps"`
+	WriteMs   int64   `json:"writeMs"`
+	ReadMs    int64   `json:"readMs"`
 }
 
 // Audit reads what happens over SMB (the activity log's source).

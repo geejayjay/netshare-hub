@@ -364,7 +364,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (*App, error) {
 			return paths
 		}, osLayer.Files)
 		audit.Register(api, auditService)
-		speedtest.Register(api, r, cfg.DataDir)
+		speedtest.Register(api, r, cfg.DataDir, osLayer.Files)
 		auth.Register(api, authService, cfg.SecureCookies)
 		users.Register(api, userService)
 		groups.Register(api, groupService)

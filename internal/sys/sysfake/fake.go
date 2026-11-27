@@ -801,6 +801,21 @@ func (f *Fake) ResolveDir(_ context.Context, dir string) (string, error) {
 	return dir, nil
 }
 
+// BenchmarkDisk returns a synthetic sequential disk benchmark in fake mode.
+func (f *Fake) BenchmarkDisk(_ context.Context, p string, sizeMiB int) (sys.DiskBenchmark, error) {
+	if sizeMiB < 1 || sizeMiB > 128 {
+		return sys.DiskBenchmark{}, sys.ErrInvalid
+	}
+	return sys.DiskBenchmark{
+		Path:      path.Clean(p),
+		SizeMiB:   sizeMiB,
+		WriteMBps: 420.5,
+		ReadMBps:  580.2,
+		WriteMs:   int64(sizeMiB * 2),
+		ReadMs:    int64(sizeMiB),
+	}, nil
+}
+
 // InspectMounts reports every folder as on a healthy, writable mount
 // ("/"), except folders under MissingPrefix that were not created.
 func (f *Fake) InspectMounts(_ context.Context, paths []string) (sys.MountReport, error) {

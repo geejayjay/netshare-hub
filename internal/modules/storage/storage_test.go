@@ -107,4 +107,13 @@ func TestStorageScanAndDuplicates(t *testing.T) {
 	if !skippedBackup {
 		t.Fatalf("expected backup share to be marked skipped, got %+v", rep2.Shares)
 	}
+
+	// Single-share targeted scan merges backup into the existing report without wiping media.
+	rep3, err := svc.ScanShares(context.Background(), []string{"backup"})
+	if err != nil {
+		t.Fatalf("single-share scan failed: %v", err)
+	}
+	if rep3.TotalFiles != 3 || rep3.TotalBytes != 4096+4096+2048 {
+		t.Fatalf("expected merged totals (media=1 file 4096B + backup=2 files 6144B), got files=%d bytes=%d", rep3.TotalFiles, rep3.TotalBytes)
+	}
 }

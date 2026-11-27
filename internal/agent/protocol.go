@@ -80,6 +80,7 @@ const (
 	// read-only to it. It only reads, and only answers for folders that
 	// could be shared at all (like files.resolve-dir).
 	opInspectMounts = "files.inspect-mounts"
+	opBenchmarkDisk = "files.benchmark-disk"
 	opWorker        = "files.worker"
 	pathPrefix      = "/v1/"
 	maxRequestBytes = 8 << 20
@@ -193,6 +194,11 @@ type pathResponse struct {
 
 type inspectMountsRequest struct {
 	Paths []string `json:"paths"`
+}
+
+type benchmarkDiskRequest struct {
+	Path    string `json:"path"`
+	SizeMiB int    `json:"sizeMiB"`
 }
 
 type pingResponse struct {

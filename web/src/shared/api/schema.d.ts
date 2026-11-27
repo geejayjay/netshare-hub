@@ -1260,7 +1260,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Start a background scan of configured shares for disk usage and duplicates */
+        /** Start a background scan of all or selected shares for disk usage and duplicates */
         post: operations["runStorageScan"];
         delete?: never;
         options?: never;
@@ -2869,6 +2869,14 @@ export interface components {
             excludePaths: string[];
             excludeShares: string[];
         };
+        StorageScanRequest: {
+            /** @description Optional updated list of excluded folder/path patterns (persisted when provided). */
+            excludePaths?: string[] | null;
+            /** @description Optional updated list of excluded share names (persisted when provided). */
+            excludeShares?: string[] | null;
+            /** @description Optional list of share names to scan. When omitted, all non-excluded shares are scanned. */
+            shares?: string[] | null;
+        };
         StorageShareStat: {
             categories: components["schemas"]["StorageCategoryStat"][];
             /** Format: int64 */
@@ -2876,6 +2884,7 @@ export interface components {
             /** Format: int64 */
             fileCount: number;
             path: string;
+            scannedAt?: string;
             /** Format: int64 */
             shareId: number;
             shareName: string;
@@ -6073,7 +6082,7 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["StorageScanConfig"];
+                "application/json": components["schemas"]["StorageScanRequest"];
             };
         };
         responses: {

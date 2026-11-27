@@ -56,6 +56,7 @@ type StorageShareStat struct {
 	ShareID    int64                 `json:"shareId"`
 	ShareName  string                `json:"shareName"`
 	Path       string                `json:"path"`
+	ScannedAt  string                `json:"scannedAt,omitempty"`
 	TotalBytes int64                 `json:"totalBytes"`
 	FileCount  int64                 `json:"fileCount"`
 	DirCount   int64                 `json:"dirCount"`
@@ -69,6 +70,13 @@ type StorageShareStat struct {
 type StorageScanConfig struct {
 	ExcludeShares []string `json:"excludeShares" nullable:"false"`
 	ExcludePaths  []string `json:"excludePaths" nullable:"false"`
+}
+
+// StorageScanRequest is the optional body for POST /storage/scan.
+type StorageScanRequest struct {
+	Shares        []string `json:"shares,omitempty" doc:"Optional list of share names to scan. When omitted, all non-excluded shares are scanned."`
+	ExcludeShares []string `json:"excludeShares,omitempty" doc:"Optional updated list of excluded share names (persisted when provided)."`
+	ExcludePaths  []string `json:"excludePaths,omitempty" doc:"Optional updated list of excluded folder/path patterns (persisted when provided)."`
 }
 
 // StorageFileItem represents a notable file (largest or oldest).
@@ -279,9 +287,20 @@ func (s *Service) Report() StorageReport {
 
 // StartScan launches a background storage scan (detached from the HTTP request
 // so large shares never time out) and immediately returns the live report state.
-func (s *Service) StartScan(opts *StorageScanConfig) StorageReport {
-	if opts != nil {
-		s.SetConfig(*opts)
+func (s *Service) StartScan(req *StorageScanRequest) StorageReport {
+	var targetShares []string
+	if req != nil {
+		if req.ExcludeShares != nil || req.ExcludePaths != nil {
+			cur := s.Config()
+			if req.ExcludeShares != nil {
+				cur.ExcludeShares = req.ExcludeShares
+			}
+			if req.ExcludePaths != nil {
+				cur.ExcludePaths = req.ExcludePaths
+			}
+			s.SetConfig(cur)
+		}
+		targetShares = req.Shares
 	}
 	if !s.scanning.CompareAndSwap(false, true) {
 		return s.Report()
@@ -292,7 +311,7 @@ func (s *Service) StartScan(opts *StorageScanConfig) StorageReport {
 	s.scanningShare = ""
 	s.mu.Unlock()
 	go func() {
-		if _, err := s.runScanLocked(context.Background()); err != nil {
+		if _, err := s.runScanLocked(context.Background(), targetShares); err != nil {
 			slog.Warn("storage: background scan failed", "err", err)
 		}
 	}()
@@ -342,15 +361,21 @@ type fileRec struct {
 // Scan walks every non-excluded share without following symlinks, builds the
 // usage report, computes duplicate groups, and persists the snapshot atomically.
 func (s *Service) Scan(ctx context.Context) (StorageReport, error) {
+	return s.ScanShares(ctx, nil)
+}
+
+// ScanShares synchronously scans either all non-excluded shares (when targetShares
+// is empty) or only the named shares, merging targeted results into the latest report.
+func (s *Service) ScanShares(ctx context.Context, targetShares []string) (StorageReport, error) {
 	if !s.scanning.CompareAndSwap(false, true) {
 		return s.Report(), nil
 	}
 	s.scannedFiles.Store(0)
 	s.scannedBytes.Store(0)
-	return s.runScanLocked(ctx)
+	return s.runScanLocked(ctx, targetShares)
 }
 
-func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
+func (s *Service) runScanLocked(ctx context.Context, targetShares []string) (StorageReport, error) {
 	defer func() {
 		s.mu.Lock()
 		s.scanningShare = ""
@@ -359,10 +384,26 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 	}()
 
 	start := time.Now()
+	nowRFC := start.UTC().Format(time.RFC3339)
 	cfg := s.Config()
 	excludedShareSet := make(map[string]struct{}, len(cfg.ExcludeShares))
 	for _, name := range cfg.ExcludeShares {
 		excludedShareSet[strings.ToLower(name)] = struct{}{}
+	}
+	targetSet := make(map[string]struct{}, len(targetShares))
+	for _, name := range targetShares {
+		if t := strings.TrimSpace(name); t != "" {
+			targetSet[strings.ToLower(t)] = struct{}{}
+		}
+	}
+	targeted := len(targetSet) > 0
+
+	s.mu.RLock()
+	prev := s.latest
+	s.mu.RUnlock()
+	prevByShare := make(map[string]StorageShareStat, len(prev.Shares))
+	for _, ps := range prev.Shares {
+		prevByShare[strings.ToLower(ps.ShareName)] = ps
 	}
 
 	shares, err := s.listShares(ctx)
@@ -380,6 +421,28 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 		if ctx.Err() != nil {
 			return StorageReport{}, ctx.Err()
 		}
+		key := strings.ToLower(sh.Name)
+		if targeted {
+			if _, ok := targetSet[key]; !ok {
+				if existing, hasPrev := prevByShare[key]; hasPrev {
+					existing.ShareID = sh.ID
+					existing.Path = sh.Path
+					report.Shares = append(report.Shares, existing)
+				} else {
+					report.Shares = append(report.Shares, StorageShareStat{
+						ShareID:    sh.ID,
+						ShareName:  sh.Name,
+						Path:       sh.Path,
+						Skipped:    true,
+						SkipReason: "Not scanned yet",
+						TopFolders: make([]StorageFolderStat, 0),
+						Categories: make([]StorageCategoryStat, 0),
+					})
+				}
+				continue
+			}
+		}
+
 		stat := StorageShareStat{
 			ShareID:    sh.ID,
 			ShareName:  sh.Name,
@@ -387,11 +450,13 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 			TopFolders: make([]StorageFolderStat, 0),
 			Categories: make([]StorageCategoryStat, 0),
 		}
-		if _, excluded := excludedShareSet[strings.ToLower(sh.Name)]; excluded {
-			stat.Skipped = true
-			stat.SkipReason = "Excluded from scan"
-			report.Shares = append(report.Shares, stat)
-			continue
+		if !targeted {
+			if _, excluded := excludedShareSet[key]; excluded {
+				stat.Skipped = true
+				stat.SkipReason = "Excluded from scan"
+				report.Shares = append(report.Shares, stat)
+				continue
+			}
 		}
 		if sh.Path == "" {
 			stat.Skipped = true
@@ -414,15 +479,12 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 			}
 			if e.IsDir {
 				stat.DirCount++
-				report.TotalDirs++
 				return nil
 			}
 			rel, name, sz := e.Path, path.Base(e.Path), e.Size
 
 			stat.FileCount++
 			stat.TotalBytes += sz
-			report.TotalFiles++
-			report.TotalBytes += sz
 			s.scannedFiles.Add(1)
 			s.scannedBytes.Add(sz)
 
@@ -466,6 +528,7 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 		})
 		switch {
 		case err == nil:
+			stat.ScannedAt = nowRFC
 		case ctx.Err() != nil:
 			return StorageReport{}, ctx.Err()
 		case errors.Is(err, sys.ErrNotFound):
@@ -496,9 +559,24 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 		report.Shares = append(report.Shares, stat)
 	}
 
+	for _, st := range report.Shares {
+		if st.Skipped {
+			continue
+		}
+		report.TotalBytes += st.TotalBytes
+		report.TotalFiles += st.FileCount
+		report.TotalDirs += st.DirCount
+	}
 	sort.Slice(report.Shares, func(i, j int) bool { return report.Shares[i].TotalBytes > report.Shares[j].TotalBytes })
 
-	// Largest files.
+	// Largest files (merge untouched shares when running a targeted scan).
+	if targeted {
+		for _, f := range prev.LargestFiles {
+			if _, replaced := targetSet[strings.ToLower(f.ShareName)]; !replaced {
+				report.LargestFiles = append(report.LargestFiles, f)
+			}
+		}
+	}
 	sort.Slice(allFiles, func(i, j int) bool { return allFiles[i].size > allFiles[j].size })
 	for i := 0; i < len(allFiles) && i < maxTopFiles; i++ {
 		f := allFiles[i]
@@ -506,10 +584,21 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 			ShareName: f.shareName, Path: f.relPath, Name: f.name, Size: f.size, ModTime: f.modTime.Format(time.RFC3339),
 		})
 	}
+	sort.Slice(report.LargestFiles, func(i, j int) bool { return report.LargestFiles[i].Size > report.LargestFiles[j].Size })
+	if len(report.LargestFiles) > maxTopFiles {
+		report.LargestFiles = report.LargestFiles[:maxTopFiles]
+	}
 
 	// Oldest non-empty files.
+	if targeted {
+		for _, f := range prev.OldestFiles {
+			if _, replaced := targetSet[strings.ToLower(f.ShareName)]; !replaced {
+				report.OldestFiles = append(report.OldestFiles, f)
+			}
+		}
+	}
 	sort.Slice(allFiles, func(i, j int) bool { return allFiles[i].modTime.Before(allFiles[j].modTime) })
-	for i := 0; i < len(allFiles) && len(report.OldestFiles) < maxTopFiles; i++ {
+	for i := 0; i < len(allFiles) && i < maxTopFiles; i++ {
 		f := allFiles[i]
 		if f.size == 0 {
 			continue
@@ -518,8 +607,27 @@ func (s *Service) runScanLocked(ctx context.Context) (StorageReport, error) {
 			ShareName: f.shareName, Path: f.relPath, Name: f.name, Size: f.size, ModTime: f.modTime.Format(time.RFC3339),
 		})
 	}
+	sort.Slice(report.OldestFiles, func(i, j int) bool { return report.OldestFiles[i].ModTime < report.OldestFiles[j].ModTime })
+	if len(report.OldestFiles) > maxTopFiles {
+		report.OldestFiles = report.OldestFiles[:maxTopFiles]
+	}
 
 	// Duplicate detection: hash only size collisions, largest sizes first.
+	if targeted {
+		for _, grp := range prev.Duplicates {
+			touchesTarget := false
+			for _, f := range grp.Files {
+				if _, ok := targetSet[strings.ToLower(f.ShareName)]; ok {
+					touchesTarget = true
+					break
+				}
+			}
+			if !touchesTarget {
+				report.Duplicates = append(report.Duplicates, grp)
+				report.ReclaimableBytes += grp.ReclaimableBytes
+			}
+		}
+	}
 	collisionSizes := make([]int64, 0)
 	for sz, list := range bySize {
 		if len(list) >= 2 {

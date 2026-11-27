@@ -240,6 +240,13 @@ func NewServerWith(system sys.System, authorize Authorizer, version string, feat
 		return report, nil
 	}, func(r inspectMountsRequest) []any { return []any{"paths", len(r.Paths)} })
 
+	register(s, opBenchmarkDisk, func(ctx context.Context, r benchmarkDiskRequest) (any, error) {
+		if !sys.ValidSharePath(r.Path) || !sys.SharablePath(r.Path) {
+			return nil, sys.ErrInvalid
+		}
+		return system.Files.BenchmarkDisk(ctx, r.Path, r.SizeMiB)
+	}, func(r benchmarkDiskRequest) []any { return []any{"path", r.Path, "size_mib", r.SizeMiB} })
+
 	// Starting a file worker is the one operation that launches a process as
 	// another user. The system layer only does it for accounts NetShare Hub
 	// created, and decides itself which shares the worker may reach.
