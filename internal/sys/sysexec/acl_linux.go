@@ -265,6 +265,10 @@ func fixShareTree(ctx context.Context, s sys.ShareSpec, ids identities, protecte
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ELOOP) || errors.Is(err, syscall.ENOTDIR) {
 			continue // removed or replaced while we walked
 		}
+		if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
+			stats.Skipped++ // unmapped host UID in unprivileged LXC or inaccessible dir
+			continue
+		}
 		if err != nil {
 			return fail(err)
 		}
@@ -284,6 +288,14 @@ func fixShareTree(ctx context.Context, s sys.ShareSpec, ids identities, protecte
 				switch {
 				case errors.Is(err, errSkipped):
 					stats.Skipped++
+				case errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES):
+					// In unprivileged LXC containers, files/folders owned by unmapped host
+					// UIDs (65534/nobody) return EPERM on fsetxattr. Skip them and keep
+					// fixing the rest of the share instead of aborting the whole walk.
+					stats.Skipped++
+					if isDir {
+						dirs = append(dirs, rel)
+					}
 				case err != nil:
 					d.Close()
 					return fail(fmt.Errorf("%s: %w", rel, err))
