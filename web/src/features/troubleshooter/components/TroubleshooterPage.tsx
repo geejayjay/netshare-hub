@@ -8,6 +8,7 @@ import { nfsStatusQuery, sharesQuery } from '@/features/shares'
 import { api, unwrap } from '@/shared/api'
 import { PageHeader } from '@/shared/components'
 import { cn } from '@/shared/lib/cn'
+import { copyToClipboard } from '@/shared/lib/clipboard'
 import { useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Select, Spinner } from '@/shared/ui'
@@ -435,7 +436,8 @@ export function TroubleshooterPage() {
                 size="icon"
                 className="size-7 shrink-0"
                 onClick={() => {
-                  void navigator.clipboard?.writeText(testCommand).then(() => {
+                  void copyToClipboard(testCommand).then((ok) => {
+                    if (!ok) return
                     setCopiedCmd(true)
                     window.setTimeout(() => setCopiedCmd(false), 1500)
                   })

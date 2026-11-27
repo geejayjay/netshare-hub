@@ -4,6 +4,7 @@ import { Check, Copy, FolderOpen, HardDrive, Terminal } from 'lucide-react'
 import { useState } from 'react'
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '@/shared/components'
 import { cn } from '@/shared/lib/cn'
+import { copyToClipboard } from '@/shared/lib/clipboard'
 import { useModules } from '@/shared/modules/modules'
 import { useSession } from '@/shared/session/session'
 import { Badge, Button, Card, InfoTip } from '@/shared/ui'
@@ -38,7 +39,8 @@ function ShareCard({ share, host, username }: { share: MyShare; host: string; us
   const info = connectionDetails(os, host, share.name, username)
 
   function copyAddress() {
-    void navigator.clipboard?.writeText(info.address).then(() => {
+    void copyToClipboard(info.address).then((ok) => {
+      if (!ok) return
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1600)
     })

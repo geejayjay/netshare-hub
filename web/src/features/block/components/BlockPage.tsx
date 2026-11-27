@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { notify } from '@/features/notifications'
 import { errorMessage } from '@/shared/api'
 import { EmptyState, ErrorState, FormField, PageHeader } from '@/shared/components'
+import { copyToClipboard } from '@/shared/lib/clipboard'
 import { formatBytes } from '@/shared/lib/format'
 import {
   Alert,
@@ -398,7 +399,8 @@ export function BlockPage() {
                           className="size-6 shrink-0"
                           title="Copy target IQN/NQN"
                           onClick={() => {
-                            void navigator.clipboard?.writeText(d.target).then(() => {
+                            void copyToClipboard(d.target).then((ok) => {
+                              if (!ok) return
                               setCopiedId(d.id)
                               window.setTimeout(() => setCopiedId(null), 1500)
                             })

@@ -3,6 +3,7 @@ import { Check, Copy, KeyRound, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { notify } from '@/features/notifications'
 import { errorMessage } from '@/shared/api'
+import { copyToClipboard } from '@/shared/lib/clipboard'
 import { formatDateTime, formatRelativeTime } from '@/shared/lib/format'
 import { Alert, Badge, Button, Dialog, Input, Label, Select, Spinner, Switch } from '@/shared/ui'
 import { apiTokensQuery, useCreateApiToken, useRevokeApiToken, type CreatedApiToken } from '../api'
@@ -52,7 +53,8 @@ export function ApiTokensDialog({ open, onClose }: { open: boolean; onClose: () 
   }
 
   function copy(token: string) {
-    void navigator.clipboard?.writeText(token).then(() => {
+    void copyToClipboard(token).then((ok) => {
+      if (!ok) return
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1600)
     })

@@ -18,6 +18,7 @@ import { notify } from '@/features/notifications'
 import { sharesQuery } from '@/features/shares'
 import { errorMessage } from '@/shared/api'
 import { EmptyState, ErrorState, FormField, PageHeader } from '@/shared/components'
+import { copyToClipboard } from '@/shared/lib/clipboard'
 import { formatBytes, formatDateTime, formatRelativeTime } from '@/shared/lib/format'
 import {
   Alert,
@@ -862,7 +863,8 @@ export function ReplicationPage() {
                 size="icon"
                 className="size-7 shrink-0"
                 onClick={() => {
-                  void navigator.clipboard?.writeText(pairingCode).then(() => {
+                  void copyToClipboard(pairingCode).then((ok) => {
+                    if (!ok) return
                     setCopiedCode(true)
                     window.setTimeout(() => setCopiedCode(false), 1600)
                   })
