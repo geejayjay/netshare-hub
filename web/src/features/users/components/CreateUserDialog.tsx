@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { notify } from '@/features/notifications'
 import { errorMessage, fieldErrors, isFieldError } from '@/shared/api'
 import { SelectField, TextField } from '@/shared/components'
-import { Alert, Button, Dialog } from '@/shared/ui'
+import { Alert, Button, Dialog, Switch } from '@/shared/ui'
 import { rolesQuery, useCreateUser } from '../api'
 
 const schema = z.object({
@@ -12,6 +12,7 @@ const schema = z.object({
   displayName: z.string(),
   role: z.string().min(1, 'Pick a role.'),
   password: z.string().min(8, 'Must be at least 8 characters.'),
+  smbAccess: z.boolean(),
 })
 
 export function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -20,7 +21,7 @@ export function CreateUserDialog({ open, onClose }: { open: boolean; onClose: ()
   const server = fieldErrors(create.error)
 
   const form = useForm({
-    defaultValues: { username: '', displayName: '', role: 'user', password: '' },
+    defaultValues: { username: '', displayName: '', role: 'user', password: '', smbAccess: true },
     validators: { onSubmit: schema },
     onSubmit: ({ value }) =>
       create.mutateAsync(value).then(
@@ -84,6 +85,26 @@ export function CreateUserDialog({ open, onClose }: { open: boolean; onClose: ()
               type="password"
               autoComplete="new-password"
             />
+          )}
+        </form.Field>
+        <form.Field name="smbAccess">
+          {(field) => (
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-surface-2/60 p-3">
+              <div className="flex flex-col gap-0.5">
+                <label htmlFor="create-user-smb" className="text-sm font-medium text-fg">
+                  SMB access
+                </label>
+                <span className="text-xs text-fg-muted">
+                  Create Samba credentials so this user can be granted share access.
+                </span>
+              </div>
+              <Switch
+                id="create-user-smb"
+                checked={field.state.value}
+                onChange={field.handleChange}
+                aria-label="SMB access"
+              />
+            </div>
           )}
         </form.Field>
 

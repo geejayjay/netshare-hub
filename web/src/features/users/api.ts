@@ -32,6 +32,18 @@ export function useCreateUser() {
   })
 }
 
+export function useUpdateUser() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: Schema<'UpdateUserRequest'> }) =>
+      unwrap(api.PATCH('/users/{id}', { params: { path: { id } }, body })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.all })
+      void queryClient.invalidateQueries({ queryKey: ['shares'] })
+    },
+  })
+}
+
 export function useDeleteUser() {
   const queryClient = useQueryClient()
   return useMutation({

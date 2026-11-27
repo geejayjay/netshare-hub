@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Eye, Plus, Shield, Trash2, UserCheck, Users as UsersIcon } from 'lucide-react'
+import { Eye, Pencil, Plus, Shield, Trash2, UserCheck, Users as UsersIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { notify } from '@/features/notifications'
 import type { ListParams } from '@/shared/api'
@@ -9,6 +9,7 @@ import { useSession } from '@/shared/session/session'
 import { Badge, Button, Card, StatCard } from '@/shared/ui'
 import { rolesQuery, useDeleteUser, usersQuery, type User } from '../api'
 import { CreateUserDialog } from './CreateUserDialog'
+import { EditUserDialog } from './EditUserDialog'
 import { UserAccessDrawer } from './UserAccessDrawer'
 
 interface UsersPageProps {
@@ -23,6 +24,7 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
   const deleteUser = useDeleteUser()
   const session = useSession()
   const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<User | null>(null)
   const [inspecting, setInspecting] = useState<User | null>(null)
 
   const items = users.data?.items ?? []
@@ -95,6 +97,18 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
               <Eye className="size-3.5" />
               Access
             </Button>
+            {session.can('users:write') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-fg-muted hover:text-fg"
+                aria-label={`Edit ${row.original.username}`}
+                onClick={() => setEditing(row.original)}
+              >
+                <Pencil className="size-3.5" />
+                Edit
+              </Button>
+            )}
             {session.can('users:write') && row.original.id !== session.user.id && (
               <Button
                 variant="ghost"
@@ -164,6 +178,7 @@ export function UsersPage({ params, onParamsChange }: UsersPageProps) {
       </Card>
 
       <CreateUserDialog open={creating} onClose={() => setCreating(false)} />
+      <EditUserDialog user={editing} onClose={() => setEditing(null)} />
       <UserAccessDrawer user={inspecting} onClose={() => setInspecting(null)} />
     </div>
   )
